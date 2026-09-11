@@ -19,9 +19,13 @@ export function SignIn() {
   const [error, setError] = useState<string | null>(null);
   const [gsiReady, setGsiReady] = useState(false);
   const mountedRef = useRef(true);
-  useEffect(() => () => void (mountedRef.current = false), []);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
 
   useEffect(() => {
+    if (verifying) return;
     let tries = 0;
     let timer: number | undefined;
 
@@ -37,7 +41,7 @@ export function SignIn() {
       await minDelay;
       if (result.status === 'rejected' && mountedRef.current) {
         const status = (result.reason as { status?: number })?.status;
-        setError(status === 429 ? 'Too many attempts. Wait, then retry.' : 'Identity not recognized.');
+        setError(status === 429 ? 'Too many attempts. Wait, then retry.' : status === 401 ? 'Identity not recognized.' : status === 503 ? 'Access verification is unavailable. Please retry.' : 'Sign-in could not finish. Please retry.');
         setVerifying(false);
       }
     };
@@ -65,7 +69,7 @@ export function SignIn() {
     };
     init();
     return () => window.clearTimeout(timer);
-  }, [signIn]);
+  }, [signIn, verifying]);
 
   if (verifying) {
     return (

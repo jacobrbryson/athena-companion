@@ -13,6 +13,8 @@ export interface ApiError extends Error {
 async function request<T>(path: string, init: RequestInit = {}, as: 'json' | 'text' = 'json'): Promise<T> {
   const res = await fetch(proxyUrl(path), {
     credentials: 'include',
+    signal: path.startsWith('/auth/') || path === '/api/v1/access' || path === '/api/v1/profile'
+      ? AbortSignal.timeout(30000) : undefined,
     ...init,
     headers: {
       ...CLIENT_HEADERS,
@@ -27,6 +29,9 @@ async function request<T>(path: string, init: RequestInit = {}, as: 'json' | 'te
   else if (isJson) body = await res.json().catch(() => undefined);
 
   if (!res.ok) {
+    if (res.status === 403 && (body as { code?: string })?.code === 'ACCESS_REQUIRED') {
+      window.dispatchEvent(new Event('athena-access-required'));
+    }
     const b = body as { message?: string; error?: string } | undefined;
     const err = new Error(b?.message || b?.error || `Request failed (${res.status})`) as ApiError;
     err.status = res.status;

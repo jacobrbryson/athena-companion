@@ -13,6 +13,8 @@ const iso = (msAgo: number) => new Date(now - msAgo).toISOString();
 const DAY = 86_400_000;
 
 let signedIn = localStorage.getItem('mock_signed_in') === 'true';
+// Dev-only access fixtures: set mock_access_locked=true to review the gate.
+const mockAccess = () => ({ allowed: localStorage.getItem('mock_access_locked') !== 'true', requested: localStorage.getItem('mock_access_requested') === 'true' });
 const messages: { uuid: string; is_human: boolean; text: string; created_at: string }[] = [
   { uuid: 'm1', is_human: true, text: 'Remind me what we decided about the Iceland trip?', created_at: iso(DAY * 2) },
   {
@@ -108,7 +110,7 @@ async function route(method: string, path: string, body?: any): Promise<any> {
   if (p === '/auth/companion/google') {
     signedIn = true;
     localStorage.setItem('mock_signed_in', 'true');
-    return { success: true, user: { email: 'sam@example.com', full_name: 'Sam Rivera', picture: null } };
+    return { success: true, user: { email: 'sam@example.com', full_name: 'Sam Rivera', picture: null }, access: mockAccess() };
   }
   if (p === '/auth/companion/me') {
     if (!signedIn) fail(401, 'Not authenticated');
@@ -120,6 +122,11 @@ async function route(method: string, path: string, body?: any): Promise<any> {
     return { success: true };
   }
   if (p === '/auth/companion/ws-ticket') fail(503, 'no sockets in mock mode'); // exercises the polling fallback
+  if (p === '/api/v1/access') {
+    if (!signedIn) fail(401, 'Not authenticated');
+    if (method === 'POST') localStorage.setItem('mock_access_requested', 'true');
+    return mockAccess();
+  }
   if (p === '/api/v1/profile') return { uuid: 'mock-profile', full_name: 'Sam Rivera' };
   if (p === '/api/v1/session') return { session: { uuid: 'mock-session', mode: 'companion' } };
   if (p === '/api/v1/message' && method === 'GET') return [...messages];

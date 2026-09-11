@@ -15,7 +15,7 @@ export interface Profile {
 
 /** Exchange a Google ID token for the httpOnly Companion session cookie. */
 export function googleSignIn(credential: string) {
-  return api.post<{ success: boolean; user: CompanionUser }>('/auth/companion/google', { credential });
+  return api.post<{ success: boolean; user: CompanionUser; access: AccessStatus }>('/auth/companion/google', { credential });
 }
 
 /** The current user if the session cookie is valid, else throws 401. */
@@ -31,3 +31,7 @@ export function signOut() {
 export function fetchProfile() {
   return api.get<Profile>('/api/v1/profile');
 }
+
+export interface AccessStatus { allowed: boolean; requested: boolean }
+export const fetchAccess = () => api.get<AccessStatus>('/api/v1/access');
+export const requestAccess = () => api.post<AccessStatus>('/api/v1/access');

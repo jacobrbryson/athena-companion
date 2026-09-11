@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { fetchMe, fetchProfile, googleSignIn, signOut as apiSignOut, type CompanionUser, type Profile } from '../api/auth';
+import { fetchMe, fetchProfile, fetchAccess, googleSignIn, signOut as apiSignOut, type CompanionUser, type Profile } from '../api/auth';
 
-type AuthStatus = 'loading' | 'authenticated' | 'anonymous';
+type AuthStatus = 'loading' | 'authenticated' | 'locked' | 'anonymous';
 
 /**
  * One-shot arrival signal, set by a fresh sign-in and consumed once by the
@@ -45,6 +45,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [arrival, setArrival] = useState<Arrival | null>(null);
 
+  useEffect(() => {
+    const lock = () => { setProfile(null); setArrival(null); setStatus('locked'); };
+    window.addEventListener('athena-access-required', lock);
+    return () => window.removeEventListener('athena-access-required', lock);
+  }, []);
+
   // The profile is created on first call from the Google identity; it binds
   // the chat session to this person (identity-based, and it turns on memory).
   const loadProfile = useCallback(async () => {
@@ -59,6 +65,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     fetchMe()
       .then(async (res) => {
         if (cancelled) return;
+        setUser(res.user);
+        const access = await fetchAccess().catch(() => ({ allowed: false }));
+        if (cancelled) return;
+        if (!access.allowed) { setStatus('locked'); return; }
         await loadProfile();
         if (cancelled) return;
         setUser(res.user);
@@ -77,6 +87,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signIn = useCallback(
     async (credential: string) => {
       const res = await googleSignIn(credential);
+      setUser(res.user);
+      // A stale proxy may omit access. Never admit an unverified response.
+      const access = res.access ?? await fetchAccess().catch(() => ({ allowed: false }));
+      if (access.allowed !== true) { setStatus('locked'); return; }
       await loadProfile();
       setUser(res.user);
       setArrival(computeArrival(res.user.email));

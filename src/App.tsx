@@ -3,11 +3,13 @@ import { AuthProvider, useAuth } from './auth/AuthContext';
 import { Splash } from './pages/Splash';
 import { SignIn } from './pages/SignIn';
 import { CompanionConsole } from './pages/CompanionConsole';
+import { AccessLocked } from './pages/AccessLocked';
 
 /** Home: Athena when signed in, otherwise the sign-in gate. */
 function Home() {
   const { status } = useAuth();
   if (status === 'loading') return <Splash />;
+  if (status === 'locked') return <AccessLocked />;
   if (status === 'authenticated') return <CompanionConsole />;
   return <SignIn />;
 }
