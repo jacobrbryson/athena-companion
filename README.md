@@ -51,12 +51,18 @@ URL) to **Authorized JavaScript origins** of the Google OAuth web client.
 ## Build & deploy
 
 ```bash
-npm run build && npm start        # serves ./dist on $PORT (default 8080), /unity proxied to GCS
-gcloud builds submit --config cloudbuild.yaml
+npm run build && npm start        # serves ./dist on $PORT (default 8080)
+gcloud builds submit --config cloudbuild.yaml --project athena-476423 --region us-central1
 ```
 
-After deploying: add the Companion URL to the proxy's `CORS_ALLOWED_ORIGINS`
-and to the Google OAuth client's authorized origins.
+Live: https://athena-companion-mlkumvppsa-uc.a.run.app
+
+In production Unity loads straight from the GCS bucket (`_VITE_UNITY_ASSET_BASE`).
+The same-origin `/unity` proxy is dev-only: the ~49 MB `unity.wasm` exceeds Cloud
+Run's 32 MiB response limit and returns a 500 when deployed. A new deployed origin
+must be in the proxy's `CORS_ALLOWED_ORIGINS` (proxy `cloudbuild.yaml`), the bucket
+CORS (`guardians/gcs-cors-athena-assets.json`), and the Google OAuth client's
+authorized JavaScript origins.
 
 ## Notes
 

@@ -49,8 +49,11 @@ substitutions:
   # proxy's CORS_ALLOWED_ORIGINS and to the Google OAuth client's Authorized
   # JavaScript origins.
   _VITE_PROXY_BASE: "https://athena-proxy-api-12367074465.us-central1.run.app"
-  # Same-origin /unity, reverse-proxied to the bucket by server.js (no CORS).
-  _VITE_UNITY_ASSET_BASE: "/unity"
+  # Load Unity straight from the bucket (its CORS allowlist includes the
+  # Companion origins: guardians/gcs-cors-athena-assets.json). NOT the
+  # same-origin /unity proxy: the ~49 MB unity.wasm exceeds Cloud Run's 32 MiB
+  # response limit and fails with a 500 there (fine locally, broken deployed).
+  _VITE_UNITY_ASSET_BASE: "https://storage.googleapis.com/assets-athena-app/unity"
   _VITE_GOOGLE_CLIENT_ID: "12367074465-eg00iem3k5nfsnh7v13j2rltql3c7nqg.apps.googleusercontent.com"
 options:
   logging: CLOUD_LOGGING_ONLY
