@@ -1,0 +1,56 @@
+steps:
+  # 1. Build the Docker image. VITE_* values are inlined at build time, so they
+  # are --build-args (not Cloud Run env vars). Tagged with $BUILD_ID so a manual
+  # `gcloud builds submit` (empty $COMMIT_SHA) still produces a valid tag.
+  - name: "gcr.io/cloud-builders/docker"
+    id: Build
+    args:
+      - "build"
+      - "-t"
+      - "$_AR_HOSTNAME/$PROJECT_ID/cloud-run-source-deploy/athena-companion:$BUILD_ID"
+      - "--build-arg"
+      - "VITE_PROXY_BASE=$_VITE_PROXY_BASE"
+      - "--build-arg"
+      - "VITE_UNITY_ASSET_BASE=$_VITE_UNITY_ASSET_BASE"
+      - "--build-arg"
+      - "VITE_GOOGLE_CLIENT_ID=$_VITE_GOOGLE_CLIENT_ID"
+      - "."
+
+  # 2. Push to Artifact Registry.
+  - name: "gcr.io/cloud-builders/docker"
+    id: Push
+    args:
+      - "push"
+      - "$_AR_HOSTNAME/$PROJECT_ID/cloud-run-source-deploy/athena-companion:$BUILD_ID"
+
+  # 3. Deploy to Cloud Run (public static frontend).
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
+    id: Deploy
+    args:
+      - "gcloud"
+      - "run"
+      - "deploy"
+      - "athena-companion"
+      - "--image"
+      - "$_AR_HOSTNAME/$PROJECT_ID/cloud-run-source-deploy/athena-companion:$BUILD_ID"
+      - "--region"
+      - "$_REGION"
+      - "--platform"
+      - "managed"
+      - "--allow-unauthenticated"
+
+images:
+  - "$_AR_HOSTNAME/$PROJECT_ID/cloud-run-source-deploy/athena-companion:$BUILD_ID"
+
+substitutions:
+  _AR_HOSTNAME: us-central1-docker.pkg.dev
+  _REGION: us-central1
+  # Public proxy_service URL. After the first deploy, add this app's URL to the
+  # proxy's CORS_ALLOWED_ORIGINS and to the Google OAuth client's Authorized
+  # JavaScript origins.
+  _VITE_PROXY_BASE: "https://athena-proxy-api-12367074465.us-central1.run.app"
+  # Same-origin /unity, reverse-proxied to the bucket by server.js (no CORS).
+  _VITE_UNITY_ASSET_BASE: "/unity"
+  _VITE_GOOGLE_CLIENT_ID: "12367074465-eg00iem3k5nfsnh7v13j2rltql3c7nqg.apps.googleusercontent.com"
+options:
+  logging: CLOUD_LOGGING_ONLY
