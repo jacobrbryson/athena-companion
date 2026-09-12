@@ -64,6 +64,14 @@ app.use(
   })
 );
 
+// /.well-known/* must never fall through to index.html. The client probes
+// /.well-known/athena-local to decide whether it is talking to a self-hosted
+// Athena; an HTML 200 is a false marker that only fails to match by accident
+// (JSON.parse throwing on "<!doctype html>"). A cloud deployment says 404.
+// After express.static, so a real file — a future assetlinks.json for Android
+// App Links, say — still serves.
+app.use('/.well-known', (_req, res) => res.status(404).json({ error: 'not found' }));
+
 // SPA fallback — every non-asset route returns index.html.
 app.get('*', (_req, res) => {
   res.sendFile(path.join(DIST, 'index.html'));
