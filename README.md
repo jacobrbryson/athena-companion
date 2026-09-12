@@ -50,9 +50,13 @@ URL) to **Authorized JavaScript origins** of the Google OAuth web client.
 
 ## Build & deploy
 
+Pushing to `main` on https://github.com/jacobrbryson/athena-companion deploys
+automatically (Cloud Build trigger `athena-companion` -> Cloud Run service
+`athena-companion`), the same as core_api and the proxy.
+
 ```bash
 npm run build && npm start        # serves ./dist on $PORT (default 8080)
-gcloud builds submit --config cloudbuild.yaml --project athena-476423 --region us-central1
+gcloud builds submit --config cloudbuild.yaml --project athena-476423 --region us-central1   # manual deploy
 ```
 
 Live: https://athena-companion-mlkumvppsa-uc.a.run.app
