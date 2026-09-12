@@ -9,6 +9,7 @@ import { MemoryPanel } from '../components/MemoryPanel';
 import { PhotoMemory } from '../components/PhotoMemory';
 import { BrainPanel, BrainPill, useBrainStatus } from '../components/BrainStatus';
 import { DevicesPanel } from '../components/DevicesPanel';
+import { LocalServerPanel } from '../components/LocalServerPanel';
 import { ARRIVAL_MESSAGES, buildGreeting } from '../athena/sequences';
 import type { MemoryEvent } from '../api/companion';
 
@@ -26,7 +27,7 @@ const ARRIVAL_MAX_MS = 14000;
 const MAX_VOICE_HOLD_MS = 20000;
 const MAX_MESSAGE = 2000;
 
-type Panel = 'memory' | 'photo' | 'brain' | 'devices' | null;
+type Panel = 'memory' | 'photo' | 'brain' | 'devices' | 'local' | null;
 
 export function CompanionConsole() {
   const { user, profile, arrival, consumeArrival, signOut } = useAuth();
@@ -206,6 +207,7 @@ export function CompanionConsole() {
     { icon: '📷', label: 'Show a photo', onClick: () => openPanel('photo') },
     { icon: '⚙️', label: 'Brain', onClick: () => openPanel('brain') },
     { icon: '📱', label: 'Phone & car', onClick: () => openPanel('devices') },
+    { icon: '🏠', label: 'Local server', onClick: () => openPanel('local') },
   ];
 
   return (
@@ -373,6 +375,7 @@ export function CompanionConsole() {
       {panel === 'photo' && <PhotoMemory onClose={() => setPanel(null)} onTalkAbout={talkAboutPhoto} />}
       {panel === 'brain' && <BrainPanel onClose={() => setPanel(null)} />}
       {panel === 'devices' && <DevicesPanel onClose={() => setPanel(null)} />}
+      {panel === 'local' && <LocalServerPanel onClose={() => setPanel(null)} />}
     </div>
   );
 }

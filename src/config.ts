@@ -4,6 +4,7 @@
  */
 
 // Base URL of the proxy_service. '' = same origin (local dev via Vite proxy).
+import { connection } from './localConnection';
 export const PROXY_BASE: string = (import.meta.env.VITE_PROXY_BASE ?? '').replace(/\/$/, '');
 
 // Where the Unity WebGL build lives (same-origin /unity by default; see vite.config.ts).
@@ -22,11 +23,11 @@ export const GOOGLE_CLIENT_ID: string =
 export const CLIENT_HEADERS = { 'X-Athena-Client': 'companion' } as const;
 
 export function proxyUrl(path: string): string {
-  return `${PROXY_BASE}${path}`;
+  return `${connection.base}${path}`;
 }
 
 export function wsUrl(path: string): string {
-  const base = PROXY_BASE || window.location.origin;
+  const base = connection.base || window.location.origin;
   return base.replace(/^http/, 'ws') + path;
 }
 

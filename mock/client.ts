@@ -13,6 +13,15 @@ const iso = (msAgo: number) => new Date(now - msAgo).toISOString();
 const DAY = 86_400_000;
 
 let signedIn = localStorage.getItem('mock_signed_in') === 'true';
+/**
+ * Dev-only fault injection for the "left it open all night" failures:
+ *   mock_ip_drift=true   every /api/v1 call 401s until the session is re-pinned
+ *                        (POST /auth/companion/refresh) — the real IP-pin drift
+ *   mock_link_down=true  the API is unreachable (503) — the LinkLost screen
+ * Toggle them live with __mockIpDrift() / __mockLinkDown().
+ */
+let ipDrift = localStorage.getItem('mock_ip_drift') === 'true';
+const linkDown = () => localStorage.getItem('mock_link_down') === 'true';
 // Dev-only access fixtures: set mock_access_locked=true to review the gate.
 const mockAccess = () => ({ allowed: localStorage.getItem('mock_access_locked') !== 'true', requested: localStorage.getItem('mock_access_requested') === 'true' });
 const messages: { uuid: string; is_human: boolean; text: string; created_at: string }[] = [
@@ -98,8 +107,8 @@ const devices = [
   { uuid: 'd1', name: 'Pixel 9', platform: 'android', capabilities: { ramGb: 12, installed: [{ id: 'gemini-nano' }] }, last_seen_at: iso(3 * 60_000), created_at: iso(DAY * 5) },
 ];
 
-function fail(status: number, message: string): never {
-  throw Object.assign(new Error(message), { status });
+function fail(status: number, message: string, code?: string): never {
+  throw Object.assign(new Error(message), { status, code });
 }
 
 async function route(method: string, path: string, body?: any): Promise<any> {
@@ -122,6 +131,16 @@ async function route(method: string, path: string, body?: any): Promise<any> {
     return { success: true };
   }
   if (p === '/auth/companion/ws-ticket') fail(503, 'no sockets in mock mode'); // exercises the polling fallback
+  if (p === '/auth/companion/refresh') {
+    if (!signedIn) fail(401, 'Not authenticated', 'SESSION_EXPIRED');
+    ipDrift = false; // re-pinned to the current IP, exactly like the proxy
+    localStorage.removeItem('mock_ip_drift');
+    return { success: true, user: { email: 'sam@example.com', full_name: 'Sam Rivera', picture: null } };
+  }
+  if (p.startsWith('/api/v1')) {
+    if (linkDown()) fail(503, 'mock: API unreachable');
+    if (ipDrift) fail(401, 'IP mismatch for provided token.', 'IP_MISMATCH');
+  }
   if (p === '/api/v1/access') {
     if (!signedIn) fail(401, 'Not authenticated');
     if (method === 'POST') localStorage.setItem('mock_access_requested', 'true');
@@ -180,14 +199,46 @@ async function route(method: string, path: string, body?: any): Promise<any> {
 export interface ApiError extends Error {
   status: number;
   body?: unknown;
+  code?: string;
+}
+
+export const SESSION_EXPIRED_EVENT = 'athena-session-expired';
+
+/** Mirrors the real client: one 401 -> re-pin the session -> replay once. */
+async function request<T>(method: string, path: string, data?: unknown): Promise<T> {
+  try {
+    return (await route(method, path, data)) as T;
+  } catch (err) {
+    const e = err as ApiError;
+    if (e?.status !== 401 || path.startsWith('/auth/')) throw e;
+    try {
+      await route('POST', '/auth/companion/refresh');
+    } catch {
+      window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT));
+      throw e;
+    }
+    return (await route(method, path, data)) as T;
+  }
 }
 
 export const api = {
-  get: <T>(path: string) => route('GET', path) as Promise<T>,
-  text: (path: string) => route('GET', path) as Promise<string>,
-  post: <T>(path: string, data?: unknown) => route('POST', path, data) as Promise<T>,
-  del: <T>(path: string) => route('DELETE', path) as Promise<T>,
+  get: <T>(path: string) => request<T>('GET', path),
+  text: (path: string) => request<string>('GET', path),
+  post: <T>(path: string, data?: unknown) => request<T>('POST', path, data),
+  del: <T>(path: string) => request<T>('DELETE', path),
 };
 
 // In mock mode the Google button can't run, so expose a one-click sign-in.
 (window as any).__mockSignIn = () => route('POST', '/auth/companion/google');
+// Fault injection helpers (see ipDrift above).
+(window as any).__mockIpDrift = (on = true) => {
+  ipDrift = on;
+  if (on) localStorage.setItem('mock_ip_drift', 'true');
+  else localStorage.removeItem('mock_ip_drift');
+  return `ip drift ${on ? 'on' : 'off'}`;
+};
+(window as any).__mockLinkDown = (on = true) => {
+  if (on) localStorage.setItem('mock_link_down', 'true');
+  else localStorage.removeItem('mock_link_down');
+  return `link ${on ? 'down' : 'up'}`;
+};

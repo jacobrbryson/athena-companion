@@ -4,18 +4,26 @@ import { Splash } from './pages/Splash';
 import { SignIn } from './pages/SignIn';
 import { CompanionConsole } from './pages/CompanionConsole';
 import { AccessLocked } from './pages/AccessLocked';
+import { LinkLost } from './pages/LinkLost';
+import { useState } from 'react';
+import { LocalServerPanel } from './components/LocalServerPanel';
+import { connection } from './localConnection';
 
 /** Home: Athena when signed in, otherwise the sign-in gate. */
 function Home() {
   const { status } = useAuth();
   if (status === 'loading') return <Splash />;
+  if (status === 'unreachable') return <LinkLost />;
   if (status === 'locked') return <AccessLocked />;
   if (status === 'authenticated') return <CompanionConsole />;
   return <SignIn />;
 }
 
 export default function App() {
+  const [setup, setSetup] = useState(connection.kind === 'blocked');
   return (
+    <>
+    {connection.kind !== 'blocked' &&
     <AuthProvider>
       <BrowserRouter>
         <Routes>
@@ -24,5 +32,12 @@ export default function App() {
         </Routes>
       </BrowserRouter>
     </AuthProvider>
+    }
+    <div className="fixed bottom-0 left-0 z-40 max-w-[75vw] rounded bg-black/90 px-2 text-[10px] text-emerald-200">
+      <button onClick={() => setSetup(true)} className="underline">{connection.kind === 'local' ? 'Local server' : 'Local server setup'}</button>
+      {connection.message && <span className="ml-2">{connection.message}</span>}
+    </div>
+    {setup && <LocalServerPanel onClose={() => setSetup(false)} />}
+    </>
   );
 }
