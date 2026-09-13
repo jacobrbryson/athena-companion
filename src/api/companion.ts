@@ -142,3 +142,64 @@ export const devicesApi = {
     }),
   revoke: (uuid: string) => api.del(`/api/v1/devices/${uuid}`),
 };
+
+// ---------------------------------------------------- integrations (OAuth) ---
+
+/** The stored link, as the server exposes it — never any token material. */
+export interface IntegrationLink {
+  uuid: string;
+  provider: string;
+  kind: string;
+  external_account_id: string | null;
+  display_name: string | null;
+  scopes: string[];
+  expires_at: string | null;
+  status: 'active' | 'needs_reauth' | 'revoked';
+  expired: boolean;
+  last_refreshed_at: string | null;
+  last_used_at: string | null;
+  created_at: string;
+}
+
+export interface IntegrationProvider {
+  provider: string;
+  label: string;
+  scopes: string[];
+  /** A family consent that must exist before this one can be linked. */
+  requires_consent: string | null;
+  connected: boolean;
+  link: IntegrationLink | null;
+}
+
+export const integrationsApi = {
+  list: () =>
+    api.get<{ providers: IntegrationProvider[] }>('/api/v1/integrations').then((r) => r.providers),
+  /**
+   * Start an authorization. Returns the URL to navigate to rather than
+   * redirecting: this is an XHR, so a 302 would be followed by fetch and the
+   * consent screen would never reach the address bar.
+   */
+  connect: (provider: string, redirectTo: string) =>
+    api.post<{ provider: string; authorize_url: string; expires_in: number }>(
+      `/api/v1/integrations/${provider}/connect`,
+      { redirect_to: redirectTo }
+    ),
+  disconnect: (provider: string) =>
+    api.del<{ provider: string; revoked: boolean; revoked_upstream: boolean }>(
+      `/api/v1/integrations/${provider}`
+    ),
+};
+
+export interface ConsentStatus {
+  consents: Record<string, { accepted: boolean; document_version: string; accepted_at: string }>;
+  all_required_accepted: boolean;
+}
+
+export const consentApi = {
+  status: () => api.get<ConsentStatus>('/api/v1/consent/status'),
+  accept: (consentType: string, documentVersion = '1.0') =>
+    api.post<ConsentStatus>('/api/v1/consent', {
+      consent_type: consentType,
+      document_version: documentVersion,
+    }),
+};

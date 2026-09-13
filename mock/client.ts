@@ -103,6 +103,55 @@ const manifest = {
   ],
 };
 
+/**
+ * Integration fixtures. Covers the three states the panel renders:
+ * connected, never connected, and a link whose grant was rejected.
+ */
+const integrations = [
+  {
+    provider: 'google_calendar',
+    label: 'Google Calendar',
+    scopes: ['calendar.readonly'],
+    requires_consent: null,
+    connected: true,
+    link: {
+      uuid: 'i1', provider: 'google_calendar', kind: 'oauth2',
+      external_account_id: 'g-1', display_name: 'sam@example.com',
+      scopes: ['calendar.readonly'], expires_at: null, status: 'active' as const,
+      expired: false, last_refreshed_at: iso(3600_000), last_used_at: iso(900_000),
+      created_at: iso(DAY * 12),
+    },
+  },
+  {
+    provider: 'strava',
+    label: 'Strava',
+    scopes: ['read', 'activity:read'],
+    requires_consent: 'health_data',
+    connected: false,
+    link: null,
+  },
+  {
+    provider: 'whoop',
+    label: 'Whoop',
+    scopes: ['read:recovery', 'read:sleep', 'read:workout', 'read:profile', 'offline'],
+    requires_consent: 'health_data',
+    connected: true,
+    link: {
+      uuid: 'i3', provider: 'whoop', kind: 'oauth2',
+      external_account_id: 'w-1', display_name: 'Sam B',
+      scopes: ['read:recovery'], expires_at: iso(-3600_000), status: 'needs_reauth' as const,
+      expired: true, last_refreshed_at: iso(DAY * 3), last_used_at: iso(DAY * 3),
+      created_at: iso(DAY * 40),
+    },
+  },
+];
+
+/**
+ * Set mock_consent_health=true to preview the already-consented path; the
+ * default shows the consent gate the server enforces with a 412.
+ */
+const healthConsented = () => localStorage.getItem('mock_consent_health') === 'true';
+
 const devices = [
   { uuid: 'd1', name: 'Pixel 9', platform: 'android', capabilities: { ramGb: 12, installed: [{ id: 'gemini-nano' }] }, last_seen_at: iso(3 * 60_000), created_at: iso(DAY * 5) },
 ];
@@ -193,6 +242,37 @@ async function route(method: string, path: string, body?: any): Promise<any> {
   if (p === '/api/v1/devices' && method === 'GET') return devices;
   if (p === '/api/v1/devices/pairing-code') return { code: 'K7QP-3XMV', device_uuid: 'd-new', expires_in: 600 };
   if (method === 'DELETE' && p.startsWith('/api/v1/devices/')) return { success: true };
+
+  if (p === '/api/v1/integrations' && method === 'GET') return { providers: integrations };
+  if (p === '/api/v1/consent/status') {
+    return {
+      consents: healthConsented()
+        ? { health_data: { accepted: true, document_version: '1.0', accepted_at: iso(DAY) } }
+        : {},
+      all_required_accepted: true,
+    };
+  }
+  if (p === '/api/v1/consent' && method === 'POST') {
+    localStorage.setItem('mock_consent_health', 'true');
+    return { consents: { health_data: { accepted: true, document_version: '1.0', accepted_at: new Date().toISOString() } }, all_required_accepted: true };
+  }
+  if (method === 'POST' && /^\/api\/v1\/integrations\/[^/]+\/connect$/.test(p)) {
+    const provider = p.split('/')[4];
+    const entry = integrations.find((i) => i.provider === provider);
+    // Mirror the server's 412 so the consent gate is reachable in mock mode.
+    if (entry?.requires_consent && !healthConsented()) {
+      fail(412, `Connecting ${entry.label} requires the health_data consent first`, 'consent_required');
+    }
+    // Bounce straight back to the app rather than leaving for a real provider.
+    return { provider, authorize_url: `${location.origin}/?integration=${provider}&status=connected`, expires_in: 600 };
+  }
+  if (method === 'DELETE' && /^\/api\/v1\/integrations\/[^/]+$/.test(p)) {
+    const provider = p.split('/')[4];
+    const entry = integrations.find((i) => i.provider === provider);
+    if (entry) { entry.connected = false; entry.link = null; }
+    return { provider, revoked: true, revoked_upstream: true };
+  }
+
   fail(404, `mock: no route for ${method} ${p}`);
 }
 

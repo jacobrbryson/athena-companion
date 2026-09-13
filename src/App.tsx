@@ -33,10 +33,18 @@ export default function App() {
       </BrowserRouter>
     </AuthProvider>
     }
-    <div className="fixed bottom-0 left-0 z-40 max-w-[75vw] rounded bg-black/90 px-2 text-[10px] text-emerald-200">
-      <button onClick={() => setSetup(true)} className="underline">{connection.kind === 'local' ? 'Local server' : 'Local server setup'}</button>
-      {connection.message && <span className="ml-2">{connection.message}</span>}
-    </div>
+    {/*
+      Only shown when the connection is BLOCKED. In that state the console
+      never renders, so closing the setup panel would otherwise leave no way
+      back into it. Everywhere else this lives in the console menu
+      (⋯ → Local server) rather than floating over the chat.
+    */}
+    {connection.kind === 'blocked' && !setup && (
+      <div className="fixed bottom-0 left-0 z-40 max-w-[75vw] rounded bg-black/90 px-2 text-[10px] text-emerald-200">
+        <button onClick={() => setSetup(true)} className="underline">Local server setup</button>
+        {connection.message && <span className="ml-2">{connection.message}</span>}
+      </div>
+    )}
     {setup && <LocalServerPanel onClose={() => setSetup(false)} />}
     </>
   );

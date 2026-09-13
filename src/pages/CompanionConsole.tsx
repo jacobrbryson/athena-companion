@@ -10,6 +10,11 @@ import { PhotoMemory } from '../components/PhotoMemory';
 import { BrainPanel, BrainPill, useBrainStatus } from '../components/BrainStatus';
 import { DevicesPanel } from '../components/DevicesPanel';
 import { LocalServerPanel } from '../components/LocalServerPanel';
+import {
+  IntegrationsPanel,
+  readIntegrationCallback,
+  type IntegrationCallback,
+} from '../components/IntegrationsPanel';
 import { ARRIVAL_MESSAGES, buildGreeting } from '../athena/sequences';
 import type { MemoryEvent } from '../api/companion';
 
@@ -27,7 +32,7 @@ const ARRIVAL_MAX_MS = 14000;
 const MAX_VOICE_HOLD_MS = 20000;
 const MAX_MESSAGE = 2000;
 
-type Panel = 'memory' | 'photo' | 'brain' | 'devices' | 'local' | null;
+type Panel = 'memory' | 'photo' | 'brain' | 'devices' | 'local' | 'integrations' | null;
 
 export function CompanionConsole() {
   const { user, profile, arrival, consumeArrival, signOut } = useAuth();
@@ -50,7 +55,13 @@ export function CompanionConsole() {
 
   const [draft, setDraft] = useState('');
   const [menuOpen, setMenuOpen] = useState(false);
-  const [panel, setPanel] = useState<Panel>(null);
+  // Returning from a provider's consent screen. Read once, on the first
+  // render, because it scrubs the query string as a side effect.
+  const [integrationCallback, setIntegrationCallback] = useState<IntegrationCallback | null>(
+    () => readIntegrationCallback()
+  );
+  // Land straight on the result rather than making the person find the panel.
+  const [panel, setPanel] = useState<Panel>(integrationCallback ? 'integrations' : null);
   const inputId = useId();
   const menuRef = useRef<HTMLDivElement | null>(null);
   const logRef = useRef<HTMLDivElement | null>(null);
@@ -208,6 +219,7 @@ export function CompanionConsole() {
     { icon: '⚙️', label: 'Brain', onClick: () => openPanel('brain') },
     { icon: '📱', label: 'Phone & car', onClick: () => openPanel('devices') },
     { icon: '🏠', label: 'Local server', onClick: () => openPanel('local') },
+    { icon: '🔗', label: 'Connected apps', onClick: () => openPanel('integrations') },
   ];
 
   return (
@@ -376,6 +388,15 @@ export function CompanionConsole() {
       {panel === 'brain' && <BrainPanel onClose={() => setPanel(null)} />}
       {panel === 'devices' && <DevicesPanel onClose={() => setPanel(null)} />}
       {panel === 'local' && <LocalServerPanel onClose={() => setPanel(null)} />}
+      {panel === 'integrations' && (
+        <IntegrationsPanel
+          callback={integrationCallback}
+          onClose={() => {
+            setIntegrationCallback(null);
+            setPanel(null);
+          }}
+        />
+      )}
     </div>
   );
 }
