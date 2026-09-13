@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Athena Companion — a personal AI companion console (React), styled after the Guardians app.",
   "scripts": {
-    "test:local": "node --test scripts/localConnection.test.mjs",
+    "test:local": "node --test scripts/localConnection.test.mjs scripts/localUnityAssets.test.mjs",
     "dev": "vite",
     "dev:mock": "vite --config vite.mock.config.ts",
     "build": "vite build",

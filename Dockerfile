@@ -29,7 +29,7 @@ COPY package*.json ./
 RUN npm install --omit=dev
 
 COPY --from=builder /app/dist ./dist
-COPY server.js ./
+COPY server.js localUnityAssets.js ./
 
 ENV PORT=8080
 EXPOSE 8080

@@ -110,8 +110,7 @@ export function BrainPanel({ onClose }: { onClose: () => void }) {
               })}
             </div>
             <p className="mt-2 text-xs opacity-60">
-              Policy <span className="font-mono">{status.policy}</span>: device first, then Orcwood servers, frontier as the
-              last resort. Unhealthy servers are rested automatically and retried later.
+              Active policy: <span className="font-mono">{status.policy}</span>. Unhealthy servers are rested automatically and retried later.
             </p>
             {served > 0 && (
               <p className="mt-1 text-xs opacity-60">
@@ -119,6 +118,18 @@ export function BrainPanel({ onClose }: { onClose: () => void }) {
               </p>
             )}
           </section>
+
+          {status.automaticManagement && <section>
+            <Label>automatic performance management</Label>
+            <p className="text-xs opacity-70">I monitor response speed, errors and output validation. After enough observations, I prefer alternatives within the same provider tier. Observations expire after {status.automaticManagement.windowMs / 60_000} minutes so recovering models can be tried again.</p>
+            <ul className="mt-2 space-y-1 text-xs">
+              {Object.entries(status.automaticManagement.tasks).flatMap(([task, entries]) => entries.map(e => (
+                <li key={`${task}:${e.endpointId}`}>
+                  {task} · {e.endpointId}: {e.reason === 'learning' ? 'Learning from usage' : e.reason === 'meeting-target' ? 'Meeting response targets' : e.reason === 'slow-responses' ? 'Slow responses; prefer an alternative when available' : 'Repeated errors or invalid output; prefer an alternative when available'} ({e.samples} observations)
+                </li>
+              )))}
+            </ul>
+          </section>}
 
           <section>
             <Label>orcwood servers</Label>
@@ -130,8 +141,7 @@ export function BrainPanel({ onClose }: { onClose: () => void }) {
               </ul>
             ) : (
               <p className="text-sm opacity-60">
-                None configured yet — everything is running on the frontier. Add a server with{' '}
-                <span className="font-mono text-xs">LLM_ORCWOOD_ENDPOINTS</span>.
+                No local model server is configured. Local installation is still an owner-operated preview.
               </p>
             )}
           </section>

@@ -92,6 +92,13 @@ export interface ServingTier {
 }
 
 export interface LlmStatus {
+  automaticManagement?: {
+    mode: string;
+    windowMs: number;
+    minimumSamples: number;
+    slowResponseMs: number;
+    tasks: Record<string, { endpointId: string; model: string; samples: number; failures: number; latencyMs: number | null; reason: string; penalty: number }[]>;
+  };
   policy: string;
   childPolicy: string;
   embeddingSpace: string;

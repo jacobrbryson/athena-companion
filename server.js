@@ -9,6 +9,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import express from 'express';
 import httpProxy from 'http-proxy';
+import { localUnityAssets } from './localUnityAssets.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -48,7 +49,9 @@ unityProxy.on('error', (err, _req, res) => {
 // works locally and behind any other proxy.
 app.get(['/healthz', '/health'], (_req, res) => res.json({ status: 'ok' }));
 
-app.use('/unity', (req, res) => {
+if (process.env.UNITY_LOCAL_DIR) {
+  app.use('/unity', localUnityAssets(process.env.UNITY_LOCAL_DIR));
+} else app.use('/unity', (req, res) => {
   // Under the mount, req.url has '/unity' stripped — restore it so the upstream
   // path becomes <bucket base>/unity/Build/... (prependPath keeps the base).
   req.url = `/unity${req.url}`;
