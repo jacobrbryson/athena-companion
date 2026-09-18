@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useAuth } from '../auth/AuthContext';
 import { useChat, type Message } from '../athena/useChat';
 import { useVoiceInput } from '../athena/useVoiceInput';
@@ -9,6 +9,11 @@ import { MemoryPanel } from '../components/MemoryPanel';
 import { PhotoMemory } from '../components/PhotoMemory';
 import { BrainPanel, BrainPill, useBrainStatus } from '../components/BrainStatus';
 import { DevicesPanel } from '../components/DevicesPanel';
+import { ActionsPanel } from '../components/ActionsPanel';
+import { InitiativePanel } from '../components/InitiativePanel';
+import { useNudges } from '../athena/useNudges';
+import { ActionProposal } from '../components/ActionProposal';
+import { useActions } from '../athena/useActions';
 import { LocalServerPanel } from '../components/LocalServerPanel';
 import {
   IntegrationsPanel,
@@ -32,7 +37,7 @@ const ARRIVAL_MAX_MS = 14000;
 const MAX_VOICE_HOLD_MS = 20000;
 const MAX_MESSAGE = 2000;
 
-type Panel = 'memory' | 'photo' | 'brain' | 'devices' | 'local' | 'integrations' | null;
+type Panel = 'memory' | 'photo' | 'brain' | 'devices' | 'local' | 'integrations' | 'actions' | 'initiative' | null;
 
 export function CompanionConsole() {
   const { user, profile, arrival, consumeArrival, signOut } = useAuth();
@@ -51,6 +56,13 @@ export function CompanionConsole() {
   }, []);
 
   const chat = useChat(profile!.uuid, { onBeforeAthenaMessage: holdForVoice });
+  // Proposals Athena is waiting on. Gated on `arriving` being over so a card
+  // cannot land on top of the arrival sequence.
+  const actions = useActions(!!profile);
+  // Things she raised without being asked. Rendered into the transcript
+  // rather than as a card: she started a conversation, so it should look like
+  // one.
+  const nudges = useNudges(!!profile);
   const brain = useBrainStatus();
 
   const [draft, setDraft] = useState('');
@@ -64,6 +76,49 @@ export function CompanionConsole() {
   const [panel, setPanel] = useState<Panel>(integrationCallback ? 'integrations' : null);
   const inputId = useId();
   const menuRef = useRef<HTMLDivElement | null>(null);
+  /**
+   * The conversation as one time-ordered list: her replies, the person's
+   * messages, and the things she raised herself.
+   *
+   * Merged by timestamp rather than appended, because a nudge is a message —
+   * appending would park something she said twenty minutes ago underneath a
+   * reply to something else, which reads as her losing the thread.
+   */
+  const transcript = useMemo(() => {
+    let lastAt = 0;
+    const entries: {
+      kind: 'message' | 'nudge';
+      uuid: string;
+      at: number;
+      message?: (typeof chat.messages)[number];
+      nudge?: (typeof nudges.nudges)[number];
+    }[] = [
+      // A locally injected message (the arrival greeting) carries no
+      // timestamp. Falling back to 0 would fling it to the top of the
+      // transcript, so it inherits the moment just after the last message
+      // that did have one — which is where it actually belongs.
+      ...chat.messages.map((m, i) => {
+        if (m.created_at) lastAt = new Date(m.created_at).getTime();
+        return {
+          kind: 'message' as const,
+          uuid: m.uuid,
+          at: m.created_at ? new Date(m.created_at).getTime() : lastAt + i,
+          message: m,
+        };
+      }),
+      ...nudges.nudges.map((n) => ({
+        kind: 'nudge' as const,
+        uuid: n.uuid,
+        at: new Date(n.created_at).getTime(),
+        nudge: n,
+      })),
+    ];
+    return entries.sort((a, b) => a.at - b.at) as (
+      | { kind: 'message'; uuid: string; at: number; message: (typeof chat.messages)[number] }
+      | { kind: 'nudge'; uuid: string; at: number; nudge: (typeof nudges.nudges)[number] }
+    )[];
+  }, [chat.messages, nudges.nudges]);
+
   const logRef = useRef<HTMLDivElement | null>(null);
   const spokenRef = useRef<string | null>(null);
   const ttsInitRef = useRef(false);
@@ -179,7 +234,9 @@ export function CompanionConsole() {
   useEffect(() => {
     const el = logRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [chat.messages, chat.isThinking]);
+  // actions.pending too: a proposal card arrives after the reply that
+  // explains it, and a card scrolled out of view is a card nobody answers.
+  }, [chat.messages, chat.isThinking, actions.pending, nudges.nudges]);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -198,6 +255,10 @@ export function CompanionConsole() {
   function onSubmit(e: FormEvent) {
     e.preventDefault();
     if (!draft.trim()) return;
+    // Replying while something she raised is still open IS the engagement.
+    // Asking for a thumbs-up on top of an actual answer would be worse data
+    // and a worse conversation.
+    nudges.engageAll();
     send(draft);
     setDraft('');
   }
@@ -219,6 +280,8 @@ export function CompanionConsole() {
     { icon: '⚙️', label: 'Brain', onClick: () => openPanel('brain') },
     { icon: '📱', label: 'Phone & car', onClick: () => openPanel('devices') },
     { icon: '🏠', label: 'Local server', onClick: () => openPanel('local') },
+    { icon: '⚡', label: 'Actions', onClick: () => openPanel('actions') },
+    { icon: '💡', label: 'Initiative', onClick: () => openPanel('initiative') },
     { icon: '🔗', label: 'Connected apps', onClick: () => openPanel('integrations') },
   ];
 
@@ -318,17 +381,46 @@ export function CompanionConsole() {
               {voice.isSupported ? 'Tap the mic or type. Ask what she remembers.' : 'Type to talk to Athena. Ask what she remembers.'}
             </p>
           )}
-          {chat.messages.map((m) => (
-            <div key={m.uuid} className={`flex ${m.is_human ? 'justify-end' : 'justify-start'}`}>
-              <p
-                className={`max-w-[85%] whitespace-pre-line rounded-2xl px-4 py-2 text-sm leading-relaxed ${
-                  m.is_human ? 'bg-emerald-500/20 text-emerald-50' : 'bg-white/5 text-emerald-100'
-                }`}
+          {transcript.map((entry) =>
+            entry.kind === 'message' ? (
+              <div
+                key={entry.uuid}
+                className={`flex ${entry.message.is_human ? 'justify-end' : 'justify-start'}`}
               >
-                {m.text}
-              </p>
-            </div>
-          ))}
+                <p
+                  className={`max-w-[85%] whitespace-pre-line rounded-2xl px-4 py-2 text-sm leading-relaxed ${
+                    entry.message.is_human
+                      ? 'bg-emerald-500/20 text-emerald-50'
+                      : 'bg-white/5 text-emerald-100'
+                  }`}
+                >
+                  {entry.message.text}
+                </p>
+              </div>
+            ) : (
+              <div key={entry.uuid} className="flex justify-start">
+                {/* Marked as hers-unprompted. Without the marker the person
+                    cannot tell what they asked for from what she decided to
+                    raise, which is the difference they most want to see. */}
+                <div className="max-w-[85%] rounded-2xl border-l-2 border-emerald-400/50 bg-white/5 px-4 py-2">
+                  <p className="font-mono text-[9px] uppercase tracking-[0.3em] opacity-40">
+                    athena brought this up
+                  </p>
+                  <p className="mt-1 text-sm leading-relaxed text-emerald-100">
+                    {entry.nudge.text}
+                  </p>
+                  {!entry.nudge.answered && (
+                    <button
+                      onClick={() => nudges.dismiss(entry.nudge.uuid)}
+                      className="mt-1.5 font-mono text-[10px] uppercase opacity-40 hover:opacity-80"
+                    >
+                      not now
+                    </button>
+                  )}
+                </div>
+              </div>
+            )
+          )}
           {chat.isThinking && (
             <div className="flex justify-start">
               <p className="rounded-2xl bg-white/5 px-4 py-2 text-sm opacity-60">
@@ -341,6 +433,26 @@ export function CompanionConsole() {
               <p className="max-w-[85%] rounded-2xl bg-emerald-500/10 px-4 py-2 text-sm italic opacity-70">{voice.interim}</p>
             </div>
           )}
+
+          {/* Approval cards, at the foot of the transcript so a card reads as
+              the follow-up to what Athena just said. Inside the scroller on
+              purpose: a floating card over the input is the shape people
+              dismiss by reflex, and this is the one thing in the app that must
+              not be dismissed by reflex. */}
+          {!arriving &&
+            actions.pending.map((a) => (
+              <div key={a.uuid} className="flex justify-start">
+                <div className="w-full max-w-[85%]">
+                  <ActionProposal
+                    action={a}
+                    busy={actions.busyUuid === a.uuid}
+                    onConfirm={() => void actions.confirm(a.uuid)}
+                    onDecline={() => void actions.decline(a.uuid)}
+                    onDismiss={() => actions.dismiss(a.uuid)}
+                  />
+                </div>
+              </div>
+            ))}
         </div>
 
         <form onSubmit={onSubmit} className="flex items-center gap-2 border-t border-emerald-500/10 px-3 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
@@ -387,6 +499,8 @@ export function CompanionConsole() {
       {panel === 'photo' && <PhotoMemory onClose={() => setPanel(null)} onTalkAbout={talkAboutPhoto} />}
       {panel === 'brain' && <BrainPanel onClose={() => setPanel(null)} />}
       {panel === 'devices' && <DevicesPanel onClose={() => setPanel(null)} />}
+      {panel === 'actions' && <ActionsPanel onClose={() => setPanel(null)} />}
+      {panel === 'initiative' && <InitiativePanel onClose={() => setPanel(null)} />}
       {panel === 'local' && <LocalServerPanel onClose={() => setPanel(null)} />}
       {panel === 'integrations' && (
         <IntegrationsPanel

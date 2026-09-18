@@ -47,6 +47,9 @@ export interface ChatOptions {
   onBeforeAthenaMessage?: (message: Message) => Promise<void>;
 }
 
+/** Fired when Athena proposes an action. See useActions. */
+export const ACTION_PROPOSED_EVENT = 'athena-action-proposed';
+
 export type ChatTransport = 'connecting' | 'ws' | 'polling';
 
 export interface ChatState {
@@ -237,6 +240,16 @@ export function useChat(profileUuid: string, options?: ChatOptions): ChatState {
           }
           if (msg?.rpc === 'sessionStatus' && msg.session?.is_busy === true) {
             setThinking(true);
+          }
+          // Athena proposed doing something. Re-broadcast as a DOM event
+          // rather than adding it to chat state: the proposal card lives
+          // outside the transcript, and useActions also polls, so this is
+          // purely the fast path — everything still works on the polling
+          // transport where no socket message ever arrives.
+          if (msg?.rpc === 'actionProposed' && msg.action) {
+            window.dispatchEvent(
+              new CustomEvent(ACTION_PROPOSED_EVENT, { detail: msg.action })
+            );
           }
         } catch (err) {
           console.error('useChat: invalid WS JSON', err);

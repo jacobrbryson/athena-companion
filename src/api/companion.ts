@@ -203,3 +203,160 @@ export const consentApi = {
       document_version: documentVersion,
     }),
 };
+
+// ----------------------------------------------------------------- actions ---
+
+/**
+ * Something Athena proposed DOING rather than saying. She cannot execute any
+ * of these: the backend turns a validated field in her reply into a pending
+ * proposal, and this is the surface where a person approves or declines it.
+ * See core_api/src/services/actions.
+ */
+export interface AthenaAction {
+  uuid: string;
+  action_id: string;
+  label: string;
+  /** The plain-language sentence the person is approving. Server-authored. */
+  summary: string;
+  /** Athena's own one-line reason. Model text — display only. */
+  rationale: string | null;
+  params: Record<string, unknown> | null;
+  status: 'pending' | 'executing' | 'done' | 'failed' | 'declined' | 'expired';
+  approval: 'human' | 'standing' | null;
+  reversible: boolean;
+  result_ref: string | null;
+  error: string | null;
+  created_at: string;
+  expires_at: string;
+  executed_at: string | null;
+}
+
+/** Registry metadata. Lists actions the person has NOT enabled, so the panel can offer them. */
+export interface ActionCatalogEntry {
+  id: string;
+  label: string;
+  provider: string | null;
+  consent_type: string | null;
+  reversible: boolean;
+  standing: boolean;
+}
+
+export interface ActionAuthority {
+  action_id: string;
+  label: string;
+  expires_at: string | null;
+  created_at: string;
+}
+
+export interface ActionStatus {
+  catalog: ActionCatalogEntry[];
+  /** Ids Athena can actually propose right now (linked + consented). */
+  available: string[];
+  authorities: ActionAuthority[];
+  pending: AthenaAction[];
+}
+
+export const actionsApi = {
+  status: () => api.get<ActionStatus>('/api/v1/actions'),
+  pending: () => api.get<AthenaAction[]>('/api/v1/actions/pending'),
+  history: (limit = 25) => api.get<AthenaAction[]>(`/api/v1/actions/history?limit=${limit}`),
+  confirm: (uuid: string) =>
+    api.post<{ success: true; action: AthenaAction }>(`/api/v1/actions/${uuid}/confirm`),
+  decline: (uuid: string) =>
+    api.post<{ success: true; action: AthenaAction }>(`/api/v1/actions/${uuid}/decline`),
+  grantAuthority: (actionId: string) =>
+    api.post<{ success: true; authorities: ActionAuthority[] }>(
+      `/api/v1/actions/authority/${actionId}`
+    ),
+  revokeAuthority: (actionId: string) =>
+    api.del<{ success: true; authorities: ActionAuthority[] }>(
+      `/api/v1/actions/authority/${actionId}`
+    ),
+};
+
+// -------------------------------------------------------------- initiative ---
+
+/**
+ * Something Athena said without being asked. See core_api/src/services/initiative.
+ *
+ * `text` is model-worded but the DECISION to say it was a deterministic rule —
+ * the server keeps the observation that triggered it and does not send it here.
+ */
+export interface Nudge {
+  uuid: string;
+  trigger_id: string;
+  label: string;
+  urgency: 'low' | 'normal' | 'high';
+  text: string;
+  status: 'pending' | 'delivered' | 'engaged' | 'dismissed' | 'expired';
+  created_at: string;
+  expires_at: string;
+}
+
+export interface InitiativePref {
+  enabled: boolean;
+  /** Reaching a paired phone. Its own opt-in; cannot outlive `enabled`. */
+  push_enabled: boolean;
+  timezone: string | null;
+  quiet_from: number;
+  quiet_to: number;
+  daily_cap: number;
+}
+
+/** Whether push can work on this server at all, and who is registered. */
+export interface PushStatus {
+  available: boolean;
+  enabled: boolean;
+  devices: { uuid: string; name: string }[];
+}
+
+/**
+ * What Athena has learned about how one trigger lands for this person.
+ * `suppressed` is her own decision to stop raising it — reversible only by
+ * the person, from the panel.
+ */
+export interface TriggerScore {
+  score: number;
+  samples: number;
+  suppressed: boolean;
+  last_reason: string | null;
+}
+
+export interface TriggerCatalogEntry {
+  id: string;
+  label: string;
+  describe: string;
+  sources: string[];
+  urgency: string;
+}
+
+export interface InitiativeStatus {
+  pref: InitiativePref;
+  push: PushStatus;
+  scores: Record<string, TriggerScore>;
+  catalog: TriggerCatalogEntry[];
+  muted: string[];
+  recent: Nudge[];
+}
+
+export const initiativeApi = {
+  status: () => api.get<InitiativeStatus>('/api/v1/initiative'),
+  // Fetching marks them delivered server-side — do not call it speculatively.
+  pending: () => api.get<Nudge[]>('/api/v1/initiative/pending'),
+  setPref: (patch: Partial<InitiativePref>) =>
+    api.put<{ success: true; pref: InitiativePref }>('/api/v1/initiative/pref', patch),
+  react: (uuid: string, reaction: 'engaged' | 'dismissed') =>
+    api.post<{ success: true; uuid: string; status: string }>(
+      `/api/v1/initiative/${uuid}/react`,
+      { reaction }
+    ),
+  mute: (triggerId: string) =>
+    api.post<{ success: true; muted: string[] }>(`/api/v1/initiative/mute/${triggerId}`),
+  unmute: (triggerId: string) =>
+    api.del<{ success: true; muted: string[] }>(`/api/v1/initiative/mute/${triggerId}`),
+  /** Undo a suppression Athena applied to herself. */
+  resume: (triggerId: string) =>
+    api.post<{ success: true; trigger_id: string; score: TriggerScore }>(
+      `/api/v1/initiative/resume/${triggerId}`
+    ),
+};

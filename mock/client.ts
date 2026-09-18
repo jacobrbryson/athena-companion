@@ -156,6 +156,164 @@ const devices = [
   { uuid: 'd1', name: 'Pixel 9', platform: 'android', capabilities: { ramGb: 12, installed: [{ id: 'gemini-nano' }] }, last_seen_at: iso(3 * 60_000), created_at: iso(DAY * 5) },
 ];
 
+// ------------------------------------------------------------ initiative ---
+// Athena speaking first. The real evaluator is a scheduled job against live
+// calendar/Whoop data, so the mock fakes the OUTPUT of a pass: __mockNudge()
+// drops one in, and the console polls it up within a minute (or immediately
+// after a reload). Enough to work on the wording, the marker and the
+// engaged/dismissed loop without a database.
+const TRIGGER_CATALOG = [
+  { id: 'calendar_next_up', label: 'Something starting soon', describe: 'Tell me when something on my calendar is about to start.', sources: ['google_calendar'], urgency: 'high' },
+  { id: 'calendar_conflict', label: 'Two things booked at once', describe: 'Point out when two things on my calendar overlap.', sources: ['google_calendar'], urgency: 'normal' },
+  { id: 'recovery_vs_day', label: "A hard day on a bad night’s sleep", describe: 'Mention it when my day looks heavy and my recovery is low.', sources: ['whoop', 'google_calendar'], urgency: 'normal' },
+];
+type MockNudge = {
+  uuid: string;
+  trigger_id: string;
+  label: string;
+  urgency: 'low' | 'normal' | 'high';
+  text: string;
+  status: 'pending' | 'delivered' | 'engaged' | 'dismissed' | 'expired';
+  created_at: string;
+  expires_at: string;
+};
+let nudges: MockNudge[] = [];
+let mutedTriggers: string[] = [];
+// Learned standing per trigger. __mockReject('calendar_next_up') walks the
+// suppression path without needing a model or a fortnight of reactions.
+const triggerScores: Record<string, { score: number; samples: number; suppressed: boolean; last_reason: string | null }> = {};
+const initiativePref = {
+  enabled: localStorage.getItem('mock_initiative') === 'true',
+  push_enabled: localStorage.getItem('mock_push') === 'true',
+  timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+  quiet_from: 22,
+  quiet_to: 7,
+  daily_cap: 3,
+};
+
+function addMockNudge(triggerId = 'calendar_next_up') {
+  const entry = TRIGGER_CATALOG.find((t) => t.id === triggerId) || TRIGGER_CATALOG[0];
+  const text =
+    triggerId === 'calendar_conflict'
+      ? '"Design review" at 2:00 pm runs into "School pickup" — they overlap by twenty minutes.'
+      : triggerId === 'recovery_vs_day'
+        ? 'Your recovery is 31% and you have four things booked. Worth moving one?'
+        : 'Standup starts in about fifteen minutes.';
+  const nudge: MockNudge = {
+    uuid: `nudge-${Date.now()}`,
+    trigger_id: entry.id,
+    label: entry.label,
+    urgency: entry.urgency as MockNudge['urgency'],
+    text,
+    status: 'pending',
+    created_at: new Date().toISOString(),
+    expires_at: new Date(Date.now() + 20 * 60_000).toISOString(),
+  };
+  nudges.push(nudge);
+  return nudge;
+}
+
+(window as unknown as Record<string, unknown>).__mockReject = (id = 'calendar_next_up') => {
+  triggerScores[id] = { score: 0.19, samples: 3, suppressed: true, last_reason: 'you asked me to stop sending these' };
+  console.log('[mock] suppressed', id);
+  return id;
+};
+
+// Dev handle: __mockNudge() / __mockNudge('calendar_conflict') from the console.
+(window as unknown as Record<string, unknown>).__mockNudge = (id?: string) => {
+  const n = addMockNudge(id);
+  console.log('[mock] queued a nudge —', n.text);
+  return n.uuid;
+};
+
+// --------------------------------------------------------------- actions ---
+// Athena's action layer. The mock keeps proposals in memory so the whole
+// propose -> approve -> done path is walkable with no database: ask her to put
+// something on the calendar and a card appears.
+const actionsConsented = () => localStorage.getItem('mock_consent_actions') === 'true';
+const ACTION_CATALOG = [
+  { id: 'create_calendar_event', label: 'Add a calendar event', provider: 'google_calendar', consent_type: 'action_authority', reversible: true, standing: true },
+  { id: 'remember_fact', label: 'Save something to memory', provider: null, consent_type: null, reversible: true, standing: true },
+];
+type MockAction = {
+  uuid: string;
+  action_id: string;
+  label: string;
+  summary: string;
+  rationale: string | null;
+  params: Record<string, unknown> | null;
+  status: 'pending' | 'executing' | 'done' | 'failed' | 'declined' | 'expired';
+  approval: 'human' | 'standing' | null;
+  reversible: boolean;
+  result_ref: string | null;
+  error: string | null;
+  created_at: string;
+  expires_at: string;
+  executed_at: string | null;
+};
+let proposals: MockAction[] = [];
+const authorities: { action_id: string; label: string; expires_at: string | null; created_at: string }[] = [];
+
+/** Which actions are usable: mirrors the server's linked + consented filter. */
+function availableActions(): string[] {
+  // Matches the server, which gates on the credential's status rather than on
+  // its scopes: a readonly link still counts as linked, and the write failure
+  // it produces is a `needs_reauth` the person is told about, not a hidden action.
+  const calendarLinked = integrations.some(
+    (i) => i.provider === 'google_calendar' && i.link?.status === 'active'
+  );
+  return ACTION_CATALOG.filter((a) => {
+    if (a.consent_type === 'action_authority' && !actionsConsented()) return false;
+    if (a.provider === 'google_calendar' && !calendarLinked) return false;
+    return true;
+  }).map((a) => a.id);
+}
+
+/**
+ * The mock's stand-in for the model filling in `proposed_action`. Keyword-gated
+ * rather than clever: the point is to make the card reachable, not to guess.
+ */
+function maybePropose(text: string): MockAction | null {
+  const wantsEvent = /calendar|schedule|book|appointment|dentist|meeting/i.test(text);
+  const wantsMemory = /remember that|don't forget|note that/i.test(text);
+  const id = wantsEvent ? 'create_calendar_event' : wantsMemory ? 'remember_fact' : null;
+  if (!id || !availableActions().includes(id)) return null;
+
+  const start = new Date(now + DAY);
+  start.setHours(14, 0, 0, 0);
+  const end = new Date(start.getTime() + 3600_000);
+  const when = start.toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true });
+  const action: MockAction = {
+    uuid: `act-${Date.now()}`,
+    action_id: id,
+    label: ACTION_CATALOG.find((a) => a.id === id)!.label,
+    summary:
+      id === 'create_calendar_event'
+        ? `Add "Dentist" to your calendar: ${when} – ${end.toLocaleString('en-GB', { hour: 'numeric', minute: '2-digit', hour12: true })}`
+        : 'Remember that coffee order: oat flat white, no sugar',
+    rationale: id === 'create_calendar_event' ? 'You said to put it in for tomorrow afternoon' : 'You asked me to hold onto it',
+    params: id === 'create_calendar_event' ? { title: 'Dentist', start: start.toISOString(), end: end.toISOString() } : { category: 'preference', key: 'coffee order', value: 'oat flat white, no sugar' },
+    status: 'pending',
+    approval: null,
+    reversible: true,
+    result_ref: null,
+    error: null,
+    created_at: new Date().toISOString(),
+    expires_at: new Date(Date.now() + 15 * 60_000).toISOString(),
+    executed_at: null,
+  };
+  // A standing approval runs it inline, exactly as the server does.
+  if (authorities.some((a) => a.action_id === id)) {
+    action.status = 'done';
+    action.approval = 'standing';
+    action.result_ref = 'mock-evt-1';
+    action.executed_at = new Date().toISOString();
+  }
+  proposals.push(action);
+  return action;
+}
+
+
 function fail(status: number, message: string, code?: string): never {
   throw Object.assign(new Error(message), { status, code });
 }
@@ -203,14 +361,25 @@ async function route(method: string, path: string, body?: any): Promise<any> {
     messages.push(human);
     setTimeout(() => {
       const remember = /remember|recall/i.test(body.text);
+      const proposed = maybePropose(body.text);
       messages.push({
         uuid: `a-${Date.now()}`,
         is_human: false,
-        text: remember
-          ? "I don't remember you telling me that one — tell me and I'll hold onto it."
-          : 'Mm. Tell me more — is this about the trip, or something new?',
+        text: proposed
+          ? proposed.approval === 'standing'
+            ? "Done — I've put it in, since you told me not to ask."
+            : 'I can do that. Have a look and tell me if it’s right.'
+          : remember
+            ? "I don't remember you telling me that one — tell me and I'll hold onto it."
+            : 'Mm. Tell me more — is this about the trip, or something new?',
         created_at: new Date().toISOString(),
       });
+      // Stands in for the real server's `actionProposed` WebSocket broadcast
+      // (there is no socket in mock mode). Same event name useChat dispatches,
+      // so useActions picks it up without waiting for its 20s poll.
+      if (proposed) {
+        window.dispatchEvent(new CustomEvent('athena-action-proposed', { detail: proposed }));
+      }
     }, 1400);
     return { message: human };
   }
@@ -243,18 +412,129 @@ async function route(method: string, path: string, body?: any): Promise<any> {
   if (p === '/api/v1/devices/pairing-code') return { code: 'K7QP-3XMV', device_uuid: 'd-new', expires_in: 600 };
   if (method === 'DELETE' && p.startsWith('/api/v1/devices/')) return { success: true };
 
+  if (p === '/api/v1/initiative' && method === 'GET') {
+    return {
+      pref: initiativePref,
+      push: {
+        // Flip mock_push_unavailable to preview the "not set up on this
+        // server" copy, which is what most installs will actually see.
+        available: localStorage.getItem('mock_push_unavailable') !== 'true',
+        enabled: initiativePref.push_enabled,
+        devices: devices.filter((d) => d.platform !== 'web').map((d) => ({ uuid: d.uuid, name: d.name })),
+      },
+      scores: triggerScores,
+      catalog: TRIGGER_CATALOG,
+      muted: mutedTriggers,
+      recent: [...nudges].reverse(),
+    };
+  }
+  if (method === 'POST' && /^\/api\/v1\/initiative\/resume\/[^/]+$/.test(p)) {
+    const id = p.split('/')[5];
+    delete triggerScores[id];
+    return { success: true, trigger_id: id, score: { score: 0.5, samples: 0, suppressed: false, last_reason: null } };
+  }
+  if (p === '/api/v1/initiative/pending') {
+    // Marking on read, exactly as the server does: two tabs are one interruption.
+    const out = nudges.filter((n) => n.status === 'pending');
+    out.forEach((n) => { n.status = 'delivered'; });
+    return out;
+  }
+  if (p === '/api/v1/initiative/pref' && method === 'PUT') {
+    if (body?.enabled === true && !actionsConsented()) {
+      fail(403, 'That needs to be turned on in your consent settings first', 'consent_required');
+    }
+    Object.assign(initiativePref, body || {});
+    // Push cannot outlive initiative, same as the server.
+    if (!initiativePref.enabled) initiativePref.push_enabled = false;
+    localStorage.setItem('mock_initiative', initiativePref.enabled ? 'true' : 'false');
+    localStorage.setItem('mock_push', initiativePref.push_enabled ? 'true' : 'false');
+    return { success: true, pref: initiativePref };
+  }
+  if (method === 'POST' && /^\/api\/v1\/initiative\/mute\/[^/]+$/.test(p)) {
+    const id = p.split('/')[5];
+    if (!mutedTriggers.includes(id)) mutedTriggers.push(id);
+    return { success: true, muted: mutedTriggers };
+  }
+  if (method === 'DELETE' && /^\/api\/v1\/initiative\/mute\/[^/]+$/.test(p)) {
+    const id = p.split('/')[5];
+    mutedTriggers = mutedTriggers.filter((t) => t !== id);
+    return { success: true, muted: mutedTriggers };
+  }
+  if (method === 'POST' && /^\/api\/v1\/initiative\/[^/]+\/react$/.test(p)) {
+    const uuid = p.split('/')[4];
+    const n = nudges.find((x) => x.uuid === uuid);
+    if (!n || !['pending', 'delivered'].includes(n.status)) fail(409, 'No such nudge', 'not_open');
+    n!.status = body?.reaction === 'engaged' ? 'engaged' : 'dismissed';
+    return { success: true, uuid, status: n!.status };
+  }
+
+  if (p === '/api/v1/actions' && method === 'GET') {
+    return { catalog: ACTION_CATALOG, available: availableActions(), authorities, pending: proposals.filter((a) => a.status === 'pending') };
+  }
+  if (p === '/api/v1/actions/pending') return proposals.filter((a) => a.status === 'pending');
+  if (p.startsWith('/api/v1/actions/history')) return [...proposals].reverse();
+  if (method === 'POST' && /^\/api\/v1\/actions\/[^/]+\/confirm$/.test(p)) {
+    const uuid = p.split('/')[4];
+    const action = proposals.find((a) => a.uuid === uuid);
+    if (!action || action.status !== 'pending') fail(409, 'That request is already decided', 'not_pending');
+    await wait(700);
+    Object.assign(action!, { status: 'done', approval: 'human', result_ref: 'mock-evt-1', executed_at: new Date().toISOString() });
+    return { success: true, action };
+  }
+  if (method === 'POST' && /^\/api\/v1\/actions\/[^/]+\/decline$/.test(p)) {
+    const uuid = p.split('/')[4];
+    const action = proposals.find((a) => a.uuid === uuid);
+    if (!action || action.status !== 'pending') fail(409, 'That request is already decided', 'not_pending');
+    Object.assign(action!, { status: 'declined' });
+    return { success: true, action };
+  }
+  if (method === 'POST' && /^\/api\/v1\/actions\/authority\/[^/]+$/.test(p)) {
+    const actionId = p.split('/')[5];
+    const entry = ACTION_CATALOG.find((a) => a.id === actionId);
+    if (!entry) fail(404, 'No such action', 'unknown_action');
+    if (entry!.consent_type === 'action_authority' && !actionsConsented()) {
+      fail(403, 'That needs to be turned on in your consent settings first', 'consent_required');
+    }
+    if (!authorities.some((a) => a.action_id === actionId)) {
+      authorities.push({ action_id: actionId, label: entry!.label, expires_at: null, created_at: new Date().toISOString() });
+    }
+    return { success: true, authorities };
+  }
+  if (method === 'DELETE' && /^\/api\/v1\/actions\/authority\/[^/]+$/.test(p)) {
+    const actionId = p.split('/')[5];
+    const at = authorities.findIndex((a) => a.action_id === actionId);
+    if (at >= 0) authorities.splice(at, 1);
+    return { success: true, authorities };
+  }
+
   if (p === '/api/v1/integrations' && method === 'GET') return { providers: integrations };
   if (p === '/api/v1/consent/status') {
     return {
-      consents: healthConsented()
-        ? { health_data: { accepted: true, document_version: '1.0', accepted_at: iso(DAY) } }
-        : {},
+      consents: {
+        ...(healthConsented()
+          ? { health_data: { accepted: true, document_version: '1.0', accepted_at: iso(DAY) } }
+          : {}),
+        ...(actionsConsented()
+          ? { action_authority: { accepted: true, document_version: '1.0', accepted_at: iso(DAY) } }
+          : {}),
+      },
       all_required_accepted: true,
     };
   }
   if (p === '/api/v1/consent' && method === 'POST') {
-    localStorage.setItem('mock_consent_health', 'true');
-    return { consents: { health_data: { accepted: true, document_version: '1.0', accepted_at: new Date().toISOString() } }, all_required_accepted: true };
+    // Honour the type actually asked for: the action layer and the health
+    // providers are separate consents, and conflating them here would make
+    // the Actions panel look broken for reasons that are only the mock's.
+    const key = body?.consent_type === 'action_authority' ? 'mock_consent_actions' : 'mock_consent_health';
+    localStorage.setItem(key, 'true');
+    const accepted = { accepted: true, document_version: '1.0', accepted_at: new Date().toISOString() };
+    return {
+      consents: {
+        ...(healthConsented() ? { health_data: accepted } : {}),
+        ...(actionsConsented() ? { action_authority: accepted } : {}),
+      },
+      all_required_accepted: true,
+    };
   }
   if (method === 'POST' && /^\/api\/v1\/integrations\/[^/]+\/connect$/.test(p)) {
     const provider = p.split('/')[4];
