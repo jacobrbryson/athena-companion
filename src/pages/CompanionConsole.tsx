@@ -22,6 +22,10 @@ import {
 } from '../components/IntegrationsPanel';
 import { ARRIVAL_MESSAGES, buildGreeting } from '../athena/sequences';
 import type { MemoryEvent } from '../api/companion';
+import { Dashboard, DashboardIcon, dashboardSections, type DashboardSection } from '../components/Dashboard';
+import { AthenaAvatar } from '../components/AthenaAvatar';
+import { Drawer } from '../components/Drawer';
+import '../dashboard.css';
 
 /**
  * The Companion console — the Guardians console's layout and feel (Athena
@@ -66,6 +70,11 @@ export function CompanionConsole() {
   const brain = useBrainStatus();
 
   const [draft, setDraft] = useState('');
+  const [view, setView] = useState<'dashboard' | 'chat'>('dashboard');
+  const [chatOpened, setChatOpened] = useState(false);
+  useEffect(() => { if (view === 'chat') setChatOpened(true); }, [view]);
+  const [briefing, setBriefing] = useState(false);
+  const [activeSection, setActiveSection] = useState<DashboardSection>('Home');
   const [menuOpen, setMenuOpen] = useState(false);
   // Returning from a provider's consent screen. Read once, on the first
   // render, because it scrubs the query string as a side effect.
@@ -241,6 +250,7 @@ export function CompanionConsole() {
   useEffect(() => {
     if (!menuOpen) return;
     const onPointer = (e: MouseEvent) => {
+      if ((e.target as Element).closest('[data-menu-toggle]')) return;
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
     };
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setMenuOpen(false);
@@ -270,10 +280,32 @@ export function CompanionConsole() {
 
   function talkAboutPhoto(event: MemoryEvent) {
     setPanel(null);
+    setView('chat');
     send(`I just showed you a photo — ${event.title || 'take a look'}. What do you think?`);
   }
 
   const firstName = user?.full_name?.split(/\s+/)[0] || user?.email || 'You';
+  // Proposals she cannot act on until someone answers. Drives both the
+  // Notifications card's count and the bell in the top bar.
+  const waitingCount = actions.pending.length;
+  function askAthena(text: string) {
+    setBriefing(false);
+    setView('chat');
+    setDraft(text);
+    window.setTimeout(() => document.getElementById(inputId)?.focus(), 0);
+  }
+  /**
+   * Every nav entry is a page of its own now. It used to scroll the briefing
+   * to a card — and for Projects and News it opened the chat with a canned
+   * question, which meant two of the eight entries never showed the person
+   * their own data at all.
+   */
+  function navigateDashboard(section: DashboardSection) {
+    setActiveSection(section);
+    setView('dashboard');
+    // A new page starts at the top; the workspace is what scrolls, not window.
+    window.setTimeout(() => document.querySelector('.companion-workspace')?.scrollTo({ top: 0, behavior: 'smooth' }), 0);
+  }
   const menuItems: { icon: string; label: string; onClick: () => void; right?: string }[] = [
     { icon: '🧠', label: 'Memories', onClick: () => openPanel('memory') },
     { icon: '📷', label: 'Show a photo', onClick: () => openPanel('photo') },
@@ -286,9 +318,34 @@ export function CompanionConsole() {
   ];
 
   return (
-    <div className="flex h-[100dvh] flex-col bg-black text-emerald-50">
+    <div className={`companion-shell ${view === 'chat' ? 'companion-chat-mode' : ''}`}>
+      <aside className="dashboard-sidebar">
+        <button className="athena-wordmark" onClick={() => navigateDashboard('Home')}><AthenaAvatar /> ATHENA</button>
+        <span className="sidebar-caption">YOUR COMPANION</span>
+        <nav aria-label="Main navigation">{dashboardSections.map(section => <button key={section} className={view === 'dashboard' && activeSection === section ? 'active' : ''} aria-current={view === 'dashboard' && activeSection === section ? 'page' : undefined} onClick={() => navigateDashboard(section)}><DashboardIcon name={section} /><span>{section}</span></button>)}</nav>
+        <button className={`sidebar-chat ${view === 'chat' ? 'active' : ''}`} onClick={() => setView('chat')}><DashboardIcon name="Chat" /><span>Talk to Athena</span><span className="sidebar-chat-arrow">↗</span></button>
+        {/* The account row IS the menu. Settings, the panels and sign-out all
+            used to be split between a sidebar button and a ⋯ in the far
+            corner; one control in the place people already look for their own
+            name is fewer things to learn and fewer places to miss. */}
+        <div className="sidebar-bottom">
+          <button
+            type="button"
+            className={`sidebar-profile ${menuOpen ? 'open' : ''}`}
+            data-menu-toggle
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
+            onClick={() => setMenuOpen(v => !v)}
+          >
+            <span className="sidebar-profile-avatar">{firstName.slice(0, 1)}</span>
+            <div><span className="sidebar-profile-name">{firstName}</span><small>ATHENA COMPANION</small></div>
+            <span className="sidebar-profile-caret" aria-hidden>⌃</span>
+          </button>
+        </div>
+      </aside>
+      <div className="companion-workspace">
       {/* Top status bar */}
-      <header className="flex items-center justify-between gap-2 border-b border-emerald-500/15 px-4 py-2 font-mono text-[11px] uppercase tracking-[0.2em]">
+      <header className="companion-topbar flex items-center justify-between gap-2 px-4 py-2 font-mono text-[11px] uppercase tracking-[0.2em]">
         <div className="flex min-w-0 items-center gap-2">
           <span
             className={`inline-block h-2 w-2 shrink-0 rounded-full ${
@@ -299,66 +356,31 @@ export function CompanionConsole() {
           />
           <span className="truncate opacity-70">{firstName} · Companion</span>
         </div>
+        <button className="mobile-wordmark" onClick={() => navigateDashboard('Today')}>ATHENA</button>
         <div className="flex items-center gap-2">
+          {view === 'chat' && <button className="briefing-trigger" onClick={() => setBriefing(true)}>▦ <span>Daily briefing</span></button>}
           <BrainPill status={brain} onClick={() => openPanel('brain')} />
-          <div className="relative" ref={menuRef}>
-            <button
-              onClick={() => setMenuOpen((v) => !v)}
-              aria-haspopup="menu"
-              aria-expanded={menuOpen}
-              aria-label="Menu"
-              className="rounded border border-emerald-500/30 px-2 py-1 text-base leading-none hover:bg-emerald-500/10"
-            >
-              ⋯
-            </button>
-            {menuOpen && (
-              <div role="menu" className="absolute right-0 z-50 mt-2 w-48 rounded border border-emerald-500/30 bg-black/95 py-1 shadow-lg shadow-black/50 backdrop-blur">
-                {menuItems.map((m) => (
-                  <button key={m.label} role="menuitem" onClick={m.onClick} className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-emerald-500/10">
-                    <span className="w-5 text-center text-base leading-none" aria-hidden>
-                      {m.icon}
-                    </span>
-                    {m.label}
-                  </button>
-                ))}
-                {tts.isSupported && (
-                  <button
-                    role="menuitemcheckbox"
-                    aria-checked={tts.enabled}
-                    onClick={tts.toggle}
-                    className="flex w-full items-center justify-between px-3 py-2 text-left hover:bg-emerald-500/10"
-                  >
-                    <span className="flex items-center gap-2">
-                      <span className="w-5 text-center text-base leading-none" aria-hidden>
-                        {tts.enabled ? '🔊' : '🔇'}
-                      </span>
-                      Voice
-                    </span>
-                    <span className="opacity-50">{tts.enabled ? 'on' : 'off'}</span>
-                  </button>
-                )}
-                <button
-                  role="menuitem"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    void signOut();
-                  }}
-                  className="flex w-full items-center gap-2 border-t border-emerald-500/10 px-3 py-2 text-left hover:bg-emerald-500/10"
-                >
-                  <span className="w-5 text-center text-base leading-none" aria-hidden>
-                    🚪
-                  </span>
-                  Sign out
-                </button>
-              </div>
-            )}
-          </div>
+          {/* The Notifications card's counterpart. The dot is the whole point:
+              a proposal Athena is waiting on should be visible from any screen
+              in the app, not only from the dashboard card. */}
+          <button
+            className="topbar-notifications"
+            onClick={() => openPanel('actions')}
+            aria-label={waitingCount ? `Notifications — ${waitingCount} waiting for you` : 'Notifications'}
+            title={waitingCount ? `${waitingCount} waiting for you` : 'Nothing waiting for you'}
+          >
+            <DashboardIcon name="Notifications" />
+            {waitingCount > 0 && <span className="topbar-badge">{waitingCount > 9 ? '9+' : waitingCount}</span>}
+          </button>
         </div>
       </header>
 
+      {view === 'dashboard' && <Dashboard section={activeSection} firstName={firstName} onAsk={askAthena} onPanel={openPanel} onNavigate={navigateDashboard} />}
+      <div className="companion-chat" hidden={view !== 'chat'}>
+
       {/* Athena — large and front-and-center */}
       <section className="relative min-h-0 flex-1">
-        <UnityAthena sessionId={chat.sessionId} isThinking={chat.isThinking} onReady={onUnityReady} />
+        {chatOpened && <UnityAthena sessionId={chat.sessionId} isThinking={chat.isThinking} onReady={onUnityReady} />}
         {!arriving && (
           <div className="absolute bottom-3 right-3 z-20 flex gap-2">
             <button
@@ -494,6 +516,53 @@ export function CompanionConsole() {
         </form>
         {voice.error && <p className="px-4 pb-2 text-center text-xs text-red-300">{voice.error}</p>}
       </section>
+
+      </div>
+      </div>
+      <nav className="mobile-navigation" aria-label="Mobile navigation">
+        <button className={view === 'dashboard' ? 'active' : ''} onClick={() => navigateDashboard('Home')}><DashboardIcon name="Home" /><span>Home</span></button>
+        <button className={view === 'chat' ? 'active' : ''} onClick={() => setView('chat')}><DashboardIcon name="Chat" /><span>Chat</span></button>
+        <button className="mobile-athena" aria-label="Talk to Athena" onClick={() => setView('chat')}><AthenaAvatar /></button>
+        <button className="mobile-notifications" onClick={() => openPanel('actions')}><DashboardIcon name="Notifications" /><span>Alerts</span>{waitingCount > 0 && <i className="topbar-badge">{waitingCount > 9 ? '9+' : waitingCount}</i>}</button>
+        <button data-menu-toggle aria-expanded={menuOpen} onClick={() => setMenuOpen(v => !v)}><DashboardIcon name="More" /><span>More</span></button>
+      </nav>
+
+      {/* One menu for the whole app, opened from the account row on desktop
+          and from "More" on mobile. Kept mounted so it can animate out, and
+          inert while closed so nothing inside it is tabbable. */}
+      <div className={`athena-menu-backdrop ${menuOpen ? 'open' : ''}`} onClick={() => setMenuOpen(false)} aria-hidden />
+      <div ref={menuRef} className={`athena-menu ${menuOpen ? 'open' : ''}`} role="menu" aria-hidden={!menuOpen} {...(menuOpen ? {} : { inert: '' as unknown as boolean })}>
+        <div className="athena-menu-head">
+          <span className="sidebar-profile-avatar">{firstName.slice(0, 1)}</span>
+          <div><span className="sidebar-profile-name">{firstName}</span><small>{user?.email}</small></div>
+        </div>
+        <div className="athena-menu-items">
+          {menuItems.map((m, i) => (
+            <button key={m.label} role="menuitem" onClick={m.onClick} style={{ transitionDelay: `${menuOpen ? 30 + i * 22 : 0}ms` }}>
+              <span aria-hidden>{m.icon}</span>{m.label}
+            </button>
+          ))}
+          {tts.isSupported && (
+            <button
+              role="menuitemcheckbox"
+              aria-checked={tts.enabled}
+              onClick={tts.toggle}
+              style={{ transitionDelay: `${menuOpen ? 30 + menuItems.length * 22 : 0}ms` }}
+            >
+              <span aria-hidden>{tts.enabled ? '🔊' : '🔇'}</span>Voice
+              <small>{tts.enabled ? 'on' : 'off'}</small>
+            </button>
+          )}
+        </div>
+        <button
+          role="menuitem"
+          className="athena-menu-signout"
+          onClick={() => { setMenuOpen(false); void signOut(); }}
+        >
+          <span aria-hidden>🚪</span>Sign out
+        </button>
+      </div>
+      {briefing && <Drawer eyebrow="Athena" title="Your daily briefing" onClose={() => setBriefing(false)}><Dashboard compact firstName={firstName} onAsk={askAthena} onPanel={p => { setBriefing(false); openPanel(p); }} onExpand={() => { setBriefing(false); navigateDashboard('Home'); }} /></Drawer>}
 
       {panel === 'memory' && <MemoryPanel onClose={() => setPanel(null)} />}
       {panel === 'photo' && <PhotoMemory onClose={() => setPanel(null)} onTalkAbout={talkAboutPhoto} />}

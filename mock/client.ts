@@ -156,6 +156,89 @@ const devices = [
   { uuid: 'd1', name: 'Pixel 9', platform: 'android', capabilities: { ramGb: 12, installed: [{ id: 'gemini-nano' }] }, last_seen_at: iso(3 * 60_000), created_at: iso(DAY * 5) },
 ];
 
+// ------------------------------------------------------------- dashboard ---
+// A dashboard with real-shaped data in it, so the cards, counts and ordering
+// can be worked on without every provider connected. Deliberately mixed: two
+// sources are ready, one needs re-auth and one was never connected, because
+// those three states are what the layout has to hold at once.
+const ready = <T,>(data: T) => ({ status: 'ready' as const, data, checkedAt: new Date().toISOString() });
+const unready = (status: 'not_connected' | 'needs_reauth' | 'consent_required' | 'error') =>
+  ({ status, data: null, checkedAt: new Date().toISOString() });
+const inMinutes = (m: number) => new Date(now + m * 60_000).toISOString();
+const dayStamp = (daysAgo: number) => new Date(now - daysAgo * DAY).toISOString().slice(0, 10);
+
+function dashboardSummary() {
+  return {
+    calendar: ready({
+      timeZone: 'America/New_York',
+      days: 7,
+      events: [
+        { id: 'c1', title: 'Design review', start: inMinutes(35), end: inMinutes(95), allDay: false, location: 'Zoom', calendar: null, shared: false },
+        { id: 'c2', title: 'School pickup', start: inMinutes(180), end: inMinutes(210), allDay: false, location: null, calendar: null, shared: true },
+        { id: 'c3', title: 'Dentist', start: inMinutes(60 * 26), end: inMinutes(60 * 27), allDay: false, location: 'Davidson', calendar: null, shared: false },
+        { id: 'c4', title: 'Emma visiting', start: dayStamp(-4), end: dayStamp(-6), allDay: true, location: null, calendar: null, shared: false },
+      ],
+    }),
+    recovery: ready([
+      { date: dayStamp(0), recovery_score: 34, state: 'SCORED' },
+      { date: dayStamp(1), recovery_score: 71, state: 'SCORED' },
+    ]),
+    sleep: ready([{ date: dayStamp(0), nap: false, hours_asleep: 5.4, sleep_performance_percent: 62 }]),
+    strain: ready([{ date: dayStamp(0), day_strain: 14.2 }]),
+    activity: ready({ days: 7, activities: [
+      { name: 'Morning run', type: 'Run', start: iso(DAY), distance_mi: 4.2, moving_time_s: 2280 },
+      { name: 'Lake loop ride', type: 'Ride', start: iso(DAY * 3), distance_mi: 18.6, moving_time_s: 4100 },
+    ] }),
+    familyChores: ready({ name: 'Rivera family', chores: [
+      { title: 'Dishes', completed: true, status: 'done', dueDate: dayStamp(0) },
+      { title: 'Walk Biscuit', completed: false, status: 'open', dueDate: dayStamp(0) },
+      { title: 'Homework check', completed: false, status: 'open', dueDate: dayStamp(0) },
+    ] }),
+    jira: ready({ partial: false, issues: [
+      { key: 'ATH-412', title: 'Dashboard priority ordering', status: 'In Progress', project: 'Athena', updated: iso(3600_000), due: null, site: 'athena', url: 'https://example.atlassian.net/browse/ATH-412' },
+      { key: 'ATH-408', title: 'Companion menu merge', status: 'To Do', project: 'Athena', updated: iso(DAY), due: null, site: 'athena', url: 'https://example.atlassian.net/browse/ATH-408' },
+      { key: 'OPS-77', title: 'Rotate connector keys', status: 'To Do', project: 'Ops', updated: iso(DAY * 2), due: null, site: 'athena', url: 'https://example.atlassian.net/browse/OPS-77' },
+    ] }),
+    slack: unready('not_connected'),
+    gmail: ready({ account: 'sam@example.com', messages: [
+      { id: 'g1', title: 'Re: Q4 planning doc', from: 'priya@example.com', date: iso(1800_000), url: 'https://mail.google.com/' },
+      { id: 'g2', title: 'Your Iceland booking', from: 'noreply@example.com', date: iso(7200_000), url: 'https://mail.google.com/' },
+    ] }),
+  };
+}
+
+// The shape core_api returns, including the one-line reasons. Ordering here is
+// fixed rather than modelled — the point is to exercise the rendering.
+const dashboardPriority = () => ({
+  source: 'athena' as const,
+  model: 'qwen3:8b',
+  generatedAt: new Date().toISOString(),
+  order: [
+    { id: 'calendar', why: 'Design review starts in about half an hour.' },
+    { id: 'notifications', why: 'Two things are waiting on your answer.' },
+    { id: 'health', why: 'Recovery is 34% against a busy afternoon.' },
+    { id: 'work', why: null },
+    { id: 'family', why: null },
+    { id: 'projects', why: null },
+    { id: 'news', why: null },
+  ],
+});
+
+let newsSources = ['https://example.com/feed.xml', 'https://news.example.org/atom'];
+const dashboardNews = () => ({
+  sources: newsSources,
+  checkedAt: new Date().toISOString(),
+  feeds: [
+    { url: newsSources[0], status: 'ready' as const, items: [
+      { title: 'Iceland opens a new highland road for the season', url: 'https://example.com/a', published: iso(3600_000), source: 'Example' },
+      { title: 'A quieter way to think about training load', url: 'https://example.com/b', published: iso(DAY), source: 'Example' },
+    ] },
+    { url: newsSources[1], status: 'ready' as const, items: [
+      { title: 'Local trail network adds twelve miles', url: 'https://news.example.org/c', published: iso(DAY * 1.5), source: 'News Example' },
+    ] },
+  ],
+});
+
 // ------------------------------------------------------------ initiative ---
 // Athena speaking first. The real evaluator is a scheduled job against live
 // calendar/Whoop data, so the mock fakes the OUTPUT of a pass: __mockNudge()
@@ -251,7 +334,12 @@ type MockAction = {
   expires_at: string;
   executed_at: string | null;
 };
-let proposals: MockAction[] = [];
+// Seeded pending, so the Notifications card and the top-bar badge have
+// something to show without first talking her into proposing one.
+let proposals: MockAction[] = [
+  { uuid: 'act-seed-1', action_id: 'create_calendar_event', label: 'Add a calendar event', summary: 'Add "Dentist" to your calendar: Thu 2:00 – 3:00 pm', rationale: 'You said to put it in for Thursday afternoon', params: { title: 'Dentist' }, status: 'pending', approval: null, reversible: true, result_ref: null, error: null, created_at: iso(900_000), expires_at: iso(-DAY), executed_at: null },
+  { uuid: 'act-seed-2', action_id: 'remember_fact', label: 'Save something to memory', summary: 'Remember that coffee order: oat flat white, no sugar', rationale: 'You asked me to hold onto it', params: { key: 'coffee order' }, status: 'pending', approval: null, reversible: true, result_ref: null, error: null, created_at: iso(5400_000), expires_at: iso(-DAY), executed_at: null },
+];
 const authorities: { action_id: string; label: string; expires_at: string | null; created_at: string }[] = [];
 
 /** Which actions are usable: mirrors the server's linked + consented filter. */
@@ -354,6 +442,13 @@ async function route(method: string, path: string, body?: any): Promise<any> {
     return mockAccess();
   }
   if (p === '/api/v1/profile') return { uuid: 'mock-profile', full_name: 'Sam Rivera' };
+  if (p === '/api/v1/dashboard') return dashboardSummary();
+  if (p === '/api/v1/dashboard/priority') return dashboardPriority();
+  if (p === '/api/v1/dashboard/news/sources') {
+    if (method === 'PUT') newsSources = Array.isArray(body?.sources) ? body.sources : newsSources;
+    return { sources: newsSources };
+  }
+  if (p === '/api/v1/dashboard/news') return dashboardNews();
   if (p === '/api/v1/session') return { session: { uuid: 'mock-session', mode: 'companion' } };
   if (p === '/api/v1/message' && method === 'GET') return [...messages];
   if (p === '/api/v1/message' && method === 'POST') {

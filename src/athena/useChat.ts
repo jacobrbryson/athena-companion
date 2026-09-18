@@ -10,6 +10,7 @@ import { localTimezone, wsUrl } from '../config';
  *   GET  /api/v1/message?sessionId=...        -> Message[]
  *   POST /api/v1/message { text, sessionId }  -> { message }
  *   WS   /ws?sessionId=...                     -> rpc: addMessage | sessionStatus
+ *                                                     | actionProposed | dashboardUpdated
  *
  * Auth rides on the httpOnly session cookie (sent automatically). Because
  * Safari does not reliably attach the cross-site cookie to WebSocket upgrades
@@ -49,6 +50,14 @@ export interface ChatOptions {
 
 /** Fired when Athena proposes an action. See useActions. */
 export const ACTION_PROPOSED_EVENT = 'athena-action-proposed';
+
+/**
+ * Fired when the server says this person's dashboard data has moved. This is
+ * how the dashboard stays current — it has no refresh control of its own.
+ * Re-broadcast as a DOM event rather than held in chat state because the
+ * dashboard and the chat share nothing but this socket.
+ */
+export const DASHBOARD_REFRESH_EVENT = 'athena-dashboard-refresh';
 
 export type ChatTransport = 'connecting' | 'ws' | 'polling';
 
@@ -249,6 +258,14 @@ export function useChat(profileUuid: string, options?: ChatOptions): ChatState {
           if (msg?.rpc === 'actionProposed' && msg.action) {
             window.dispatchEvent(
               new CustomEvent(ACTION_PROPOSED_EVENT, { detail: msg.action })
+            );
+          }
+          // Something behind the dashboard changed — an approval decided, an
+          // app disconnected, a proposal raised. Same reasoning as above: the
+          // dashboard owns its own data, this is only the nudge to re-read it.
+          if (msg?.rpc === 'dashboardUpdated') {
+            window.dispatchEvent(
+              new CustomEvent(DASHBOARD_REFRESH_EVENT, { detail: msg.reason ?? null })
             );
           }
         } catch (err) {

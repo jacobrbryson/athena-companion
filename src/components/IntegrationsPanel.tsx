@@ -27,6 +27,7 @@ export interface IntegrationCallback {
 }
 
 const ICONS: Record<string, string> = {
+  gmail: '✉️', jira: '🔷', slack: '💬',
   google_calendar: '📅',
   strava: '🏃',
   whoop: '💤',
@@ -34,6 +35,9 @@ const ICONS: Record<string, string> = {
 
 /** What each provider will be able to read, in plain language. */
 const BLURBS: Record<string, string> = {
+  gmail: 'Reads unread inbox message headers for your Work card. Choose your work Google account when connecting. Never sends or modifies mail.',
+  jira: 'Reads your assigned open issues across authorized Jira Cloud sites. Never changes issues.',
+  slack: 'Reads recent mentions visible to your Slack account. Never posts or changes messages.',
   google_calendar: 'Reads your upcoming events and free/busy time. Read-only — Athena never adds or changes anything.',
   strava: 'Reads your recent activities: distance, time, elevation and heart rate.',
   whoop: 'Reads your recovery, sleep and strain scores.',
