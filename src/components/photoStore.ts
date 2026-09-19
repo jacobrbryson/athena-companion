@@ -65,6 +65,18 @@ export async function downscale(file: File, max = 1024, quality = 0.82): Promise
   canvas.height = Math.round(bitmap.height * scale);
   canvas.getContext('2d')!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
   bitmap.close?.();
+  return encodeJpeg(canvas, quality);
+}
+
+/**
+ * Canvas -> JPEG blob + bare base64 (no data: prefix, which is what the vision
+ * endpoints want). Shared with the live camera, which draws video frames
+ * straight onto a canvas and never has a File to start from.
+ */
+export async function encodeJpeg(
+  canvas: HTMLCanvasElement,
+  quality = 0.82
+): Promise<{ blob: Blob; base64: string }> {
   const blob: Blob = await new Promise((resolve, reject) =>
     canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('Could not encode image'))), 'image/jpeg', quality)
   );

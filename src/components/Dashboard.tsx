@@ -5,14 +5,12 @@ import { useDashboardData } from './useDashboardData';
 import { NewsSourcesPanel } from './NewsSourcesPanel';
 
 export type DashboardSection = 'Home' | 'Today' | 'Calendar' | 'Health' | 'Family' | 'Work' | 'Projects' | 'News';
-// Explicit sprite windows preserve the borders on this irregular sheet.
-// The sheet's first window is a house, so it goes to Home, where a house is
-// what it means. Today takes a drawn sun instead — the two used to be the same
-// glyph, and two houses side by side in the nav named neither of them.
-const icons: Record<string, number> = { Home: 24, Calendar: 130, Health: 235, Family: 339, Work: 444, Projects: 551, News: 658, 'Quick Actions': 761, Search: 862, Chat: 970, More: 1075, Settings: 1183 };
+// Explicit sprite windows preserve the borders on this irregular sheet. Today
+// uses the supplied calendar tile so it has the same framed treatment as the
+// other navigation links; the page itself remains distinct from Calendar.
+const icons: Record<string, number> = { Home: 24, Today: 130, Calendar: 130, Health: 235, Family: 339, Work: 444, Projects: 551, News: 658, 'Quick Actions': 761, Search: 862, Chat: 970, More: 1075, Settings: 1183 };
 // Icons the supplied sheet has no window for, drawn to sit in the same box.
 const drawn: Record<string, ReactNode> = {
-  Today: <><circle cx="12" cy="12" r="4.1" /><path d="M12 2.6v2.4M12 19v2.4M21.4 12H19M5 12H2.6M18.6 5.4l-1.7 1.7M7.1 16.9l-1.7 1.7M18.6 18.6l-1.7-1.7M7.1 7.1 5.4 5.4" /></>,
   Notifications: <><path d="M12 3.6a5.4 5.4 0 0 0-5.4 5.4c0 4.2-1.5 5.6-1.5 5.6h13.8s-1.5-1.4-1.5-5.6A5.4 5.4 0 0 0 12 3.6Z" /><path d="M10.4 18a1.8 1.8 0 0 0 3.2 0" /></>,
 };
 export function DashboardIcon({ name }: { name: string }) {
@@ -33,7 +31,8 @@ const DEFAULT_CARD_ORDER = ['calendar', 'health', 'family', 'work', 'news', 'pro
 const PRIMARY_SLOTS = 4;
 const statusText = { not_connected: 'Not connected', needs_reauth: 'Reconnect to refresh', consent_required: 'Health consent required', error: 'Couldn’t load this source', ready: 'Connected' };
 function SourceNote({ source, name }: { source?: Source<unknown>; name: string }) {
-  return <p className="source-note">{name} · {source ? statusText[source.status] : 'Loading…'}</p>;
+  return <><p className="source-note">{name} · {source ? statusText[source.status] : 'Loading…'}</p>
+    {source?.detail && <p className="source-note source-detail">{source.detail}</p>}</>;
 }
 function safeHref(url?: string | null) { try { const parsed = new URL(url || ''); return parsed.protocol === 'https:' && !parsed.username && !parsed.password ? parsed.href : undefined; } catch { return undefined; } }
 function ExternalLink({ url, children }: { url?: string | null; children: ReactNode }) {
@@ -74,6 +73,10 @@ function Unavailable({ source, name, onPanel }: { source?: Source<unknown>; name
   const fixable = status === 'not_connected' || status === 'needs_reauth' || status === 'consent_required';
   return <div className="section-unavailable">
     <p className="dashboard-empty">{name} · {source ? statusText[status!] : 'Loading…'}</p>
+    {/* What the provider actually said. A card that cannot be read is only
+        actionable if it says why — "reconnect" is the wrong advice for an API
+        that was never enabled, and the person has no way to tell them apart. */}
+    {source?.detail && <p className="dashboard-empty source-detail">{source.detail}</p>}
     {fixable && onPanel && <button className="dashboard-chat-cta" onClick={onPanel}>{status === 'not_connected' ? 'Connect it' : 'Fix this'} <span>↗</span></button>}
   </div>;
 }
@@ -163,7 +166,11 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onNavig
   const family = facts.filter(f => /^(person|family|pet)$/i.test(f.category));
   const projects = facts.filter(f => /^(goal|project)$/i.test(f.category));
   const issues = summary?.jira.data?.issues || [];
-  const news = (data.news.data?.feeds || []).flatMap(f => f.items).sort((a, b) => (Date.parse(b.published || '') || 0) - (Date.parse(a.published || '') || 0));
+  // Already ordered by when Athena read them, which is the only timestamp that
+  // is always there and always honest — half of `published` is missing and some
+  // of the rest is the moment the page was rebuilt.
+  const news = data.news.data?.items || [];
+  const newsSources = data.news.data?.sources || [];
   const pending = (data.actions.data || []).filter(a => a.status === 'pending');
   const latest = <T extends { date: string }>(rows?: T[] | null) => [...(rows || [])].sort((a, b) => b.date.localeCompare(a.date))[0];
   const recovery = latest(summary?.recovery.data?.filter(r => r.state === 'SCORED'));
@@ -211,7 +218,8 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onNavig
       <p className="source-note">Slack · recent mentions</p>{ready(summary?.slack) ? <><ul className="dashboard-data-list">{summary?.slack.data?.messages.slice(0, limit).map(m => <li key={m.timestamp}><ExternalLink url={m.url}><strong>#{m.channel}</strong><small>{m.text}</small></ExternalLink></li>)}</ul>{!summary?.slack.data?.messages.length && <p className="dashboard-empty">No mentions returned in the last 7 days.</p>}</> : <SourceNote source={summary?.slack} name="Slack" />}</>;
   }
   function newsBody(limit: number) {
-    return <>{data.news.loading && <p className="source-note">Loading your sources…</p>}{data.news.error && <p className="source-note" role="status">News couldn’t load. Retry or check source setup.</p>}{data.news.data?.sources.length === 0 && <p className="dashboard-empty">Choose RSS or Atom feeds for your daily reading.</p>}{data.news.data?.feeds.filter(f => f.status === 'error').map(f => <p key={f.url} className="source-note">Couldn’t read {new URL(f.url).hostname}. Check the direct feed URL.</p>)}<ul className="dashboard-data-list">{news.slice(0, limit).map((n, i) => <li key={`${n.url}-${i}`}><ExternalLink url={n.url}><strong>{n.title}</strong><small>{n.source} · {dateLabel(n.published)}</small></ExternalLink></li>)}</ul>{data.news.data && data.news.data.sources.length > 0 && !news.length && data.news.data.feeds.every(f => f.status === 'ready') && <p className="dashboard-empty">No headlines returned by these feeds.</p>}</>;
+    const failing = newsSources.filter(s => s.lastError);
+    return <>{data.news.loading && <p className="source-note">Loading what I’ve read…</p>}{data.news.error && <p className="source-note" role="status">News couldn’t load. Retry or check source setup.</p>}{data.news.data && !newsSources.length && <p className="dashboard-empty">Paste a news page and I’ll start reading it for you.</p>}{failing.map(s => <p key={s.uuid} className="source-note">Couldn’t read {s.host} last time. {s.lastError}</p>)}<ul className="dashboard-data-list">{news.slice(0, limit).map((n, i) => <li key={`${n.url}-${i}`}><ExternalLink url={n.url}><strong>{n.title}</strong><small>{n.source} · {dateLabel(n.firstSeen)}</small></ExternalLink></li>)}</ul>{data.news.data && newsSources.length > 0 && !news.length && <p className="dashboard-empty">Nothing new on these pages yet — I’ll keep looking.</p>}</>;
   }
   // Athena's ordering, made safe to render from: every card exactly once, in
   // her order where she gave one and the declared order where she did not.
@@ -290,8 +298,8 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onNavig
           : !chores.length ? <p className="dashboard-empty">No chores returned for today.</p>
             : <ul className="dashboard-data-list chore-list">{chores.map((c, i) => <li key={i} className={c.completed ? 'chore-done' : ''}><strong>{c.completed ? '✓' : '○'} {c.title}</strong><small>{c.completed ? 'Completed' : c.status || 'Open'}</small></li>)}</ul>}
       </Panel>
-      <Panel title="Worth a look" note="Your feeds, newest first" wide>
-        {headlines.length ? <ul className="dashboard-data-list">{headlines.map((n, i) => <li key={`${n.url}-${i}`}><ExternalLink url={n.url}><strong>{n.title}</strong><small>{n.source} · {dateLabel(n.published)}</small></ExternalLink></li>)}</ul> : newsBody(6)}
+      <Panel title="Worth a look" note="What I’ve read for you, newest first" wide>
+        {headlines.length ? <ul className="dashboard-data-list">{headlines.map((n, i) => <li key={`${n.url}-${i}`}><ExternalLink url={n.url}><strong>{n.title}</strong><small>{n.source} · {dateLabel(n.firstSeen)}</small></ExternalLink></li>)}</ul> : newsBody(6)}
       </Panel>
     </SectionPage>;
   }
@@ -448,32 +456,39 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onNavig
   }
 
   function NewsPage() {
-    const feeds = data.news.data?.feeds || [];
-    const broken = feeds.filter(f => f.status === 'error');
-    const sources = [...new Set(news.map(n => n.source))];
+    const broken = newsSources.filter(s => s.lastError);
+    const watching = newsSources.filter(s => s.enabled);
+    const publishers = [...new Set(news.map(n => n.source))];
+    // The fastest rhythm on the list, which is the honest answer to "how close
+    // to live is this page?" — and the one she raises herself when it matters.
+    const fastest = watching.reduce<typeof watching[number] | null>((best, s) => (!best || s.everyMinutes < best.everyMinutes ? s : best), null);
     return <SectionPage ctx={ctx}
       eyebrow="YOUR DAILY READING" title="News & Updates"
-      blurb="Everything your feeds returned, newest first, grouped by where it came from."
+      blurb="Everything I’ve read on your pages, newest first. You choose the pages; I choose how often to go back."
       ask="Help me catch up on news relevant to my interests."
       stats={<>
-        <Stat label="Headlines" value={news.length} note="across your feeds" />
-        <Stat label="Sources" value={data.news.data?.sources.length ?? '—'} note={broken.length ? `${broken.length} not responding` : 'all responding'} tone={broken.length ? 'low' : 'good'} />
-        <Stat label="Newest" value={<span className="stat-small">{news[0] ? dateLabel(news[0].published) : '—'}</span>} note={news[0]?.source || 'Nothing returned yet'} />
+        <Stat label="Headlines" value={news.length} note="read in the last 7 days" />
+        <Stat label="Pages" value={watching.length || '—'} note={broken.length ? `${broken.length} not responding` : watching.length ? 'all responding' : 'none yet'} tone={broken.length ? 'low' : watching.length ? 'good' : 'idle'} />
+        <Stat label="Checking" value={<span className="stat-small">{fastest ? fastest.rhythm : '—'}</span>} note={fastest ? `fastest: ${fastest.label}` : 'Nothing on the list'} tone={fastest && fastest.everyMinutes <= 60 ? 'ok' : 'idle'} />
       </>}
     >
-      <Panel title="Your sources" note={`${data.news.data?.sources.length ?? 0} configured`}>
-        {data.news.loading ? <p className="dashboard-empty">Loading your sources…</p>
+      <Panel title="What I’m watching" note={`${newsSources.length} page${newsSources.length === 1 ? '' : 's'}`}>
+        {data.news.loading ? <p className="dashboard-empty">Loading your list…</p>
           : data.news.error ? <p className="dashboard-empty" role="status">News couldn’t load. Retry or check source setup.</p>
             : <>
-              <ul className="dashboard-data-list">{feeds.map(f => <li key={f.url}><strong>{new URL(f.url).hostname}</strong><small>{f.status === 'error' ? 'Couldn’t read this feed — check the direct feed URL' : `${f.items.length} headlines`}</small></li>)}</ul>
-              {!feeds.length && <p className="dashboard-empty">Choose RSS or Atom feeds for your daily reading.</p>}
-              <button className="dashboard-chat-cta" onClick={() => setSourcesOpen(true)}>Manage sources <span>↗</span></button>
+              <ul className="dashboard-data-list">{newsSources.map(s => <li key={s.uuid}>
+                <strong>{s.label}{s.enabled ? '' : ' (paused)'}</strong>
+                <small>{s.lastError ? `Couldn’t read it last time — ${s.lastError}` : `${s.rhythm}${s.setBy === 'athena' ? ' · my call' : ''} · ${s.headlines} headline${s.headlines === 1 ? '' : 's'} this week`}</small>
+                {s.setBy === 'athena' && s.reason && !s.lastError && <small>“{s.reason}”</small>}
+              </li>)}</ul>
+              {!newsSources.length && <p className="dashboard-empty">Paste a news page and I’ll start reading it for you.</p>}
+              <button className="dashboard-chat-cta" onClick={() => setSourcesOpen(true)}>Manage pages <span>↗</span></button>
             </>}
       </Panel>
       <Panel title="Headlines" note={news.length ? `${news.length} items` : undefined} wide>
-        {!news.length ? newsBody(0) : sources.map(source => <div className="day-group" key={source}>
+        {!news.length ? newsBody(0) : publishers.map(source => <div className="day-group" key={source}>
           <h3>{source} <span className="card-count">{news.filter(n => n.source === source).length}</span></h3>
-          <ul className="dashboard-data-list">{news.filter(n => n.source === source).slice(0, 25).map((n, i) => <li key={`${n.url}-${i}`}><ExternalLink url={n.url}><strong>{n.title}</strong><small>{dateLabel(n.published)}</small></ExternalLink></li>)}</ul>
+          <ul className="dashboard-data-list">{news.filter(n => n.source === source).slice(0, 25).map((n, i) => <li key={`${n.url}-${i}`}><ExternalLink url={n.url}><strong>{n.title}</strong><small>{dateLabel(n.firstSeen)}</small></ExternalLink></li>)}</ul>
         </div>)}
       </Panel>
     </SectionPage>;

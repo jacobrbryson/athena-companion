@@ -7,6 +7,8 @@
  * production build.
  */
 
+import type { NewsSource } from '../src/api/dashboard';
+
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const now = Date.now();
 const iso = (msAgo: number) => new Date(now - msAgo).toISOString();
@@ -224,19 +226,35 @@ const dashboardPriority = () => ({
   ],
 });
 
-let newsSources = ['https://example.com/feed.xml', 'https://news.example.org/atom'];
+// News sources are now pages Athena visits on an interval she sets herself, so
+// the mock carries that state: a page she has decided to read every 15 minutes
+// because something is unfolding, and a quiet one she checks daily. The
+// rhythm is never settable from the client — there is no route for it.
+let newsSources: NewsSource[] = [
+  {
+    uuid: 'src-1', url: 'https://example.com/news', host: 'example.com', label: 'Example Daily',
+    scope: 'world', enabled: true, everyMinutes: 15, rhythm: 'every 15 minutes', baselineMinutes: 180,
+    setBy: 'athena', reason: 'The highland road story is still moving.', fasterUntil: iso(-3 * 3600_000),
+    lastCheckedAt: iso(9 * 60_000), nextCheckAt: iso(-6 * 60_000), lastChangedAt: iso(20 * 60_000),
+    lastError: null, headlines: 2,
+  },
+  {
+    uuid: 'src-2', url: 'https://news.example.org/trails', host: 'news.example.org', label: 'news.example.org',
+    scope: 'personal', enabled: true, everyMinutes: 1440, rhythm: 'daily', baselineMinutes: 1440,
+    setBy: 'rules', reason: null, fasterUntil: null,
+    lastCheckedAt: iso(5 * 3600_000), nextCheckAt: iso(-19 * 3600_000), lastChangedAt: iso(DAY * 1.5),
+    lastError: null, headlines: 1,
+  },
+];
+const newsItems = () => [
+  { title: 'Iceland opens a new highland road for the season', url: 'https://example.com/a', summary: null, published: iso(3600_000), firstSeen: iso(20 * 60_000), slot: 1, sourceUuid: 'src-1', source: 'Example Daily' },
+  { title: 'A quieter way to think about training load', url: 'https://example.com/b', summary: null, published: iso(DAY), firstSeen: iso(6 * 3600_000), slot: 4, sourceUuid: 'src-1', source: 'Example Daily' },
+  { title: 'Local trail network adds twelve miles', url: 'https://news.example.org/c', summary: null, published: iso(DAY * 1.5), firstSeen: iso(DAY * 1.4), slot: 2, sourceUuid: 'src-2', source: 'news.example.org' },
+].filter(item => newsSources.some(source => source.uuid === item.sourceUuid));
 const dashboardNews = () => ({
   sources: newsSources,
-  checkedAt: new Date().toISOString(),
-  feeds: [
-    { url: newsSources[0], status: 'ready' as const, items: [
-      { title: 'Iceland opens a new highland road for the season', url: 'https://example.com/a', published: iso(3600_000), source: 'Example' },
-      { title: 'A quieter way to think about training load', url: 'https://example.com/b', published: iso(DAY), source: 'Example' },
-    ] },
-    { url: newsSources[1], status: 'ready' as const, items: [
-      { title: 'Local trail network adds twelve miles', url: 'https://news.example.org/c', published: iso(DAY * 1.5), source: 'News Example' },
-    ] },
-  ],
+  items: newsItems(),
+  checkedAt: iso(9 * 60_000),
 });
 
 // ------------------------------------------------------------ initiative ---
@@ -317,7 +335,28 @@ const actionsConsented = () => localStorage.getItem('mock_consent_actions') === 
 const ACTION_CATALOG = [
   { id: 'create_calendar_event', label: 'Add a calendar event', provider: 'google_calendar', consent_type: 'action_authority', reversible: true, standing: true },
   { id: 'remember_fact', label: 'Save something to memory', provider: null, consent_type: null, reversible: true, standing: true },
+  { id: 'look_through_camera', label: 'Take a look through your camera', provider: null, consent_type: 'action_authority', reversible: false, standing: true },
 ];
+
+/**
+ * Looks Athena has asked for. Mock mode has no model to propose one, so
+ * `window.__mockAthenaWantsToLook(reason)` stands in for her deciding a look
+ * would help — enough to exercise the whole client path: request -> borrow the
+ * camera -> frame -> give it back.
+ */
+const lookRequests: { uuid: string; reason: string; prefer: string | null; status: string; created_at: string; expires_at: string }[] = [];
+(window as unknown as Record<string, unknown>).__mockAthenaWantsToLook = (reason = 'You asked what I think of it.', prefer: string | null = null) => {
+  const uuid = `look-${Date.now()}`;
+  lookRequests.push({
+    uuid,
+    reason,
+    prefer,
+    status: 'pending',
+    created_at: new Date().toISOString(),
+    expires_at: new Date(Date.now() + 90_000).toISOString(),
+  });
+  return uuid;
+};
 type MockAction = {
   uuid: string;
   action_id: string;
@@ -445,8 +484,48 @@ async function route(method: string, path: string, body?: any): Promise<any> {
   if (p === '/api/v1/dashboard') return dashboardSummary();
   if (p === '/api/v1/dashboard/priority') return dashboardPriority();
   if (p === '/api/v1/dashboard/news/sources') {
-    if (method === 'PUT') newsSources = Array.isArray(body?.sources) ? body.sources : newsSources;
-    return { sources: newsSources };
+    if (method === 'PUT') {
+      const wanted: { url: string; label?: string | null; scope?: 'world' | 'personal' }[] =
+        (Array.isArray(body?.sources) ? body.sources : []).map((entry: unknown) =>
+          typeof entry === 'string' ? { url: entry } : (entry as { url: string }));
+      if (wanted.length > 12) fail(400, 'I can watch up to 12 pages for you.');
+      newsSources = wanted.map((entry, index) => {
+        let url = entry.url.trim();
+        if (!/^https?:\/\//i.test(url)) url = `https://${url}`;
+        let host: string;
+        try { host = new URL(url).hostname; } catch { return fail(400, 'That does not look like a web address.'); }
+        if (!host.includes('.')) fail(400, 'That does not look like a public web address.');
+        const existing = newsSources.find(source => source.url === url || source.host === host);
+        // A page she already watches keeps its rhythm and history, exactly like
+        // the real reconcile; a new one starts at six hours until she has looked.
+        return existing || {
+          uuid: `src-new-${index}-${host}`, url, host, label: entry.label || host,
+          scope: entry.scope === 'personal' ? 'personal' : 'world', enabled: true,
+          everyMinutes: 360, rhythm: 'every 6 hours', baselineMinutes: 360, setBy: 'default',
+          reason: null, fasterUntil: null, lastCheckedAt: null, nextCheckAt: iso(0), lastChangedAt: null,
+          lastError: null, headlines: 0,
+        };
+      });
+    }
+    return { sources: newsSources, maxSources: 12 };
+  }
+  if (p.startsWith('/api/v1/dashboard/news/sources/')) {
+    const uuid = decodeURIComponent(p.slice('/api/v1/dashboard/news/sources/'.length));
+    const source = newsSources.find(entry => entry.uuid === uuid);
+    if (!source) fail(404, 'That source is not on your list.');
+    if (method === 'DELETE') {
+      newsSources = newsSources.filter(entry => entry.uuid !== uuid);
+      return { success: true };
+    }
+    if (body?.scope) source.scope = body.scope === 'personal' ? 'personal' : 'world';
+    if (typeof body?.label === 'string') source.label = body.label || source.host;
+    if (typeof body?.enabled === 'boolean') source.enabled = body.enabled;
+    return { source };
+  }
+  if (p === '/api/v1/dashboard/news/check') {
+    // The real one visits whatever is due and returns when it has. Nothing to
+    // fetch here, so it reports the pages it would have read.
+    return { checked: newsSources.length, changed: 0, failed: 0, cooling: false };
   }
   if (p === '/api/v1/dashboard/news') return dashboardNews();
   if (p === '/api/v1/session') return { session: { uuid: 'mock-session', mode: 'companion' } };
@@ -499,6 +578,41 @@ async function route(method: string, path: string, body?: any): Promise<any> {
     const e = { uuid: `p-${Date.now()}`, kind: 'photo', scope: 'personal', title: 'A photo you shared', content: `A clear, well-lit scene.${body.caption ? `\nThey said: "${body.caption}"` : ''}\nIn it: (mock mode — no vision model).`, occurred_at: new Date().toISOString(), importance: 6, source: 'user', media_ref: body.mediaRef, metadata: null };
     events.unshift(e);
     return { event: e };
+  }
+  if (p === '/api/v1/vision/look-requests' && method === 'GET') {
+    return { success: true, requests: lookRequests.filter((r) => r.status === 'pending') };
+  }
+  if (method === 'POST' && /^\/api\/v1\/vision\/look-requests\/[^/]+\/decline$/.test(p)) {
+    const uuid = p.split('/')[5];
+    const r = lookRequests.find((x) => x.uuid === uuid);
+    if (r) r.status = 'declined';
+    return { success: true, declined: !!r };
+  }
+  if (p === '/api/v1/vision/observe' || p === '/api/v1/vision/describe') {
+    // Mock mode has no vision model, so this returns a plausible room rather
+    // than describing the frame. It exists so the camera panel's full loop —
+    // capture, encode, post, render the scene — can be exercised without a
+    // backend. The frame is genuinely captured and genuinely discarded here.
+    await wait(1200);
+    if (body?.look_request_id) {
+      const r = lookRequests.find((x) => x.uuid === body.look_request_id);
+      if (r) r.status = 'fulfilled';
+    }
+    const scene = {
+      source: { id: 'companion-web', kind: 'webcam', position: 'room' },
+      captured_at: new Date().toISOString(),
+      summary: 'A desk under a window, laptop open, mug to the left. Two people talking.',
+      objects: [
+        { label: 'person', description: 'seated, facing the camera', distance_m: 1.1, bearing_deg: -4, confidence: 0.94 },
+        { label: 'person', description: 'standing behind the desk', distance_m: 2.3, bearing_deg: 18, confidence: 0.81 },
+        { label: 'laptop', description: 'open, screen lit', distance_m: 0.7, bearing_deg: 0, confidence: 0.97 },
+      ],
+      hazards: [],
+      notable: false,
+      context: { driving: false, speed_kmh: null },
+      servedBy: 'mock',
+    };
+    return { success: true, scene };
   }
   if (method === 'DELETE' && p.startsWith('/api/v1/memory')) return { success: true };
   if (p === '/api/v1/llm/status') return status;
@@ -680,6 +794,8 @@ export const api = {
   get: <T>(path: string) => request<T>('GET', path),
   text: (path: string) => request<string>('GET', path),
   post: <T>(path: string, data?: unknown) => request<T>('POST', path, data),
+  put: <T>(path: string, data?: unknown) => request<T>('PUT', path, data),
+  patch: <T>(path: string, data?: unknown) => request<T>('PATCH', path, data),
   del: <T>(path: string) => request<T>('DELETE', path),
 };
 

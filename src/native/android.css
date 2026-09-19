@@ -1,0 +1,13 @@
+.android-signin { min-height:100dvh; display:grid; place-items:center; padding:32px 24px; color:#eaf5ff; background:linear-gradient(180deg,#02101be6,#02101b88 55%,#02101bf5),url('/assets/alpine-dawn.png') center/cover; font-family:'Segoe UI',system-ui,sans-serif; }
+.android-signin-card { width:min(100%,360px); text-align:center; }
+.android-signin-avatar { width:110px; height:110px; margin:0 auto 24px; object-fit:cover; border:1px solid #39dcf8; border-radius:50%; box-shadow:0 0 50px #00bcff44; }
+.android-wordmark { color:#39dcf8; font:24px ui-monospace,monospace; letter-spacing:.25em; margin:0 0 38px; }
+.android-signin h1 { font-size:28px; line-height:1.2; font-weight:500; margin:0 0 16px; }
+.android-signin p:not(.android-wordmark) { font-size:15px; line-height:1.7; color:#b9cedd; }
+.android-signin button { width:100%; min-height:52px; margin:36px 0 16px; border-radius:26px; background:#f2f6fa; color:#14222f; font-size:16px; font-weight:600; }
+.android-signin button:disabled { opacity:.6; }
+.android-signin button:focus-visible { outline:3px solid #39dcf8; outline-offset:4px; }
+.android-signin small { display:block; color:#9cb8cb; line-height:1.6; }
+.android-signin .android-signin-error { color:#ffb9bf; }
+.android-registration { position:fixed; top:8px; left:12px; right:12px; z-index:100; display:flex; gap:12px; align-items:center; background:#152533; color:#f6da9d; border:1px solid #846b3c; border-radius:12px; padding:12px; font:13px/1.4 system-ui,sans-serif; }
+.android-registration button { flex-shrink:0; min-height:44px; padding:8px; color:#50dffa; }

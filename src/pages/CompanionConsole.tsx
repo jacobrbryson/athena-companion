@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useAuth } from '../auth/AuthContext';
 import { useChat, type Message } from '../athena/useChat';
 import { useVoiceInput } from '../athena/useVoiceInput';
@@ -7,6 +7,8 @@ import { UnityAthena, type AthenaBridge } from '../athena/UnityAthena';
 import { SequenceOverlay } from '../components/SequenceOverlay';
 import { MemoryPanel } from '../components/MemoryPanel';
 import { PhotoMemory } from '../components/PhotoMemory';
+import { CameraPanel } from '../components/CameraPanel';
+import { useSight, LOOK_BEFORE_SEND_MS } from '../athena/useSight';
 import { BrainPanel, BrainPill, useBrainStatus } from '../components/BrainStatus';
 import { DevicesPanel } from '../components/DevicesPanel';
 import { ActionsPanel } from '../components/ActionsPanel';
@@ -21,9 +23,10 @@ import {
   type IntegrationCallback,
 } from '../components/IntegrationsPanel';
 import { ARRIVAL_MESSAGES, buildGreeting } from '../athena/sequences';
-import type { MemoryEvent } from '../api/companion';
+import type { MemoryEvent, Scene } from '../api/companion';
 import { Dashboard, DashboardIcon, dashboardSections, type DashboardSection } from '../components/Dashboard';
 import { AthenaAvatar } from '../components/AthenaAvatar';
+import { ProfileAvatar } from '../components/ProfileAvatar';
 import { Drawer } from '../components/Drawer';
 import '../dashboard.css';
 
@@ -41,7 +44,7 @@ const ARRIVAL_MAX_MS = 14000;
 const MAX_VOICE_HOLD_MS = 20000;
 const MAX_MESSAGE = 2000;
 
-type Panel = 'memory' | 'photo' | 'brain' | 'devices' | 'local' | 'integrations' | 'actions' | 'initiative' | null;
+type Panel = 'memory' | 'photo' | 'camera' | 'brain' | 'devices' | 'local' | 'integrations' | 'actions' | 'initiative' | null;
 
 export function CompanionConsole() {
   const { user, profile, arrival, consumeArrival, signOut } = useAuth();
@@ -68,6 +71,21 @@ export function CompanionConsole() {
   // one.
   const nudges = useNudges(!!profile);
   const brain = useBrainStatus();
+  // Athena's eyes. Owned here, not by the camera drawer: closing the drawer
+  // must not blind her, and the pill in the top bar is what makes a camera
+  // that outlives its panel honest rather than creepy.
+  const sight = useSight(!!profile);
+
+  // Her reply is where a look gets proposed, so that is the moment to ask
+  // whether she wants one. The hook's own poll is only a safety net.
+  //
+  // Depends on the CALLBACK, not on `sight` — the hook returns a fresh object
+  // every render, so depending on it turned "check when she replies" into
+  // "check on every render", which was twelve requests in six seconds.
+  const checkLooks = sight.checkRequests;
+  useEffect(() => {
+    if (chat.messages.length) checkLooks();
+  }, [chat.messages.length, checkLooks]);
 
   const [draft, setDraft] = useState('');
   const [view, setView] = useState<'dashboard' | 'chat'>('dashboard');
@@ -76,6 +94,7 @@ export function CompanionConsole() {
   const [briefing, setBriefing] = useState(false);
   const [activeSection, setActiveSection] = useState<DashboardSection>('Home');
   const [menuOpen, setMenuOpen] = useState(false);
+  const [attachOpen, setAttachOpen] = useState(false);
   // Returning from a provider's consent screen. Read once, on the first
   // render, because it scrubs the query string as a side effect.
   const [integrationCallback, setIntegrationCallback] = useState<IntegrationCallback | null>(
@@ -240,12 +259,19 @@ export function CompanionConsole() {
 
   const voice = useVoiceInput(send);
 
-  useEffect(() => {
+  // Layout effect, and keyed on `view`: the chat page stays mounted behind
+  // `hidden` while the dashboard is up, and a scrollTop written to a
+  // display:none element is silently dropped. Everything that arrives while
+  // she's in the background — history on load, replies, nudges — used to land
+  // that way, so opening the chat showed the top of the log instead of the
+  // newest line. Pin on the way in as well as on every new entry.
+  useLayoutEffect(() => {
+    if (view !== 'chat') return;
     const el = logRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   // actions.pending too: a proposal card arrives after the reply that
   // explains it, and a card scrolled out of view is a card nobody answers.
-  }, [chat.messages, chat.isThinking, actions.pending, nudges.nudges]);
+  }, [view, chat.messages, chat.isThinking, actions.pending, nudges.nudges]);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -262,20 +288,44 @@ export function CompanionConsole() {
     };
   }, [menuOpen]);
 
-  function onSubmit(e: FormEvent) {
+  async function onSubmit(e: FormEvent) {
     e.preventDefault();
-    if (!draft.trim()) return;
+    const text = draft.trim();
+    if (!text) return;
     // Replying while something she raised is still open IS the engagement.
     // Asking for a thumbs-up on top of an actual answer would be worse data
     // and a worse conversation.
     nudges.engageAll();
-    send(draft);
     setDraft('');
+
+    // If she can see, get a CURRENT frame in before this message reaches the
+    // prompt builder. "What do you think of this?" is the whole reason sight
+    // exists, and answering it from a view a minute old is worse than saying
+    // nothing. The server structures the frame inline, so this is a real round
+    // trip — capped, because a slow vision model must never hold the
+    // conversation up. A look that lands late simply counts for the next turn.
+    if (sight.enabled) {
+      await Promise.race([
+        sight.lookNow(),
+        new Promise((r) => window.setTimeout(r, LOOK_BEFORE_SEND_MS)),
+      ]);
+    }
+
+    send(text);
   }
 
   function openPanel(p: Panel) {
     setMenuOpen(false);
     setPanel(p);
+  }
+
+  function talkAboutScene(scene: Scene) {
+    // Her live view is already in the prompt (perception.getPromptBlock), so
+    // this only has to open the conversation — repeating the description back
+    // to her would have her answering a summary instead of the scene.
+    setPanel(null);
+    setView('chat');
+    send(scene.summary ? 'What do you make of what you can see?' : 'Can you see anything right now?');
   }
 
   function talkAboutPhoto(event: MemoryEvent) {
@@ -309,6 +359,7 @@ export function CompanionConsole() {
   const menuItems: { icon: string; label: string; onClick: () => void; right?: string }[] = [
     { icon: '🧠', label: 'Memories', onClick: () => openPanel('memory') },
     { icon: '📷', label: 'Show a photo', onClick: () => openPanel('photo') },
+    { icon: '👁️', label: 'Let her see', onClick: () => openPanel('camera') },
     { icon: '⚙️', label: 'Brain', onClick: () => openPanel('brain') },
     { icon: '📱', label: 'Phone & car', onClick: () => openPanel('devices') },
     { icon: '🏠', label: 'Local server', onClick: () => openPanel('local') },
@@ -337,7 +388,7 @@ export function CompanionConsole() {
             aria-expanded={menuOpen}
             onClick={() => setMenuOpen(v => !v)}
           >
-            <span className="sidebar-profile-avatar">{firstName.slice(0, 1)}</span>
+            <ProfileAvatar picture={user?.picture} name={firstName} />
             <div><span className="sidebar-profile-name">{firstName}</span><small>ATHENA COMPANION</small></div>
             <span className="sidebar-profile-caret" aria-hidden>⌃</span>
           </button>
@@ -359,6 +410,31 @@ export function CompanionConsole() {
         <button className="mobile-wordmark" onClick={() => navigateDashboard('Today')}>ATHENA</button>
         <div className="flex items-center gap-2">
           {view === 'chat' && <button className="briefing-trigger" onClick={() => setBriefing(true)}>▦ <span>Daily briefing</span></button>}
+          {/* Up whenever the camera is actually open, including for a look she
+              asked for herself. A borrowed camera nobody can see being borrowed
+              is the thing that would make this indefensible. */}
+          {(sight.enabled || sight.cameraLive || sight.athenaLooking) && (
+            <button
+              className="topbar-notifications"
+              onClick={() => openPanel('camera')}
+              aria-label={
+                sight.athenaLooking
+                  ? `Athena is taking a look — ${sight.athenaLooking.reason ?? 'no reason given'}`
+                  : 'Athena can see — open camera controls'
+              }
+              title={
+                sight.athenaLooking
+                  ? sight.athenaLooking.reason ?? 'Athena is taking a look'
+                  : sight.busy
+                    ? 'Looking now'
+                    : 'Athena can see'
+              }
+            >
+              <span className={sight.busy || sight.athenaLooking ? 'animate-pulse' : ''} aria-hidden>
+                👁️
+              </span>
+            </button>
+          )}
           <BrainPill status={brain} onClick={() => openPanel('brain')} />
           {/* The Notifications card's counterpart. The dot is the whole point:
               a proposal Athena is waiting on should be visible from any screen
@@ -502,14 +578,55 @@ export function CompanionConsole() {
             autoComplete="off"
             className="h-12 min-w-0 flex-1 rounded-full bg-white/5 px-4 text-base outline-none placeholder:opacity-40 focus:bg-white/10"
           />
-          <button
-            type="button"
-            onClick={() => openPanel('photo')}
-            aria-label="Show Athena a photo"
-            className="grid h-12 w-12 shrink-0 place-items-center rounded-full border border-emerald-500/40 text-lg text-emerald-200 transition hover:bg-emerald-500/10 active:scale-95"
-          >
-            📷
-          </button>
+          {/* One "show her something" control. A photo she looks at once and a
+              camera she keeps looking through are the same intent from where
+              the person is standing, and two separate buttons made the camera
+              impossible to find. */}
+          <div className="relative shrink-0">
+            <button
+              type="button"
+              onClick={() => setAttachOpen((v) => !v)}
+              aria-haspopup="menu"
+              aria-expanded={attachOpen}
+              aria-label="Show Athena something"
+              className="grid h-12 w-12 place-items-center rounded-full border border-emerald-500/40 text-lg text-emerald-200 transition hover:bg-emerald-500/10 active:scale-95"
+            >
+              {sight.enabled ? '👁️' : '📷'}
+            </button>
+            {attachOpen && (
+              <>
+                <button
+                  type="button"
+                  aria-hidden
+                  tabIndex={-1}
+                  className="fixed inset-0 z-40 cursor-default"
+                  onClick={() => setAttachOpen(false)}
+                />
+                <div
+                  role="menu"
+                  className="absolute bottom-14 right-0 z-50 w-56 overflow-hidden rounded border border-emerald-500/30 bg-black/95 shadow-2xl shadow-black"
+                >
+                  <button
+                    role="menuitem"
+                    type="button"
+                    onClick={() => { setAttachOpen(false); openPanel('photo'); }}
+                    className="flex w-full items-center gap-3 px-3 py-3 text-left text-sm hover:bg-emerald-500/10"
+                  >
+                    <span aria-hidden>🖼️</span> Show a photo
+                  </button>
+                  <button
+                    role="menuitem"
+                    type="button"
+                    onClick={() => { setAttachOpen(false); openPanel('camera'); }}
+                    className="flex w-full items-center gap-3 border-t border-emerald-500/15 px-3 py-3 text-left text-sm hover:bg-emerald-500/10"
+                  >
+                    <span aria-hidden>👁️</span>
+                    {sight.enabled ? 'Camera — she can see' : 'Let her see'}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
           <button type="submit" disabled={!draft.trim()} className="h-12 shrink-0 rounded-full bg-emerald-500/80 px-5 font-semibold text-black active:scale-95 disabled:opacity-30">
             Send
           </button>
@@ -519,6 +636,29 @@ export function CompanionConsole() {
 
       </div>
       </div>
+      {sight.athenaLooking && (
+        <div
+          role="status"
+          className="fixed inset-x-0 top-0 z-[60] flex items-center justify-center gap-2 bg-emerald-500/90 px-4 py-2 text-center font-mono text-[11px] uppercase tracking-[0.2em] text-black"
+        >
+          <span aria-hidden>👁️</span>
+          Athena is taking a look — {sight.athenaLooking.reason ?? 'no reason given'}
+          <button onClick={() => openPanel('camera')} className="underline underline-offset-2">
+            manage
+          </button>
+        </div>
+      )}
+      {/* The element frames are actually taken from. Present whether or not
+          the drawer is open, and 1px rather than display:none because a video
+          a browser considers invisible is one it may stop decoding. */}
+      <video
+        ref={sight.hiddenVideoRef}
+        muted
+        playsInline
+        aria-hidden
+        tabIndex={-1}
+        style={{ position: 'fixed', width: 1, height: 1, opacity: 0, pointerEvents: 'none', bottom: 0, left: 0 }}
+      />
       <nav className="mobile-navigation" aria-label="Mobile navigation">
         <button className={view === 'dashboard' ? 'active' : ''} onClick={() => navigateDashboard('Home')}><DashboardIcon name="Home" /><span>Home</span></button>
         <button className={view === 'chat' ? 'active' : ''} onClick={() => setView('chat')}><DashboardIcon name="Chat" /><span>Chat</span></button>
@@ -533,7 +673,7 @@ export function CompanionConsole() {
       <div className={`athena-menu-backdrop ${menuOpen ? 'open' : ''}`} onClick={() => setMenuOpen(false)} aria-hidden />
       <div ref={menuRef} className={`athena-menu ${menuOpen ? 'open' : ''}`} role="menu" aria-hidden={!menuOpen} {...(menuOpen ? {} : { inert: '' as unknown as boolean })}>
         <div className="athena-menu-head">
-          <span className="sidebar-profile-avatar">{firstName.slice(0, 1)}</span>
+          <ProfileAvatar picture={user?.picture} name={firstName} />
           <div><span className="sidebar-profile-name">{firstName}</span><small>{user?.email}</small></div>
         </div>
         <div className="athena-menu-items">
@@ -566,6 +706,7 @@ export function CompanionConsole() {
 
       {panel === 'memory' && <MemoryPanel onClose={() => setPanel(null)} />}
       {panel === 'photo' && <PhotoMemory onClose={() => setPanel(null)} onTalkAbout={talkAboutPhoto} />}
+      {panel === 'camera' && <CameraPanel sight={sight} onClose={() => setPanel(null)} onTalkAbout={talkAboutScene} />}
       {panel === 'brain' && <BrainPanel onClose={() => setPanel(null)} />}
       {panel === 'devices' && <DevicesPanel onClose={() => setPanel(null)} />}
       {panel === 'actions' && <ActionsPanel onClose={() => setPanel(null)} />}

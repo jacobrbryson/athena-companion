@@ -3,6 +3,7 @@ import { useAuth } from '../auth/AuthContext';
 import { SequenceOverlay } from '../components/SequenceOverlay';
 import { VERIFY_MESSAGES } from '../athena/sequences';
 import { GOOGLE_CLIENT_ID } from '../config';
+import { androidCall, isAndroidCompanion } from '../native/android';
 
 /**
  * The Companion gate — the Guardians access point, but the credential is a
@@ -25,7 +26,7 @@ export function SignIn() {
   }, []);
 
   useEffect(() => {
-    if (verifying) return;
+    if (verifying || isAndroidCompanion()) return;
     let tries = 0;
     let timer: number | undefined;
 
@@ -70,6 +71,27 @@ export function SignIn() {
     init();
     return () => window.clearTimeout(timer);
   }, [signIn, verifying]);
+
+  if (isAndroidCompanion()) {
+    return <main className="android-signin">
+      <div className="android-signin-card">
+        <img src="/assets/athena-avatar.png" alt="" className="android-signin-avatar" />
+        <p className="android-wordmark">ATHENA</p>
+        <h1>Your day. Your companion.</h1>
+        <p>Your calendar, conversations, and everything that matters — together.</p>
+        <button disabled={verifying} onClick={async () => {
+          setError(null); setVerifying(true);
+          try {
+            const { credential } = await androidCall<{ credential: string }>('googleSignIn');
+            await signIn(credential);
+          } catch (e) { setError((e as Error).message || 'Sign-in could not finish. Please retry.'); }
+          finally { if (mountedRef.current) setVerifying(false); }
+        }}>{verifying ? 'Signing in…' : 'Continue with Google'}</button>
+        <small>Signing in links this phone to your Athena account.</small>
+        {error && <p role="alert" className="android-signin-error">{error}</p>}
+      </div>
+    </main>;
+  }
 
   if (verifying) {
     return (

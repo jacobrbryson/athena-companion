@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { SESSION_EXPIRED_EVENT, type ApiError } from '../api/client';
 import { fetchMe, fetchProfile, fetchAccess, googleSignIn, signOut as apiSignOut, type CompanionUser, type Profile } from '../api/auth';
+import { unlinkAndroidPhone } from '../native/registration';
 
 /**
  * `unreachable` is deliberately distinct from `locked`: a failed access check
@@ -202,6 +203,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const consumeArrival = useCallback(() => setArrival(null), []);
 
   const signOut = useCallback(async () => {
+    try { await unlinkAndroidPhone(); }
+    catch {
+      window.dispatchEvent(new CustomEvent('athena-native-account-error', {
+        detail: 'Could not unlink this phone. Check your connection and try Sign out again.',
+      }));
+      return;
+    }
     try {
       await apiSignOut();
       window.google?.accounts.id.disableAutoSelect();

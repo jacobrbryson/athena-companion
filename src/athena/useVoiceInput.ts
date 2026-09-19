@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { androidCall, isAndroidCompanion } from '../native/android';
 
 /**
  * Click-on / click-off speech-to-text via the Web Speech API.
@@ -37,7 +38,8 @@ export interface VoiceInput {
 }
 
 export function useVoiceInput(onResult: (text: string) => void): VoiceInput {
-  const [isSupported] = useState(() => getCtor() !== null);
+  const [isSupported] = useState(() => isAndroidCompanion() || getCtor() !== null);
+  const nativeTurn = useRef(0);
   const [listening, setListening] = useState(false);
   const [interim, setInterim] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -47,6 +49,7 @@ export function useVoiceInput(onResult: (text: string) => void): VoiceInput {
   onResultRef.current = onResult;
 
   const stop = useCallback(() => {
+    nativeTurn.current += 1;
     try {
       recognitionRef.current?.stop();
     } catch {
@@ -56,6 +59,16 @@ export function useVoiceInput(onResult: (text: string) => void): VoiceInput {
   }, []);
 
   const start = useCallback(() => {
+    if (isAndroidCompanion()) {
+      const turn = ++nativeTurn.current;
+      setError(null); setInterim(''); setListening(true);
+      void androidCall<{ text: string }>('recognizeSpeech').then(({ text }) => {
+        if (turn === nativeTurn.current && text.trim()) onResultRef.current(text.trim());
+      }).catch((e: Error) => {
+        if (turn === nativeTurn.current) setError(e.message);
+      }).finally(() => { if (turn === nativeTurn.current) setListening(false); });
+      return;
+    }
     const Ctor = getCtor();
     if (!Ctor) {
       setError('Voice input is not supported in this browser.');

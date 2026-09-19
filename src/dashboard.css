@@ -17,7 +17,7 @@
 .companion-shell :is(button, input, textarea, select):disabled { cursor: not-allowed; }
 .companion-shell :is(.dashboard-icon, .athena-orb) { transition: filter .18s ease, scale .18s ease; }
 @media (hover: hover) {
-  .companion-shell :is(button, a, summary, [role="button"]):not(:disabled):not([aria-disabled="true"]):not([aria-label="Close"]):hover {
+  .companion-shell :is(button, a, summary, [role="button"]):not(:disabled):not([aria-disabled="true"]):not([aria-label="Close"]):not(.dashboard-card-action):hover {
     filter: brightness(1.2);
     box-shadow: inset 0 0 16px #39dcf818, 0 0 12px #39dcf81a;
   }
@@ -56,6 +56,7 @@ svg.dashboard-icon { box-sizing: border-box; padding: 6px 7px; background-image:
 .sidebar-profile::before { content: ''; position: absolute; left: 9px; right: 9px; top: -14px; border-top: 1px solid #183341; }
 .sidebar-profile.open { border-color: #168bc0; color: #effcff; background: linear-gradient(110deg,#06486a99,#05233866); }
 .sidebar-profile-avatar { background: #163440; width: 34px; height: 34px; flex-shrink: 0; display: grid; place-items: center; border-radius: 50%; color: #7bdded; }
+.sidebar-profile-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; border-radius: 50%; }
 .sidebar-profile-name { display: block; }
 .sidebar-profile small { display: block; color: #527387; font-size: 7px; letter-spacing: .12em; margin-top: 5px; }
 .sidebar-profile-caret { margin-left: auto; color: #5f93aa; font-size: 13px; line-height: 1; transition: rotate .22s ease; }
@@ -95,12 +96,20 @@ article.dashboard-card { display: flex; flex-direction: column; min-height: 302p
    card, so the inset lives in the padding rather than in a margin. */
 .dashboard-card-action { display: flex; justify-content: space-between; align-items: center; width: 100%; border-top: 1px solid #244453; margin: 0; padding: 14px 18px; text-align: left; font-size: 11px; color: #62dbf2; gap: 8px; }
 .dashboard-card-action:disabled { opacity: .6; }
-.dashboard-card button:hover,.dashboard-short:hover { background-color: #103146; }
+.dashboard-card-action span { transition: translate .18s ease; }
+@media (hover: hover) {
+  .dashboard-card-action:enabled:hover { background: transparent; color: #bcf6ff; box-shadow: none; filter: none; }
+  .dashboard-card-action:enabled:hover span { translate: 2px -2px; }
+}
+.dashboard-card button:not(.dashboard-card-action):hover,.dashboard-short:hover { background-color: #103146; }
 /* ---- Card contents ----
    These carried no rules at all, which is why every label ran straight into
    its value ("Sleep5h 24m"). Each list row is a stack: title, then context. */
 .source-note { margin: 16px 0 8px; color: #7fa8bc; font: 9px/1.6 ui-monospace,monospace; letter-spacing: .14em; text-transform: uppercase; }
 .dashboard-card-body>.source-note:first-child { margin-top: 4px; }
+/* The provider's own words, so they read as a quote rather than a label:
+   sentence case, no tracking, and never the uppercase of a heading. */
+.source-detail { margin-top: 4px; text-transform: none; letter-spacing: 0; font-size: 10px; line-height: 1.5; opacity: .75; }
 .dashboard-empty { margin: 8px 0; color: var(--muted); font-size: 11px; line-height: 1.7; }
 .dashboard-data-list { display: grid; gap: 11px; }
 .dashboard-data-list li { min-width: 0; }

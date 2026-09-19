@@ -360,3 +360,66 @@ export const initiativeApi = {
       `/api/v1/initiative/resume/${triggerId}`
     ),
 };
+
+// ---------------------------------------------------------------- vision ---
+
+export interface SceneObject {
+  label: string | null;
+  description: string | null;
+  distance_m: number | null;
+  bearing_deg: number | null;
+  confidence: number | null;
+  track_id?: string | null;
+}
+
+export interface Scene {
+  source: { id: string; kind: string; position: string | null };
+  captured_at: string;
+  summary: string | null;
+  objects: SceneObject[];
+  hazards: string[];
+  notable: boolean;
+  context: { driving: boolean; speed_kmh: number | null };
+  servedBy?: string | null;
+}
+
+export interface LookRequest {
+  uuid: string;
+  /** Why she wants to look, in her own words. Always shown to the person. */
+  reason: string | null;
+  prefer: 'front' | 'room' | null;
+  created_at: string;
+  expires_at: string;
+}
+
+export const visionApi = {
+  /** What Athena has asked to see. A request to honour, never an instruction. */
+  lookRequests: () =>
+    api.get<{ success: true; requests: LookRequest[] }>('/api/v1/vision/look-requests'),
+  /** This device will not look — no camera, refused permission, or told not to. */
+  declineLook: (uuid: string, reason?: string) =>
+    api.post<{ success: true; declined: boolean }>(
+      `/api/v1/vision/look-requests/${uuid}/decline`,
+      { reason }
+    ),
+
+  /**
+   * One frame -> Athena's live view.
+   *
+   * The server runs the vision model and keeps only the structured scene; the
+   * frame itself is never stored. A scene counts as LIVE in her prompt for 20
+   * seconds (perception.js LIVE_TTL_MS) and lingers as "earlier" for ten
+   * minutes, which is why the capture cadence matters.
+   */
+  observe: (body: {
+    keyframe: { imageBase64: string; mimeType: string };
+    source?: { id?: string; kind?: string; position?: string };
+    captured_at?: string;
+    /** Closes the look request this frame answers, if it answers one. */
+    look_request_id?: string;
+  }) => api.post<{ success: true; scene: Scene; answered?: boolean }>('/api/v1/vision/observe', body),
+
+  /** One frame -> scene JSON, stored nowhere and not added to her view. */
+  describe: (body: { imageBase64: string; mimeType: string; source?: { kind?: string; position?: string } }) =>
+    api.post<{ success: true; scene: Scene }>('/api/v1/vision/describe', body),
+};

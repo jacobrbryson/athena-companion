@@ -6,6 +6,7 @@ import {
   type IntegrationProvider,
 } from '../api/companion';
 import type { ApiError } from '../api/client';
+import { androidCall, isAndroidCompanion } from '../native/android';
 
 /**
  * Connect Athena to Google Calendar, Strava and Whoop.
@@ -85,6 +86,9 @@ export function IntegrationsPanel({
 
   useEffect(() => {
     void refresh();
+    const resume = () => void refresh();
+    window.addEventListener('athena-native-resume', resume);
+    return () => window.removeEventListener('athena-native-resume', resume);
   }, [refresh]);
 
   async function beginConnect(provider: IntegrationProvider) {
@@ -95,8 +99,12 @@ export function IntegrationsPanel({
         provider.provider,
         window.location.origin
       );
-      // Leaves the app. Nothing after this runs.
-      window.location.assign(authorize_url);
+      // Android opens provider consent in the system browser; Google blocks
+      // embedded user agents. The server's OAuth state still binds the account.
+      if (isAndroidCompanion()) {
+        await androidCall('openExternal', { url: authorize_url });
+        setBusy(null);
+      } else window.location.assign(authorize_url);
     } catch (e) {
       const err = e as ApiError;
       if (err.code === 'consent_required') {

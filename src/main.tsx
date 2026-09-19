@@ -2,6 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App';
 import './index.css';
+import './native/android.css';
 import { connection, initializeConnection } from './localConnection';
 import { PROXY_BASE } from './config';
 
