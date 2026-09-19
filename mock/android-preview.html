@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Athena Android sign-in preview</title>
+    <script>
+      // Dev-only visual harness. This is not a Vite production entry and cannot
+      // authenticate: the phone's actual account picker is tested on Android.
+      window.AthenaAndroid = {
+        onmessage: null,
+        postMessage(raw) {
+          const { id } = JSON.parse(raw);
+          setTimeout(() => this.onmessage?.({ data: JSON.stringify({ id, error: 'Preview only — Google account selection runs on your Android phone.' }) }), 250);
+        },
+      };
+    </script>
+  </head>
+  <body><div id="root"></div><script type="module" src="/src/main.tsx"></script></body>
+</html>

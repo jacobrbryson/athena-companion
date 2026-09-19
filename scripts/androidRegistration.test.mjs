@@ -75,12 +75,12 @@ test('sign out waits for pairing then revokes before clearing native storage',as
   assert.deepEqual(calls.slice(-2).map(([name])=>name),['revoke','signOut']);
   assert.equal(service.registration,null);
 });
-test('already removed phone can sign out; network failure preserves retryable registration',async () => {
+test('already removed phone and offline accounts can always clear the local identity',async () => {
   const stored={profile_uuid:'person',device_uuid:'phone'};
   const removed=setup({stored,revokeStatus:404});
   await removed.service.unlinkAndroidPhone();
   assert.equal(removed.calls.at(-1)[0],'signOut');
   const offline=setup({stored,revokeStatus:503});
-  await assert.rejects(offline.service.unlinkAndroidPhone());
-  assert.ok(!offline.calls.some(([name])=>name==='signOut'));
+  await offline.service.unlinkAndroidPhone();
+  assert.equal(offline.calls.at(-1)[0],'signOut');
 });

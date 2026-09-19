@@ -187,6 +187,10 @@ export function useSight(active: boolean): Sight {
   // Belt and braces: the console unmounting (sign-out, navigation) must also
   // put the camera light out.
   useEffect(() => stop, [stop]);
+  useEffect(() => {
+    window.addEventListener('athena-native-pause', stop);
+    return () => window.removeEventListener('athena-native-pause', stop);
+  }, [stop]);
 
   // ------------------------------------------------------------ looking ---
 

@@ -73,20 +73,38 @@ svg.dashboard-icon { box-sizing: border-box; padding: 6px 7px; background-image:
 .dashboard-greeting { min-height: 160px; display: flex; justify-content: space-between; align-items: center; gap: 20px; padding: 22px 0 26px; }
 .dashboard-greeting h1 { margin: 8px 0; font-size: clamp(26px,2.65vw,40px); font-weight: 450; letter-spacing: -.035em; text-shadow: 0 2px 18px #00101b; }
 .dashboard-greeting p:last-child { color: #c1d5e3; font-size: 14px; letter-spacing: .01em; }
-.dashboard-mantra { text-align: right; color: #d3e7ed; font: 9px/2 ui-monospace,monospace; letter-spacing: .24em; text-shadow: 0 2px 6px #021420; }
-.dashboard-grid { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 15px; }
+.dashboard-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 15px; }
 .dashboard-card { border: 1px solid #2b5a70; border-radius: 13px; background: linear-gradient(140deg,#061c2bed,#030e17f5); box-shadow: 0 8px 24px #0002,inset 0 1px 0 #d0f1ff08; overflow: hidden; }
 article.dashboard-card { display: flex; flex-direction: column; min-height: 302px; }
-.dashboard-card-heading { display: flex; align-items: center; gap: 8px; width: 100%; padding: 13px 12px; text-align: left; }
+.dashboard-card-head { position: relative; display: flex; align-items: center; padding-right: 12px; }
+.dashboard-card-heading { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; padding: 13px 0 13px 12px; text-align: left; }
 .dashboard-card h2 { font-size: 13px; font-weight: 550; }
 /* The title claims the slack so the count and the chevron stay paired at the
    right rather than drifting apart across it. */
 .dashboard-card-heading h2 { margin-right: auto; }
-.dashboard-card-heading>span:last-child,.dashboard-short>span:last-child { margin-left: auto; color: #8dd9f1; font-size: 22px; font-weight: 200; }
+.dashboard-card-chevron,.dashboard-short>span:last-child { margin-left: auto; padding: 0 0 0 8px; color: #8dd9f1; font-size: 22px; font-weight: 200; }
 .card-count { min-width: 22px; padding: 2px 7px; border-radius: 11px; border: 1px solid #2b6c85; background: #07293a; color: #8fe4fb; font: 600 10px/1.5 ui-monospace,monospace; text-align: center; }
-/* Athena's reason for putting this card first. Only ever one per dashboard. */
-.card-why { margin: -1px 12px 2px; padding: 8px 11px; border-left: 2px solid #37c9e8; border-radius: 0 7px 7px 0; background: #0a3346a6; color: #c5e3f0; font-size: 11px; line-height: 1.55; }
-.card-why .dashboard-eyebrow { display: block; color: #6fd8ef; margin-bottom: 3px; }
+/* Athena's reason for putting this card first. Only ever one per dashboard,
+   and only ever a marker until it is asked for: the note floats over the card
+   rather than pushing its rows down. */
+.card-why { display: inline-flex; flex-shrink: 0; }
+.hint-badge { display: grid; place-items: center; width: 19px; height: 19px; border: 1px solid #37c9e8; border-radius: 50%; background: #0a3346; color: #7fe2fb; font: 500 10px/1 ui-monospace,monospace; box-shadow: 0 0 9px #37c9e855; }
+.hint-badge.open { background: #10516b; color: #d8f7ff; }
+.card-why-note { position: absolute; top: calc(100% - 2px); left: 12px; right: 12px; z-index: 20; padding: 9px 11px; border: 1px solid #2f7f97; border-left: 2px solid #37c9e8; border-radius: 9px; background: #062733f2; box-shadow: 0 12px 28px #00000080; color: #c5e3f0; font-size: 11px; font-weight: 400; line-height: 1.55; text-align: left; white-space: normal; backdrop-filter: blur(8px); }
+.card-why-note .dashboard-eyebrow { display: block; color: #6fd8ef; margin-bottom: 3px; }
+
+/* The same marker, beside a metric label. Its note is anchored to the metric
+   grid rather than to the marker: the card clips its own overflow, and a note
+   hung off a tile in the right-hand column would be cut off at the card edge.
+   Anchoring to the grid also means every note opens in the same place, which
+   reads as one drawer rather than five popups. */
+.hint { display: inline-flex; vertical-align: middle; margin-left: 5px; }
+.hint .hint-badge { width: 14px; height: 14px; font-size: 8px; box-shadow: none; border-color: #2c6a80; background: #07222f; color: #6fc4de; }
+.hint .hint-badge:hover,.hint .hint-badge.open { border-color: #37c9e8; background: #10516b; color: #d8f7ff; }
+.hint-note { position: absolute; left: 0; right: 0; top: 100%; z-index: 20; display: grid; gap: 5px; margin-top: 7px; padding: 9px 11px; border: 1px solid #2f7f97; border-left: 2px solid #37c9e8; border-radius: 9px; background: #062733f2; box-shadow: 0 12px 28px #00000080; color: #c5e3f0; font: 400 11px/1.55 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; letter-spacing: 0; text-transform: none; text-align: left; backdrop-filter: blur(8px); }
+.hint-note .dashboard-eyebrow { color: #6fd8ef; }
+.dashboard-card-head:has(.dashboard-card-heading:hover) .dashboard-card-chevron,
+.dashboard-card-head:has(.dashboard-card-chevron:hover) .dashboard-card-heading { background-color: #103146; }
 .card-lead { border-color: #3aa9c9; box-shadow: 0 8px 24px #0002,inset 0 1px 0 #d0f1ff08,0 0 22px #39dcf81f; }
 .dashboard-card-body { padding: 7px 20px 20px; flex: 1; }
 .dashboard-card-body h3 { font-size: 19px; font-weight: 450; line-height: 1.4; margin: 20px 0 12px; letter-spacing: -.02em; }
@@ -101,7 +119,8 @@ article.dashboard-card { display: flex; flex-direction: column; min-height: 302p
   .dashboard-card-action:enabled:hover { background: transparent; color: #bcf6ff; box-shadow: none; filter: none; }
   .dashboard-card-action:enabled:hover span { translate: 2px -2px; }
 }
-.dashboard-card button:not(.dashboard-card-action):hover,.dashboard-short:hover { background-color: #103146; }
+.dashboard-card button:not(.dashboard-card-action):not(.hint-badge):hover,.dashboard-short:hover { background-color: #103146; }
+.card-why .hint-badge:hover { background-color: #10516b; color: #d8f7ff; }
 /* ---- Card contents ----
    These carried no rules at all, which is why every label ran straight into
    its value ("Sleep5h 24m"). Each list row is a stack: title, then context. */
@@ -120,19 +139,46 @@ article.dashboard-card { display: flex; flex-direction: column; min-height: 302p
 .calendar-events li { display: flex; gap: 9px; align-items: flex-start; }
 .event-dot { width: 6px; height: 6px; flex-shrink: 0; margin-top: 6px; border-radius: 50%; background: #39dcf8; box-shadow: 0 0 8px #39dcf866; }
 .calendar-events small:first-child { margin-top: 0; margin-bottom: 2px; color: #6fc6de; }
-.health-metrics { display: flex; gap: 18px; margin-top: 16px; }
-.health-metrics>div { min-width: 0; }
-.health-metrics span { display: block; color: #7fa8bc; font: 9px/1.6 ui-monospace,monospace; letter-spacing: .14em; text-transform: uppercase; }
-.health-metrics strong { display: block; margin-top: 3px; font-size: 17px; font-weight: 450; }
-.health-metrics small { display: block; margin-top: 2px; color: #7c9aab; font-size: 10px; }
 .activity-line { margin-top: 7px; color: #cadfeb; font-size: 11px; line-height: 1.5; }
 .activity-line small { color: #7c9aab; }
 .dashboard-detail .dashboard-chat-cta { width: 100%; justify-content: space-between; }
 .recovery-preview { display: flex; gap: 12px; align-items: center; margin-top: 18px; }
-.recovery-ring { border: 4px solid #28545a; border-bottom-color: transparent; border-radius: 50%; width: 76px; height: 76px; flex-shrink: 0; text-align: center; padding-top: 5px; }
-.recovery-ring span { display: block; font-size: 26px; line-height: 32px; }
-.recovery-ring small { font-size: 7px; letter-spacing: .1em; color: #9bbbc8; }
+/* The arc is the score. It sweeps clockwise from twelve o'clock, which is why
+   the svg is rotated rather than the dasharray being offset. */
+.recovery-ring { position: relative; display: grid; place-items: center; width: 76px; height: 76px; flex-shrink: 0; text-align: center; }
+.recovery-ring svg { position: absolute; inset: 0; width: 100%; height: 100%; rotate: -90deg; overflow: visible; }
+.recovery-ring circle { fill: none; stroke-width: 4; }
+.recovery-ring-track { stroke: #1d4652; }
+.recovery-ring-fill { stroke-linecap: round; transition: stroke-dasharray .6s cubic-bezier(.2,.8,.3,1), stroke .3s ease; }
+/* Number only. The old "RECOVERY %" caption was wider than the chord it sat
+   on and crossed the arc; the line beside the dial already names it. */
+.recovery-ring-label { font-size: 27px; line-height: 1; letter-spacing: -.02em; }
+.recovery-ring-label small { font-size: 11px; margin-left: 1px; color: #9bbbc8; }
 .recovery-preview p { font-size: 12px; }.recovery-preview p small { display: block; margin-top: 6px; font-size: 10px; color: var(--muted); line-height: 1.5; }
+
+/* ---- Readiness: the one word to take away from all of this --------------
+   GO, REST or WARNING. The reason sits under it in full, because a verdict
+   nobody can argue with is a verdict nobody should trust. */
+.readiness { display: inline-block; padding: 3px 9px; border: 1px solid currentColor; border-radius: 5px; font: 600 11px/1.5 ui-monospace,monospace; letter-spacing: .18em; }
+.readiness-go { color: #6ff0cd; background: #0b3b34a8; }
+.readiness-rest { color: #f3dc9c; background: #3d331099; }
+.readiness-warning { color: #ffb1a0; background: #43190f9e; box-shadow: 0 0 16px #ff826733; }
+.readiness-reason { margin-top: 11px; color: #a9c6d6; font-size: 11px; line-height: 1.65; }
+
+/* ---- Heart numbers ------------------------------------------------------
+   Each one carries the goal it is walking towards and which way it moved, so
+   the number is never the whole story. */
+.health-metrics { position: relative; display: grid; grid-template-columns: repeat(auto-fit,minmax(96px,1fr)); gap: 13px 16px; margin-top: 16px; }
+.health-metrics-wide { grid-template-columns: repeat(auto-fit,minmax(150px,1fr)); gap: 16px 22px; margin: 4px 0 14px; }
+.heart-metric { min-width: 0; }
+.heart-metric>span:first-child { display: flex; align-items: center; color: #7fa8bc; font: 9px/1.6 ui-monospace,monospace; letter-spacing: .14em; text-transform: uppercase; }
+.heart-metric strong { display: block; margin-top: 3px; font-size: 17px; font-weight: 450; color: #eaf5ff; }
+.heart-metric strong em { margin-left: 3px; font-size: 10px; font-style: normal; font-weight: 400; color: #7fa8bc; }
+.heart-metric strong em.heart-unit-tight { margin-left: 0; }
+.heart-metric small { display: block; margin-top: 2px; color: #7c9aab; font-size: 10px; }
+.heart-met strong { color: #7df3d3; }
+.heart-trend { display: inline-block; margin-top: 4px; font: 10px/1.5 ui-monospace,monospace; letter-spacing: .04em; }
+.heart-trend-good { color: #62e0bd; } .heart-trend-bad { color: #ff9c86; } .heart-trend-steady { color: #86a5b6; }
 .card-health .dashboard-card-body h3 { display: none; }.card-health .dashboard-card-body>p:last-child { margin-top: 12px; font-size: 11px; }
 .dashboard-secondary { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 15px; margin-top: 16px; }
 .dashboard-short { display: flex; align-items: center; text-align: left; padding: 16px 14px; gap: 11px; min-height: 90px; }
@@ -172,10 +218,10 @@ article.dashboard-card { display: flex; flex-direction: column; min-height: 302p
 .athena-menu-signout { margin-top: 8px; padding-top: 12px; border-top: 1px solid #1c4255; border-radius: 0 0 8px 8px; color: #a3c0cf; }
 .companion-chat { height: calc(100dvh - 58px); display: flex; flex-direction: column; background: #02080c; }.companion-chat[hidden] { display: none; }.companion-chat>section:first-child { min-height: 180px; }.briefing-trigger { padding: 7px 10px; border: 1px solid #258fa3; border-radius: 6px; color: #63d8ef; }
 .mobile-wordmark,.mobile-navigation { display: none; }
-.dashboard-compact { padding: 0; }.dashboard-compact .dashboard-toolbar,.dashboard-compact .dashboard-mantra,.dashboard-compact .dashboard-bottom,.dashboard-compact .dashboard-footer { display: none; }.dashboard-compact .dashboard-greeting { min-height: 110px; }.dashboard-compact .dashboard-greeting h1 { font-size: 24px; }.dashboard-compact .dashboard-greeting .dashboard-eyebrow { display: none; }.dashboard-compact .dashboard-grid,.dashboard-compact .dashboard-secondary { grid-template-columns: 1fr; gap: 10px; }.dashboard-compact article.dashboard-card { min-height: 0; }.dashboard-compact .dashboard-card-body { display: none; }.dashboard-compact .dashboard-short { min-height: 70px; }.dashboard-compact .dashboard-short p { display: none; }
+.dashboard-compact { padding: 0; }.dashboard-compact .dashboard-toolbar,.dashboard-compact .dashboard-bottom,.dashboard-compact .dashboard-footer { display: none; }.dashboard-compact .dashboard-greeting { min-height: 110px; }.dashboard-compact .dashboard-greeting h1 { font-size: 24px; }.dashboard-compact .dashboard-grid,.dashboard-compact .dashboard-secondary { grid-template-columns: 1fr; gap: 10px; }.dashboard-compact article.dashboard-card { min-height: 0; }.dashboard-compact .dashboard-card-body { display: none; }.dashboard-compact .dashboard-short { min-height: 70px; }.dashboard-compact .dashboard-short p { display: none; }
 @media(min-width:1600px) { .dashboard-content { padding-top: 40px; }.dashboard-greeting { min-height: 210px; }article.dashboard-card { min-height: 350px; }.dashboard-card-body h3 { font-size: 24px; }.dashboard-card-body>p:last-child { font-size: 14px; }.dashboard-bottom { padding-top: 48px; } }
-@media(max-width:1150px) { .dashboard-sidebar { width: 184px; padding-inline: 12px; }.athena-wordmark { font-size: 18px; gap: 8px; }.dashboard-content { padding-inline: 22px; }.dashboard-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }article.dashboard-card { min-height: 270px; }.dashboard-card-body h3 { margin-top: 12px; }.dashboard-short { padding: 12px 9px; gap: 6px; }.dashboard-short p { font-size: 10px; }.dashboard-mantra { display: none; }.athena-menu { left: 12px; } }
-@media(max-width:700px) { .dashboard-sidebar { display: none; }.companion-workspace { padding-bottom: calc(78px + env(safe-area-inset-bottom)); background-size: auto 750px; background-repeat: no-repeat; background-position: center top; background-attachment: scroll; }.companion-topbar { height: 75px; padding: 16px 20px; background: #03111a44; border: 0; }.companion-topbar>div:first-child { max-width: 28px; }.companion-topbar>div:first-child>span:last-child { display: none; }.companion-topbar>div:last-child>button:not(.briefing-trigger) { display: none; }.mobile-wordmark { display: block; position: absolute; left: 50%; transform: translateX(-50%); color: #47dfff; font-size: 21px; letter-spacing: .2em; }.dashboard-content { padding: 0 18px 18px; }.dashboard-toolbar { display: none; }.dashboard-greeting { min-height: 154px; padding: 24px 5px 40px; align-items: flex-start; }.dashboard-greeting .dashboard-eyebrow { font-size: 8px; letter-spacing: .18em; }.dashboard-greeting h1 { font-size: 27px; margin-top: 10px; }.dashboard-greeting p:last-child { font-size: 13px; }.dashboard-grid { grid-template-columns: 1fr; gap: 12px; }article.dashboard-card { min-height: 0; }.dashboard-card-heading { padding: 11px 13px; }.dashboard-card h2 { font-size: 14px; }.dashboard-card-body { padding: 0 20px 15px; }.dashboard-card-body .dashboard-eyebrow { display: none; }.dashboard-card-body h3 { margin-top: 0; font-size: 18px; margin-bottom: 7px; }.dashboard-card-body>p:last-child { font-size: 12px; line-height: 1.6; }.dashboard-card-action { padding: 12px 18px; }.recovery-preview { margin-top: 0; }.card-health .dashboard-card-body>p:last-child { display: none; }.recovery-preview p { font-size: 15px; }.recovery-preview p small { font-size: 12px; }.dashboard-secondary { grid-template-columns: 1fr; gap: 12px; margin-top: 12px; }.dashboard-short { padding: 13px; gap: 10px; min-height: 80px; }.dashboard-short p { font-size: 12px; margin-top: 3px; }.dashboard-bottom { padding: 30px 5px 22px; flex-direction: column; align-items: stretch; }.dashboard-bottom h2 { font-size: 23px; }.dashboard-utilities { width: 100%; }.dashboard-footer>span:last-child { display: none; }.mobile-navigation { display: flex; position: fixed; bottom: 0; left: 0; right: 0; z-index: 30; height: calc(75px + env(safe-area-inset-bottom)); padding: 4px 8px env(safe-area-inset-bottom); align-items: center; justify-content: space-around; border-top: 1px solid #1b4256; background: #020c13f5; backdrop-filter: blur(20px); }.mobile-navigation>button { display: flex; flex-direction: column; align-items: center; min-width: 48px; color: #8baec2; font-size: 10px; gap: 2px; }.mobile-navigation>button.active { color: #33e7f7; }.mobile-navigation .athena-orb { width: 56px; height: 56px; font-size: 32px; box-shadow: 0 0 18px #00c8ff66,inset 0 0 18px #00c8ff44; transform: translateY(-10px); }.companion-chat { height: calc(100dvh - 150px - env(safe-area-inset-bottom)); }.companion-chat>section:first-child { min-height: 100px; }.briefing-trigger span { display: none; }.dashboard-compact .dashboard-greeting { min-height: 100px; padding-bottom: 20px; } .athena-menu { left: 10px; right: 10px; width: auto; bottom: calc(86px + env(safe-area-inset-bottom)); transform-origin: bottom center; } .card-why { margin-inline: 13px; } }
+@media(max-width:1150px) { .dashboard-sidebar { width: 184px; padding-inline: 12px; }.athena-wordmark { font-size: 18px; gap: 8px; }.dashboard-content { padding-inline: 22px; }.dashboard-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }article.dashboard-card { min-height: 270px; }.dashboard-card-body h3 { margin-top: 12px; }.dashboard-short { padding: 12px 9px; gap: 6px; }.dashboard-short p { font-size: 10px; }.athena-menu { left: 12px; } }
+@media(max-width:700px) { .dashboard-sidebar { display: none; }.companion-workspace { padding-bottom: calc(78px + env(safe-area-inset-bottom)); background-size: auto 750px; background-repeat: no-repeat; background-position: center top; background-attachment: scroll; }.companion-topbar { height: 75px; padding: 16px 20px; background: #03111a44; border: 0; }.companion-topbar>div:first-child { max-width: 28px; }.companion-topbar>div:first-child>span:last-child { display: none; }.companion-topbar>div:last-child>button:not(.briefing-trigger) { display: none; }.mobile-wordmark { display: block; position: absolute; left: 50%; transform: translateX(-50%); color: #47dfff; font-size: 21px; letter-spacing: .2em; }.dashboard-content { padding: 0 18px 18px; }.dashboard-toolbar { display: none; }.dashboard-greeting { min-height: 154px; padding: 24px 5px 40px; align-items: flex-start; }.dashboard-greeting h1 { font-size: 27px; margin-top: 10px; }.dashboard-greeting p:last-child { font-size: 13px; }.dashboard-grid { grid-template-columns: 1fr; gap: 12px; }article.dashboard-card { min-height: 0; }.dashboard-card-heading { padding: 11px 13px; }.dashboard-card h2 { font-size: 14px; }.dashboard-card-body { padding: 0 20px 15px; }.dashboard-card-body .dashboard-eyebrow { display: none; }.dashboard-card-body h3 { margin-top: 0; font-size: 18px; margin-bottom: 7px; }.dashboard-card-body>p:last-child { font-size: 12px; line-height: 1.6; }.dashboard-card-action { padding: 12px 18px; }.recovery-preview { margin-top: 0; }.card-health .dashboard-card-body>p:last-child { display: none; }.recovery-preview p { font-size: 15px; }.recovery-preview p small { font-size: 12px; }.dashboard-secondary { grid-template-columns: 1fr; gap: 12px; margin-top: 12px; }.dashboard-short { padding: 13px; gap: 10px; min-height: 80px; }.dashboard-short p { font-size: 12px; margin-top: 3px; }.dashboard-bottom { padding: 30px 5px 22px; flex-direction: column; align-items: stretch; }.dashboard-bottom h2 { font-size: 23px; }.dashboard-utilities { width: 100%; }.dashboard-footer>span:last-child { display: none; }.mobile-navigation { display: flex; position: fixed; bottom: 0; left: 0; right: 0; z-index: 30; height: calc(75px + env(safe-area-inset-bottom)); padding: 4px 8px env(safe-area-inset-bottom); align-items: center; justify-content: space-around; border-top: 1px solid #1b4256; background: #020c13f5; backdrop-filter: blur(20px); }.mobile-navigation>button { display: flex; flex-direction: column; align-items: center; min-width: 48px; color: #8baec2; font-size: 10px; gap: 2px; }.mobile-navigation>button.active { color: #33e7f7; }.mobile-navigation .athena-orb { width: 56px; height: 56px; font-size: 32px; box-shadow: 0 0 18px #00c8ff66,inset 0 0 18px #00c8ff44; transform: translateY(-10px); }.companion-chat { height: calc(100dvh - 150px - env(safe-area-inset-bottom)); }.companion-chat>section:first-child { min-height: 100px; }.briefing-trigger span { display: none; }.dashboard-compact .dashboard-greeting { min-height: 100px; padding-bottom: 20px; } .athena-menu { left: 10px; right: 10px; width: auto; bottom: calc(86px + env(safe-area-inset-bottom)); transform-origin: bottom center; } }
 @media(prefers-reduced-motion:reduce) {
   .companion-shell *, .companion-shell *::before, .companion-shell *::after {
     scroll-behavior: auto !important;
@@ -186,6 +232,10 @@ article.dashboard-card { display: flex; flex-direction: column; min-height: 302p
   }
 }
 .dashboard-card-body .memory-eyebrow { display: block; }
+/* The phone rules hide eyebrows inside a card body, but a hint note opens
+   below the whole grid rather than under its own tile, so the heading is
+   the only thing saying which number it belongs to. */
+.hint-note .dashboard-eyebrow { display: block; }
 
 /* --- Section pages -------------------------------------------------------
    One nav entry, one page. The briefing's cards are a summary grid; a section
@@ -228,7 +278,10 @@ article.dashboard-card { display: flex; flex-direction: column; min-height: 302p
 .trend-bars { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 6px; margin-top: 16px; }
 .trend-bars li { display: flex; flex-direction: column; align-items: center; gap: 6px; min-width: 0; }
 .trend-bars b { font: 400 11px ui-monospace,monospace; color: #cadfeb; white-space: nowrap; }
-.trend-track { display: flex; align-items: flex-end; justify-content: center; width: 100%; height: 96px; border-radius: 5px; background: #0a2130; }
+.trend-track { position: relative; display: flex; align-items: flex-end; justify-content: center; width: 100%; height: 96px; border-radius: 5px; background: #0a2130; }
+/* The line you are aiming at, drawn over the bars so a bar crossing it is
+   unmistakable. */
+.trend-goal { position: absolute; left: 0; right: 0; z-index: 2; border-top: 1px dashed #6fd8ef; opacity: .75; }
 .trend-bar { display: block; width: 100%; border-radius: 5px; transition: height .3s ease; }
 .trend-good { background: linear-gradient(180deg,#5ff0cd,#1b8f79); }
 .trend-ok { background: linear-gradient(180deg,#f0d78e,#8f7220); }

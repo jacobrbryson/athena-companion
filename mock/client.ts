@@ -181,12 +181,50 @@ function dashboardSummary() {
         { id: 'c4', title: 'Emma visiting', start: dayStamp(-4), end: dayStamp(-6), allDay: true, location: null, calendar: null, shared: false },
       ],
     }),
+    // A fortnight of heart data: a settled baseline, then a couple of days of
+    // rising resting heart rate and falling HRV, so the readiness call and the
+    // trends have something to actually say.
     recovery: ready([
-      { date: dayStamp(0), recovery_score: 34, state: 'SCORED' },
-      { date: dayStamp(1), recovery_score: 71, state: 'SCORED' },
+      { date: dayStamp(0), recovery_score: 34, state: 'SCORED', resting_heart_rate: 62, hrv_ms: 41, spo2_percent: 96.4 },
+      { date: dayStamp(1), recovery_score: 48, state: 'SCORED', resting_heart_rate: 60, hrv_ms: 46, spo2_percent: 96.8 },
+      { date: dayStamp(2), recovery_score: 71, state: 'SCORED', resting_heart_rate: 57, hrv_ms: 58, spo2_percent: 97.1 },
+      { date: dayStamp(3), recovery_score: 76, state: 'SCORED', resting_heart_rate: 56, hrv_ms: 61, spo2_percent: 97.4 },
+      { date: dayStamp(4), recovery_score: 64, state: 'SCORED', resting_heart_rate: 58, hrv_ms: 55, spo2_percent: 97 },
+      { date: dayStamp(5), recovery_score: 81, state: 'SCORED', resting_heart_rate: 55, hrv_ms: 64, spo2_percent: 97.5 },
+      { date: dayStamp(6), recovery_score: 69, state: 'SCORED', resting_heart_rate: 57, hrv_ms: 57, spo2_percent: 97.2 },
+      { date: dayStamp(7), recovery_score: 73, state: 'SCORED', resting_heart_rate: 56, hrv_ms: 60, spo2_percent: 97.3 },
+      { date: dayStamp(8), recovery_score: 58, state: 'SCORED', resting_heart_rate: 59, hrv_ms: 52, spo2_percent: 96.9 },
+      { date: dayStamp(9), recovery_score: 77, state: 'SCORED', resting_heart_rate: 56, hrv_ms: 62, spo2_percent: 97.4 },
+      { date: dayStamp(10), recovery_score: 66, state: 'SCORED', resting_heart_rate: 57, hrv_ms: 56, spo2_percent: 97.1 },
+      { date: dayStamp(11), recovery_score: 70, state: 'SCORED', resting_heart_rate: 58, hrv_ms: 59, spo2_percent: 97 },
+      { date: dayStamp(12), recovery_score: 62, state: 'SCORED', resting_heart_rate: 59, hrv_ms: 54, spo2_percent: 96.8 },
+      { date: dayStamp(13), recovery_score: 74, state: 'SCORED', resting_heart_rate: 56, hrv_ms: 61, spo2_percent: 97.3 },
     ]),
-    sleep: ready([{ date: dayStamp(0), nap: false, hours_asleep: 5.4, sleep_performance_percent: 62 }]),
-    strain: ready([{ date: dayStamp(0), day_strain: 14.2 }]),
+    sleep: ready([
+      { date: dayStamp(0), nap: false, hours_asleep: 5.4, sleep_performance_percent: 62, respiratory_rate: 15.8 },
+      { date: dayStamp(1), nap: false, hours_asleep: 6.1, sleep_performance_percent: 71, respiratory_rate: 15.2 },
+      { date: dayStamp(2), nap: false, hours_asleep: 7.3, sleep_performance_percent: 88, respiratory_rate: 14.9 },
+      { date: dayStamp(3), nap: false, hours_asleep: 7.6, sleep_performance_percent: 91, respiratory_rate: 14.8 },
+      { date: dayStamp(4), nap: false, hours_asleep: 6.8, sleep_performance_percent: 80, respiratory_rate: 15 },
+      { date: dayStamp(5), nap: false, hours_asleep: 7.9, sleep_performance_percent: 94, respiratory_rate: 14.7 },
+      { date: dayStamp(6), nap: false, hours_asleep: 7.1, sleep_performance_percent: 85, respiratory_rate: 14.9 },
+    ]),
+    strain: ready([
+      { date: dayStamp(0), day_strain: 14.23891, average_heart_rate: 74 },
+      { date: dayStamp(1), day_strain: 16.4172, average_heart_rate: 73 },
+      { date: dayStamp(2), day_strain: 9.8341, average_heart_rate: 69 },
+      { date: dayStamp(3), day_strain: 12.6612, average_heart_rate: 68 },
+      { date: dayStamp(4), day_strain: 15.0209, average_heart_rate: 70 },
+      { date: dayStamp(5), day_strain: 8.4471, average_heart_rate: 66 },
+      { date: dayStamp(6), day_strain: 13.318, average_heart_rate: 69 },
+      { date: dayStamp(7), day_strain: 11.902, average_heart_rate: 67 },
+      { date: dayStamp(8), day_strain: 14.771, average_heart_rate: 70 },
+      { date: dayStamp(9), day_strain: 10.255, average_heart_rate: 66 },
+      { date: dayStamp(10), day_strain: 12.08, average_heart_rate: 68 },
+      { date: dayStamp(11), day_strain: 13.64, average_heart_rate: 69 },
+      { date: dayStamp(12), day_strain: 15.31, average_heart_rate: 71 },
+      { date: dayStamp(13), day_strain: 9.17, average_heart_rate: 66 },
+    ]),
     activity: ready({ days: 7, activities: [
       { name: 'Morning run', type: 'Run', start: iso(DAY), distance_mi: 4.2, moving_time_s: 2280 },
       { name: 'Lake loop ride', type: 'Ride', start: iso(DAY * 3), distance_mi: 18.6, moving_time_s: 4100 },
@@ -628,14 +666,77 @@ async function route(method: string, path: string, body?: any): Promise<any> {
         // Flip mock_push_unavailable to preview the "not set up on this
         // server" copy, which is what most installs will actually see.
         available: localStorage.getItem('mock_push_unavailable') !== 'true',
+        transports: { fcm: true, webpush: true },
         enabled: initiativePref.push_enabled,
-        devices: devices.filter((d) => d.platform !== 'web').map((d) => ({ uuid: d.uuid, name: d.name })),
+        devices: devices.map((d) => ({ uuid: d.uuid, name: d.name, platform: d.platform })),
       },
       scores: triggerScores,
       catalog: TRIGGER_CATALOG,
       muted: mutedTriggers,
       recent: [...nudges].reverse(),
     };
+  }
+  // Why she is quiet. The failure shapes are the point of the mock: a muted
+  // trigger, a provider that is not connected, and a cooldown all have to be
+  // distinguishable in the panel without a real backend.
+  if (p.startsWith('/api/v1/initiative/diagnostics') && method === 'GET') {
+    return {
+      pref: initiativePref,
+      model_access: { ok: true, reason: null },
+      budget: {
+        blocked_by: initiativePref.enabled ? null : 'not enabled',
+        in_quiet_hours: false,
+        today: 4,
+        // No ceiling since the interruption budget was removed.
+        daily_cap: null,
+        last_nudge_at: new Date(Date.now() - 30 * 60_000).toISOString(),
+        minutes_until_next_allowed: 0,
+      },
+      held: 0,
+      linked_providers: ['google_calendar'],
+      triggers: TRIGGER_CATALOG.map((t, i) => ({
+        ...t,
+        missing_sources: t.sources.filter((sname: string) => sname !== 'google_calendar'),
+        muted: mutedTriggers.includes(t.id),
+        suppressed: Boolean(triggerScores[t.id]?.suppressed),
+        score: triggerScores[t.id]?.score ?? null,
+        last_fired_at: null,
+        cooldown_minutes_left: 0,
+        // Only two things can still refuse: an explicit mute, and a provider
+        // that is not connected.
+        blocked_by: mutedTriggers.includes(t.id)
+          ? 'you muted it'
+          : t.sources.some((sname: string) => sname !== 'google_calendar')
+            ? `not connected: ${t.sources.filter((sname: string) => sname !== 'google_calendar').join(', ')}`
+            : null,
+        would_fire: i === 0,
+        brief: i === 0 ? '"Standup" starts at 2:00 pm, about 15 minutes from now.' : undefined,
+      })),
+      evaluated: true,
+      push: { available: true, transports: { fcm: true, webpush: true }, enabled: initiativePref.push_enabled, devices: [] },
+    };
+  }
+  if (p === '/api/v1/initiative/test-notification' && method === 'POST') {
+    if (!initiativePref.push_enabled) {
+      return { success: true, sent: 0, failed: 0, devices: 0, results: [], skipped: 'not enabled' };
+    }
+    // One of each, so the panel's failure rendering is exercised rather than
+    // only its happy path.
+    return {
+      success: true,
+      sent: 1,
+      failed: 1,
+      devices: 2,
+      results: [
+        { uuid: 'd-1', name: 'Athena Android', platform: 'android', ok: true, reason: null },
+        { uuid: 'd-2', name: 'Chrome on Windows', platform: 'web', ok: false, reason: 'HTTP_410' },
+      ],
+    };
+  }
+  if (p.startsWith('/api/v1/initiative/web-push')) {
+    if (method === 'GET') return { public_key: null };
+    if (method === 'PUT') return { success: true, browserId: 'mock', device_uuid: 'd-web' };
+    if (method === 'DELETE') return { success: true };
   }
   if (method === 'POST' && /^\/api\/v1\/initiative\/resume\/[^/]+$/.test(p)) {
     const id = p.split('/')[5];

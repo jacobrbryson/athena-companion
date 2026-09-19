@@ -5,12 +5,20 @@ export type SourceStatus = 'ready' | 'not_connected' | 'needs_reauth' | 'consent
  *  Adult-only by construction: every dashboard route is behind requireAdultActor. */
 export interface Source<T> { status: SourceStatus; data: T | null; detail?: string | null; checkedAt: string }
 export interface CalendarEvent { id: string | null; title: string; start: string; end: string; allDay: boolean; location: string | null; calendar: string | null; shared: boolean }
+/** One scored (or pending) Whoop recovery. `state` is 'SCORED' when the rest
+ *  of the row can be trusted; the heart fields are null on unscored days. */
+export interface RecoveryDay {
+  date: string; recovery_score: number | null; state: string;
+  resting_heart_rate?: number | null; hrv_ms?: number | null; spo2_percent?: number | null;
+}
 export interface JiraIssue { key: string; title: string; status: string; project: string; updated: string; due: string | null; site: string; url: string }
 export interface DashboardSummary {
   calendar: Source<{ events: CalendarEvent[]; timeZone: string; days: number }>;
-  recovery: Source<{ date: string; recovery_score: number | null; state: string }[]>;
-  sleep: Source<{ date: string; nap: boolean; hours_asleep: number; sleep_performance_percent: number | null }[]>;
-  strain: Source<{ date: string; day_strain: number | null }[]>;
+  /** Whoop's own recovery fields, straight through. The heart numbers were
+   *  always in this payload; the dashboard reads them now. */
+  recovery: Source<RecoveryDay[]>;
+  sleep: Source<{ date: string; nap: boolean; hours_asleep: number; hours_in_bed?: number; sleep_performance_percent: number | null; sleep_efficiency_percent?: number | null; respiratory_rate?: number | null }[]>;
+  strain: Source<{ date: string; day_strain: number | null; average_heart_rate?: number | null; kilojoules?: number | null }[]>;
   activity: Source<{ days: number; activities: { name: string; type: string; start: string; distance_mi: number; moving_time_s: number }[] }>;
   familyChores: Source<{ name: string; chores: { title: string; completed: boolean; status: string | null; dueDate: string | null }[] }>;
   jira: Source<{ issues: JiraIssue[]; partial: boolean }>;

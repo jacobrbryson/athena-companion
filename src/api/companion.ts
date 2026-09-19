@@ -306,8 +306,66 @@ export interface InitiativePref {
 /** Whether push can work on this server at all, and who is registered. */
 export interface PushStatus {
   available: boolean;
+  /**
+   * The two transports fail independently and for unrelated reasons, so
+   * "your phone works but this browser cannot" stays a describable state
+   * instead of collapsing into one mysterious flag.
+   */
+  transports: { fcm: boolean; webpush: boolean };
   enabled: boolean;
-  devices: { uuid: string; name: string }[];
+  devices: { uuid: string; name: string; platform?: string; provider?: string }[];
+}
+
+/** One trigger, and whatever is currently stopping it. */
+export interface TriggerDiagnostic {
+  id: string;
+  label: string;
+  describe: string;
+  urgency: string;
+  sources: string[];
+  missing_sources: string[];
+  muted: boolean;
+  suppressed: boolean;
+  score: number | null;
+  last_fired_at: string | null;
+  cooldown_minutes_left: number;
+  /** The first rule that would refuse, in the order the evaluator applies them. */
+  blocked_by: string | null;
+  /** Only present with ?evaluate=1. */
+  would_fire?: boolean;
+  brief?: string;
+  evaluation_error?: string;
+}
+
+/** Why she is quiet. See core_api/src/services/initiative.diagnose. */
+export interface InitiativeDiagnostics {
+  pref: InitiativePref;
+  model_access: { ok: boolean; reason: string | null };
+  budget: {
+    blocked_by: string | null;
+    /** True means a push is HELD until the window ends, not that anything is lost. */
+    in_quiet_hours: boolean;
+    today: number;
+    /** Always null since the interruption budget was removed. */
+    daily_cap: number | null;
+    last_nudge_at: string | null;
+    minutes_until_next_allowed: number;
+  };
+  /** Written, still inside its TTL, not yet pushed — waiting on quiet hours. */
+  held: number;
+  linked_providers: string[];
+  triggers: TriggerDiagnostic[];
+  evaluated: boolean;
+  push: PushStatus;
+}
+
+/** Per-device outcome of the test notification. */
+export interface TestNotificationResult {
+  sent: number;
+  failed: number;
+  devices: number;
+  skipped?: string;
+  results: { uuid: string; name: string; platform?: string; ok: boolean; reason: string | null }[];
 }
 
 /**
@@ -359,6 +417,27 @@ export const initiativeApi = {
     api.post<{ success: true; trigger_id: string; score: TriggerScore }>(
       `/api/v1/initiative/resume/${triggerId}`
     ),
+  /**
+   * Why she is quiet. `evaluate` runs the real triggers against the linked
+   * providers, so it is slow and deliberately opt-in — not something a panel
+   * should do on open.
+   */
+  diagnostics: (evaluate = false) =>
+    api.get<InitiativeDiagnostics>(
+      `/api/v1/initiative/diagnostics${evaluate ? '?evaluate=1' : ''}`
+    ),
+  /** Prove the path to this person's devices. Skips the budget; writes no nudge. */
+  testNotification: () =>
+    api.post<{ success: true } & TestNotificationResult>('/api/v1/initiative/test-notification'),
+  /** The VAPID public key this browser subscribes with; null when unconfigured. */
+  webPushKey: () => api.get<{ public_key: string | null }>('/api/v1/initiative/web-push'),
+  registerWebPush: (body: { subscription: PushSubscriptionJSON; browser_id: string; name: string }) =>
+    api.put<{ success: true; browserId: string; device_uuid: string }>(
+      '/api/v1/initiative/web-push',
+      body
+    ),
+  forgetWebPush: (browserId: string) =>
+    api.del<{ success: true }>(`/api/v1/initiative/web-push?browser_id=${encodeURIComponent(browserId)}`),
 };
 
 // ---------------------------------------------------------------- vision ---

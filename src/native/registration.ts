@@ -34,12 +34,17 @@ export async function unlinkAndroidPhone() {
   if (!isAndroidCompanion()) return;
   // Wait for any in-flight registration before signing out or changing identity.
   await registration?.promise.catch(() => undefined);
-  const stored = await androidCall<PhoneRegistration | null>('registration');
-  if (stored) await devicesApi.revoke(stored.device_uuid).catch((error) => {
-    if (error?.status !== 404) throw error;
-  });
-  await androidCall('signOut');
-  registration = null;
+  try {
+    const stored = await androidCall<PhoneRegistration | null>('registration');
+    if (stored) await devicesApi.revoke(stored.device_uuid);
+  } catch {
+    // Loss of access or a broken network must never trap someone in an account.
+    // The discarded token cannot be recovered from web storage; an unreachable
+    // server may keep an inactive device entry until the owner removes it.
+  } finally {
+    await androidCall('signOut');
+    registration = null;
+  }
 }
 
 export function beginRegistration(profile: string) {

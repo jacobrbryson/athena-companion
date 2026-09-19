@@ -1,5 +1,5 @@
-import { useState, type ReactNode } from 'react';
-import type { CalendarEvent, Source, JiraIssue } from '../api/dashboard';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import type { CalendarEvent, Source, JiraIssue, RecoveryDay, DashboardSummary } from '../api/dashboard';
 import type { Fact } from '../api/companion';
 import { useDashboardData } from './useDashboardData';
 import { NewsSourcesPanel } from './NewsSourcesPanel';
@@ -27,12 +27,40 @@ export const dashboardSections: DashboardSection[] = ['Home', 'Today', 'Calendar
 // ranked it. Ids are shared with services/dashboardPriority.js in core_api —
 // changing one means changing both.
 const DEFAULT_CARD_ORDER = ['calendar', 'health', 'family', 'work', 'news', 'projects', 'notifications'];
-// The first row holds four cards; whatever ranks below them drops to the second.
-const PRIMARY_SLOTS = 4;
+// The first row holds three cards; whatever ranks below them drops to the second.
+const PRIMARY_SLOTS = 3;
+/**
+ * The connectors each card is made of, for the cards that are made of nothing
+ * else. When none of them is linked the card has no subject, so it leaves the
+ * briefing rather than sitting there advertising three apps.
+ *
+ * Family, Projects and Notifications are deliberately absent: they still have
+ * memories, saved goals and approvals to show when every connector is dark.
+ */
+const CARD_SOURCES: Partial<Record<string, (keyof DashboardSummary)[]>> = {
+  calendar: ['calendar'],
+  health: ['recovery', 'sleep', 'strain', 'activity'],
+  work: ['jira', 'gmail', 'slack'],
+};
 const statusText = { not_connected: 'Not connected', needs_reauth: 'Reconnect to refresh', consent_required: 'Health consent required', error: 'Couldn’t load this source', ready: 'Connected' };
+/**
+ * Why a card is quiet about something.
+ *
+ * A source nobody has linked is not news: it says nothing about today and
+ * there is nothing to do about it here, so a briefing stays silent on it. The
+ * section page still names it, with the button that connects it. Everything
+ * else — a link that expired, consent not given, a provider erroring — is a
+ * fact about the data in front of the person and is still said out loud.
+ */
 function SourceNote({ source, name }: { source?: Source<unknown>; name: string }) {
+  if (source?.status === 'not_connected') return null;
   return <><p className="source-note">{name} · {source ? statusText[source.status] : 'Loading…'}</p>
     {source?.detail && <p className="source-note source-detail">{source.detail}</p>}</>;
+}
+/** A labelled run of card rows that is simply absent when nothing is linked. */
+function SourceBlock({ source, label, name, children }: { source?: Source<unknown>; label: string; name: string; children: ReactNode }) {
+  if (source?.status === 'not_connected') return null;
+  return <><p className="source-note">{label}</p>{source?.status === 'ready' ? children : <SourceNote source={source} name={name} />}</>;
 }
 function safeHref(url?: string | null) { try { const parsed = new URL(url || ''); return parsed.protocol === 'https:' && !parsed.username && !parsed.password ? parsed.href : undefined; } catch { return undefined; } }
 function ExternalLink({ url, children }: { url?: string | null; children: ReactNode }) {
@@ -86,14 +114,25 @@ function Unavailable({ source, name, onPanel }: { source?: Source<unknown>; name
  * `neutral` is for strain, where more is not better: colouring a hard day
  * green and a rest day red would be a judgement the data does not support.
  */
-function Trend({ rows, max, unit, format, neutral }: { rows: { date: string; value: number | null }[]; max: number; unit: string; format?: (value: number) => string; neutral?: boolean }) {
+/**
+ * Seven days of one number.
+ *
+ * `min` lifts the floor off zero, which a heart rate needs: every resting
+ * value a living person records sits in the top third of a 0-90 scale, and
+ * seven bars of the same height say nothing. Panels that do this name the
+ * scale in their note, because a chart that does not start at zero has to say
+ * so. `goal` draws the line the person is aiming at.
+ */
+function Trend({ rows, max, min = 0, goal, unit, format, neutral }: { rows: { date: string; value: number | null }[]; max: number; min?: number; goal?: number; unit: string; format?: (value: number) => string; neutral?: boolean }) {
   if (!rows.some(row => row.value !== null)) return <p className="dashboard-empty">No scored days in this window.</p>;
+  const place = (value: number) => Math.max(4, Math.min(100, ((value - min) / (max - min)) * 100));
   return <ul className="trend-bars" aria-label={`Last ${rows.length} days, ${unit}`}>{rows.map(row => {
-    const pct = row.value === null ? 0 : Math.max(4, Math.min(100, (row.value / max) * 100));
-    const tone = row.value === null ? 'idle' : neutral ? 'plain' : row.value / max >= .66 ? 'good' : row.value / max >= .34 ? 'ok' : 'low';
+    const pct = row.value === null ? 0 : place(row.value);
+    const share = row.value === null ? 0 : (row.value - min) / (max - min);
+    const tone = row.value === null ? 'idle' : neutral ? 'plain' : share >= .66 ? 'good' : share >= .34 ? 'ok' : 'low';
     return <li key={row.date}>
       <b>{row.value === null ? '—' : format ? format(row.value) : Math.round(row.value)}</b>
-      <span className="trend-track"><span className={`trend-bar trend-${tone}`} style={{ height: `${pct}%` }} /></span>
+      <span className="trend-track">{goal !== undefined && <span className="trend-goal" style={{ bottom: `${place(goal)}%` }} title={`Goal ${goal}`} />}<span className={`trend-bar trend-${tone}`} style={{ height: `${pct}%` }} /></span>
       <small>{new Date(`${row.date}T12:00:00Z`).toLocaleDateString(undefined, { timeZone: 'UTC', weekday: 'narrow' })}</small>
     </li>;
   })}</ul>;
@@ -130,6 +169,173 @@ function SectionPage({ eyebrow, title, blurb, stats, children, ask, ctx }: {
     <footer className="dashboard-footer"><span><i /> YOUR SPACE. YOUR PACE.</span><span>LIVE · UPDATES ARRIVE ON THEIR OWN</span></footer>
     {ctx.sourcesOpen && <NewsSourcesPanel onClose={() => ctx.setSourcesOpen(false)} onSaved={ctx.refresh} />}
   </main>;
+}
+
+// --- Heart data -----------------------------------------------------------
+// Whoop already sends resting heart rate, HRV and blood oxygen with every
+// recovery, and a daily average heart rate with every cycle. None of it means
+// much as a single number, so everything below reads today against the days
+// behind it rather than against a population.
+
+/** What these numbers are aiming at. Change them here and the card follows. */
+const HEART_GOALS = { restingHeartRate: 55, hrvMs: 60 };
+/** Days averaged as "recent", and the fewest older days worth comparing to. */
+const RECENT_DAYS = 3, MIN_BASELINE_DAYS = 3;
+
+/** Mean of the finite numbers `pick` finds, or null when it finds none. */
+function average<T>(rows: T[], pick: (row: T) => number | null | undefined) {
+  const values = rows.map(pick).filter((v): v is number => typeof v === 'number' && Number.isFinite(v));
+  return values.length ? values.reduce((a, b) => a + b, 0) / values.length : null;
+}
+interface Trending { direction: 'up' | 'down' | 'steady'; delta: number; recent: number; baseline: number; baselineDays: number }
+/**
+ * The last few days against the days before them. `rows` newest first.
+ * `deadband` is the change small enough to call flat — day-to-day noise in
+ * these numbers is a beat or two, and an arrow that flips every morning is
+ * worse than no arrow.
+ */
+function trendOf<T>(rows: T[], pick: (row: T) => number | null | undefined, deadband: number): Trending | null {
+  const recent = average(rows.slice(0, RECENT_DAYS), pick);
+  const older = rows.slice(RECENT_DAYS);
+  const baseline = older.length >= MIN_BASELINE_DAYS ? average(older, pick) : null;
+  if (recent === null || baseline === null) return null;
+  const delta = recent - baseline;
+  return { direction: Math.abs(delta) < deadband ? 'steady' : delta > 0 ? 'up' : 'down', delta, recent, baseline, baselineDays: older.length };
+}
+type ReadinessLevel = 'go' | 'rest' | 'warning';
+/** `headline` is the few words a stat tile has room for; `reason` is the whole
+ *  argument, for the card that can afford it. */
+interface Readiness { level: ReadinessLevel; label: string; headline: string; reason: string }
+/**
+ * GO, REST or WARNING, from today's recovery read against the fortnight behind
+ * it.
+ *
+ * The rules are deliberately dull, and the card states the ones that fired, so
+ * a verdict can always be argued with. Resting heart rate climbing while HRV
+ * falls is the shape an infection tends to make, which is why the two of them
+ * together outrank a merely poor recovery score — but this is a reason to pay
+ * attention, not a diagnosis, and the card says so.
+ */
+function readinessOf(today: RecoveryDay | undefined, prior: RecoveryDay[], sleepPercent: number | null): Readiness | null {
+  if (!today || today.state !== 'SCORED') return null;
+  const score = today.recovery_score;
+  const baseRhr = average(prior, r => r.resting_heart_rate);
+  const baseHrv = average(prior, r => r.hrv_ms);
+  const rhrUp = baseRhr !== null && today.resting_heart_rate != null ? today.resting_heart_rate - baseRhr : null;
+  const hrvOff = baseHrv !== null && today.hrv_ms != null ? (today.hrv_ms - baseHrv) / baseHrv : null;
+  const lowOxygen = today.spo2_percent != null && today.spo2_percent < 95;
+
+  const notes: string[] = [];
+  if (rhrUp !== null && rhrUp >= 3) notes.push(`resting HR ${rhrUp.toFixed(1)} bpm over baseline`);
+  if (hrvOff !== null && hrvOff <= -.15) notes.push(`HRV ${Math.round(-hrvOff * 100)}% under baseline`);
+  if (lowOxygen) notes.push(`blood oxygen ${today.spo2_percent!.toFixed(1)}%`);
+  if (sleepPercent !== null && sleepPercent < 60) notes.push(`slept ${sleepPercent}% of need`);
+  const said = notes.length ? `${notes.join(' · ')}.` : '';
+
+  if ((rhrUp !== null && rhrUp >= 4 && hrvOff !== null && hrvOff <= -.2) || lowOxygen) {
+    return { level: 'warning', label: 'WARNING', headline: lowOxygen ? 'Blood oxygen is low' : 'Resting HR up while HRV is down', reason: `${said} Two signals moving the wrong way at once — this is often how a bug starts. Worth an easy day and an early night.` };
+  }
+  if ((score != null && score < 34) || (rhrUp !== null && rhrUp >= 4) || (hrvOff !== null && hrvOff <= -.2) || (sleepPercent !== null && sleepPercent < 60)) {
+    return { level: 'rest', label: 'REST', headline: notes[0] || `Recovery ${score}%`, reason: said || `Recovery is ${score}%. Keep today light and let it come back.` };
+  }
+  return { level: 'go', label: 'GO', headline: notes[0] || 'Nothing flagging', reason: said ? `${said} Nothing else is flagging — go, but keep an eye on it.` : `Recovery ${score}%, heart rate and HRV sitting where they usually do. Go.` };
+}
+/** A number and its unit, spaced the way that unit wants to be read. */
+const withUnit = (value: string, unit: string) => (unit === '%' || !unit ? `${value}${unit}` : `${value} ${unit}`);
+/** Which way is the good way for this number — or neither, for the ones that
+ *  are only ever a fact about the day. */
+type Better = 'lower' | 'higher' | 'flat';
+/** An arrow that knows which direction is the good one for this number. */
+function TrendArrow({ trend, better, unit, decimals = 0 }: { trend: Trending | null | undefined; better: Better; unit: string; decimals?: number }) {
+  if (!trend) return null;
+  const good = trend.direction === 'steady' || better === 'flat' ? 'steady'
+    : (trend.direction === 'down') === (better === 'lower') ? 'good' : 'bad';
+  const arrow = trend.direction === 'up' ? '↑' : trend.direction === 'down' ? '↓' : '→';
+  return <span className={`heart-trend heart-trend-${good}`}>
+    {arrow} {trend.direction === 'steady' ? 'steady' : withUnit(Math.abs(trend.delta).toFixed(decimals), unit)}
+  </span>;
+}
+/**
+ * One heart number and which way it is going.
+ *
+ * The tile carries the number and the arrow and nothing else. The goal it is
+ * walking towards, the day it belongs to and the span the arrow compares are
+ * all true and all worth having, but none of them are worth a row on a card
+ * this size, so they wait behind the marker beside the label.
+ */
+function HeartMetric({ label, value, display, unit, goal, better, trend, decimals = 0, note }: {
+  label: string; value?: number | null; display?: ReactNode; unit: string;
+  goal?: number; better: Better; trend?: Trending | null; decimals?: number; note?: string | null;
+}) {
+  const has = typeof value === 'number' && Number.isFinite(value);
+  const met = has && goal !== undefined && (better === 'lower' ? value! <= goal : value! >= goal);
+  const away = has && goal !== undefined ? Math.abs(value! - goal) : null;
+  const goalLine = goal === undefined ? null
+    : !has ? `Goal ${withUnit(String(goal), unit)}.`
+      : met ? `Goal ${withUnit(String(goal), unit)} — met.`
+        : `Goal ${withUnit(String(goal), unit)} — ${withUnit(away!.toFixed(decimals), unit)} to go.`;
+  const trendLine = trend && `Arrow: the last ${RECENT_DAYS} days averaged ${withUnit(trend.recent.toFixed(decimals), unit)} against ${withUnit(trend.baseline.toFixed(decimals), unit)} over the ${trend.baselineDays} days before.`;
+  return <div className={met ? 'heart-metric heart-met' : 'heart-metric'}>
+    <span>{label}<Hint label={`About ${label.toLowerCase()}`} title={label.toUpperCase()} lines={[note, goalLine, trendLine]} /></span>
+    <strong>{display ?? (has ? value!.toFixed(decimals) : '—')}{display === undefined && <em className={unit === '%' ? 'heart-unit-tight' : undefined}>{unit}</em>}</strong>
+    <TrendArrow trend={trend} better={better} unit={unit} decimals={decimals} />
+  </div>;
+}
+
+/**
+ * A marker that keeps something worth knowing out of the way until it is
+ * asked for.
+ *
+ * A card has a handful of rows and every one of them is spoken for, so a goal,
+ * a date or the span an arrow compares waits behind this rather than spending
+ * one. The note floats over what follows instead of pushing it down; where it
+ * is anchored is the caller's business, because the card clips its own
+ * overflow and a note hung off the marker would be cut in half.
+ */
+function Hint({ label, title, lines, glyph = '?', className = 'hint', noteClassName = 'hint-note' }: {
+  label: string; title?: string; lines: (string | null | undefined | false)[];
+  glyph?: string; className?: string; noteClassName?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const wrap = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const dismiss = (event: Event) => {
+      if (event instanceof KeyboardEvent && event.key !== 'Escape') return;
+      if (event.type === 'pointerdown' && wrap.current?.contains(event.target as Node)) return;
+      setOpen(false);
+    };
+    document.addEventListener('pointerdown', dismiss);
+    document.addEventListener('keydown', dismiss);
+    return () => { document.removeEventListener('pointerdown', dismiss); document.removeEventListener('keydown', dismiss); };
+  }, [open]);
+  const said = lines.filter((line): line is string => typeof line === 'string' && line.length > 0);
+  if (!said.length) return null;
+  return <span className={className} ref={wrap}>
+    <button type="button" className={`hint-badge${open ? ' open' : ''}`} aria-expanded={open}
+      aria-label={label} onClick={() => setOpen(value => !value)}>{glyph}</button>
+    {open && <span className={noteClassName} role="status">{title && <span className="dashboard-eyebrow">{title}</span>}{said.map((line, i) => <span key={i}>{line}</span>)}</span>}
+  </span>;
+}
+/** Athena's reason for ranking a card first, in the marker on the card head. */
+const CardWhy = ({ why }: { why: string }) =>
+  <Hint label="Why Athena put this card first" title="ATHENA PUT THIS FIRST" lines={[why]}
+    glyph={'★'} className="card-why" noteClassName="card-why-note" />;
+
+/** The recovery dial. The arc is the score, not decoration: it sweeps from the
+    top and is coloured by the same thresholds the Recovery stat tile uses. */
+function RecoveryRing({ score }: { score: number | null | undefined }) {
+  const pct = score == null ? 0 : Math.min(100, Math.max(0, score));
+  const circumference = 2 * Math.PI * 34;
+  const tone = score == null ? '#2f5d6c' : score >= 67 ? '#33dfb5' : score >= 34 ? '#e8c35c' : '#ff8267';
+  return <div className="recovery-ring" role="img" aria-label={score == null ? 'No recovery score' : `Recovery ${score} percent`}>
+    <svg viewBox="0 0 76 76" aria-hidden="true">
+      <circle className="recovery-ring-track" cx="38" cy="38" r="34" />
+      <circle className="recovery-ring-fill" cx="38" cy="38" r="34" stroke={tone}
+        strokeDasharray={`${(circumference * pct) / 100} ${circumference}`} />
+    </svg>
+    <span className="recovery-ring-label">{score ?? '—'}<small>%</small></span>
+  </div>;
 }
 
 /** YYYY-MM-DD in a named zone, so "today" means the person's today. */
@@ -173,9 +379,24 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onNavig
   const newsSources = data.news.data?.sources || [];
   const pending = (data.actions.data || []).filter(a => a.status === 'pending');
   const latest = <T extends { date: string }>(rows?: T[] | null) => [...(rows || [])].sort((a, b) => b.date.localeCompare(a.date))[0];
-  const recovery = latest(summary?.recovery.data?.filter(r => r.state === 'SCORED'));
-  const sleep = latest(summary?.sleep.data?.filter(s => !s.nap));
-  const strain = latest(summary?.strain.data);
+  const newestFirst = <T extends { date: string }>(rows?: T[] | null) => [...(rows || [])].sort((a, b) => b.date.localeCompare(a.date));
+  const scoredDays = newestFirst(summary?.recovery.data?.filter(r => r.state === 'SCORED'));
+  const strainDays = newestFirst(summary?.strain.data);
+  const recovery = scoredDays[0];
+  // Deadbands: a beat of resting heart rate, two milliseconds of HRV. Below
+  // those an arrow is reporting the noise floor, not a direction.
+  const rhrTrend = trendOf(scoredDays, r => r.resting_heart_rate, 1);
+  const hrvTrend = trendOf(scoredDays, r => r.hrv_ms, 2);
+  const avgHrTrend = trendOf(strainDays, s => s.average_heart_rate, 1);
+  const spo2Trend = trendOf(scoredDays, r => r.spo2_percent, .3);
+  const strainTrend = trendOf(strainDays, s => s.day_strain, .5);
+  const sleepDays = newestFirst(summary?.sleep.data?.filter(s => !s.nap));
+  const sleep = sleepDays[0];
+  // A quarter of an hour: less than that between one stretch of nights and the
+  // next is when you went to bed, not how you are sleeping.
+  const sleepTrend = trendOf(sleepDays, s => s.hours_asleep, .25);
+  const strain = strainDays[0];
+  const readiness = readinessOf(recovery, scoredDays.slice(1), sleep?.sleep_performance_percent ?? null);
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
   const ready = (source?: Source<unknown>) => source?.status === 'ready';
@@ -206,21 +427,55 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onNavig
     if (!ready(source)) return <SourceNote source={source} name="Google Calendar" />;
     return <><p className="source-note">Next 7 days · {source?.data?.timeZone}</p>{!events.length && <p className="dashboard-empty">No upcoming events in this window.</p>}<ul className="dashboard-data-list calendar-events">{events.slice(0, limit).map((event, index) => <li key={`${event.id}-${index}`}><span className="event-dot" /><div><small>{event.allDay ? `${dateLabel(`${event.start}T12:00:00Z`, { timeZone: 'UTC' })} · All day` : `${dateLabel(event.start, { timeZone })} · ${eventTime(event, timeZone)}`}</small><strong>{event.title}</strong>{event.location && <small>{event.location}</small>}{event.shared && <small>{event.calendar}</small>}</div></li>)}</ul></>;
   }
+  /** The heart tiles, in the one place the card and the Health page agree on. */
+  function heartMetrics(wide = false) {
+    return <>
+      <HeartMetric label="Resting HR" value={recovery?.resting_heart_rate} unit="bpm" goal={HEART_GOALS.restingHeartRate} better="lower" trend={rhrTrend}
+        note={recovery ? `WHOOP's resting heart rate for ${dateLabel(`${recovery.date}T12:00:00Z`, { timeZone: 'UTC' })}.` : null} />
+      <HeartMetric label="HRV" value={recovery?.hrv_ms} unit="ms" goal={HEART_GOALS.hrvMs} better="higher" trend={hrvTrend}
+        note={recovery ? `Heart rate variability for ${dateLabel(`${recovery.date}T12:00:00Z`, { timeZone: 'UTC' })}. Higher is a body with more left in it.` : null} />
+      <HeartMetric label="Avg HR" value={strain?.average_heart_rate} unit="bpm" better="lower" trend={avgHrTrend}
+        note={strain ? `Your average over the whole of ${dateLabel(`${strain.date}T12:00:00Z`, { timeZone: 'UTC' })}, asleep and awake.` : null} />
+      <HeartMetric label="Sleep" value={sleep?.hours_asleep} display={sleep ? hoursMinutes(sleep.hours_asleep) : undefined} unit="h" better="higher" trend={sleepTrend} decimals={1}
+        note={sleep?.sleep_performance_percent != null ? `${sleep.sleep_performance_percent}% of the sleep your body asked for on ${dateLabel(`${sleep.date}T12:00:00Z`, { timeZone: 'UTC' })}.` : 'No sleep recorded.'} />
+      <HeartMetric label="Day strain" value={strain?.day_strain} unit="" better="flat" trend={strainTrend} decimals={1}
+        note={strain ? `WHOOP's 0–21 exertion score for ${dateLabel(`${strain.date}T12:00:00Z`, { timeZone: 'UTC' })}.` : 'No strain recorded.'} />
+      {wide && <HeartMetric label="Blood oxygen" value={recovery?.spo2_percent} unit="%" better="higher" trend={spo2Trend} decimals={1}
+        note="Overnight blood oxygen. Under 95% alongside a raised heart rate is worth noticing." />}
+    </>;
+  }
   function healthBody() {
-    return <><div className="recovery-preview"><div className={`recovery-ring ${recovery?.recovery_score != null ? 'has-score' : ''}`}><span>{recovery?.recovery_score ?? '—'}</span><small>RECOVERY %</small></div><p>Latest recovery<small>{recovery ? dateLabel(`${recovery.date}T12:00:00Z`, { timeZone: 'UTC' }) : 'No scored result'}</small></p></div>
-      <div className="health-metrics"><div><span>Sleep</span><strong>{sleep && sleep.sleep_performance_percent !== null ? hoursMinutes(sleep.hours_asleep) : '—'}</strong><small>{sleep?.date}</small></div><div><span>Day strain</span><strong>{strain?.day_strain ?? '—'}</strong><small>{strain?.date}</small></div></div>
+    return <><div className="recovery-preview"><RecoveryRing score={recovery?.recovery_score} />
+      <p>{readiness ? <span className={`readiness readiness-${readiness.level}`}>{readiness.label}</span> : 'Latest recovery'}<small>{recovery ? dateLabel(`${recovery.date}T12:00:00Z`, { timeZone: 'UTC' }) : 'No scored result'}</small></p></div>
+      {readiness && <p className="readiness-reason">{readiness.reason}</p>}
+      <div className="health-metrics">{heartMetrics()}</div>
       {(['recovery', 'sleep', 'strain'] as const).map(key => !ready(summary?.[key]) && <SourceNote key={key} source={summary?.[key]} name={`WHOOP ${key}`} />)}
-      {ready(summary?.activity) ? <><p className="source-note">Strava · last 7 days</p>{activities.slice(0, 2).map((a, i) => <p className="activity-line" key={i}>{a.name} · {a.distance_mi} mi <small>{dateLabel(a.start)}</small></p>)}{!activities.length && <p className="dashboard-empty">No recent activities.</p>}</> : <SourceNote source={summary?.activity} name="Strava" />}</>;
+      <SourceBlock source={summary?.activity} label="Strava · last 7 days" name="Strava">
+        {activities.slice(0, 2).map((a, i) => <p className="activity-line" key={i}>{a.name} · {a.distance_mi} mi <small>{dateLabel(a.start)}</small></p>)}
+        {!activities.length && <p className="dashboard-empty">No recent activities.</p>}
+      </SourceBlock></>;
   }
   function workBody(limit: number) {
-    return <><p className="source-note">Jira · assigned open issues</p>{ready(summary?.jira) ? <>{!issues.length && <p className="dashboard-empty">No assigned open issues returned.</p>}<Issues issues={issues.slice(0, limit)} />{summary?.jira.data?.partial && <p className="source-note">Some sites could not be included.</p>}</> : <SourceNote source={summary?.jira} name="Jira" />}
-      <p className="source-note">Gmail · {summary?.gmail.data?.account || 'work inbox'}</p>{ready(summary?.gmail) ? <><ul className="dashboard-data-list">{summary?.gmail.data?.messages.slice(0, limit).map(m => <li key={m.id}><ExternalLink url={m.url}><strong>{m.title}</strong><small>{m.from}</small></ExternalLink></li>)}</ul>{!summary?.gmail.data?.messages.length && <p className="dashboard-empty">No unread inbox messages.</p>}</> : <SourceNote source={summary?.gmail} name="Gmail" />}
-      <p className="source-note">Slack · recent mentions</p>{ready(summary?.slack) ? <><ul className="dashboard-data-list">{summary?.slack.data?.messages.slice(0, limit).map(m => <li key={m.timestamp}><ExternalLink url={m.url}><strong>#{m.channel}</strong><small>{m.text}</small></ExternalLink></li>)}</ul>{!summary?.slack.data?.messages.length && <p className="dashboard-empty">No mentions returned in the last 7 days.</p>}</> : <SourceNote source={summary?.slack} name="Slack" />}</>;
+    return <>
+      <SourceBlock source={summary?.jira} label="Jira · assigned open issues" name="Jira">
+        {!issues.length && <p className="dashboard-empty">No assigned open issues returned.</p>}<Issues issues={issues.slice(0, limit)} />{summary?.jira.data?.partial && <p className="source-note">Some sites could not be included.</p>}
+      </SourceBlock>
+      <SourceBlock source={summary?.gmail} label={`Gmail · ${summary?.gmail.data?.account || 'work inbox'}`} name="Gmail">
+        <ul className="dashboard-data-list">{summary?.gmail.data?.messages.slice(0, limit).map(m => <li key={m.id}><ExternalLink url={m.url}><strong>{m.title}</strong><small>{m.from}</small></ExternalLink></li>)}</ul>{!summary?.gmail.data?.messages.length && <p className="dashboard-empty">No unread inbox messages.</p>}
+      </SourceBlock>
+      <SourceBlock source={summary?.slack} label="Slack · recent mentions" name="Slack">
+        <ul className="dashboard-data-list">{summary?.slack.data?.messages.slice(0, limit).map(m => <li key={m.timestamp}><ExternalLink url={m.url}><strong>#{m.channel}</strong><small>{m.text}</small></ExternalLink></li>)}</ul>{!summary?.slack.data?.messages.length && <p className="dashboard-empty">No mentions returned in the last 7 days.</p>}
+      </SourceBlock></>;
   }
   function newsBody(limit: number) {
     const failing = newsSources.filter(s => s.lastError);
     return <>{data.news.loading && <p className="source-note">Loading what I’ve read…</p>}{data.news.error && <p className="source-note" role="status">News couldn’t load. Retry or check source setup.</p>}{data.news.data && !newsSources.length && <p className="dashboard-empty">Paste a news page and I’ll start reading it for you.</p>}{failing.map(s => <p key={s.uuid} className="source-note">Couldn’t read {s.host} last time. {s.lastError}</p>)}<ul className="dashboard-data-list">{news.slice(0, limit).map((n, i) => <li key={`${n.url}-${i}`}><ExternalLink url={n.url}><strong>{n.title}</strong><small>{n.source} · {dateLabel(n.firstSeen)}</small></ExternalLink></li>)}</ul>{data.news.data && newsSources.length > 0 && !news.length && <p className="dashboard-empty">Nothing new on these pages yet — I’ll keep looking.</p>}</>;
   }
+  // A card built entirely from connectors nobody has linked yet.
+  const unlinked = (id: string) => {
+    const keys = CARD_SOURCES[id];
+    return !!keys && !!summary && keys.every(key => summary[key]?.status === 'not_connected');
+  };
   // Athena's ordering, made safe to render from: every card exactly once, in
   // her order where she gave one and the declared order where she did not.
   const ranked = (() => {
@@ -232,17 +487,20 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onNavig
       out.push({ id: entry.id, why: entry.why });
     }
     for (const id of DEFAULT_CARD_ORDER) if (!seen.has(id)) out.push({ id, why: null });
-    return out;
+    return out.filter(entry => !unlinked(entry.id));
   })();
   function card(id: string, name: string, title: string, body: ReactNode, action: string, click: () => void, count?: number) {
     const rank = ranked.findIndex(entry => entry.id === id);
     const why = ranked[rank]?.why || null;
     const lead = rank === 0 && !!why;
     return <article className={`dashboard-card card-${id}${lead ? ' card-lead' : ''}`} id={`dashboard-${name.toLowerCase()}`} key={id}>
-      <button className="dashboard-card-heading" onClick={click} title={why || undefined}><DashboardIcon name={name} /><h2>{title}</h2>{count !== undefined && <span className="card-count">{count}</span>}<span>›</span></button>
-      {/* Only the card she put first says why. Seven explanations is not a
-          ranking, it is a second dashboard on top of the one being read. */}
-      {lead && <p className="card-why"><span className="dashboard-eyebrow">ATHENA PUT THIS FIRST</span>{why}</p>}
+      <div className="dashboard-card-head">
+        <button className="dashboard-card-heading" onClick={click} title={why || undefined}><DashboardIcon name={name} /><h2>{title}</h2>{count !== undefined && <span className="card-count">{count}</span>}</button>
+        {/* Only the card she put first says why. Seven explanations is not a
+            ranking, it is a second dashboard on top of the one being read. */}
+        {lead && why && <CardWhy why={why} />}
+        <button className="dashboard-card-chevron" onClick={click} aria-label={`Open ${title}`}>›</button>
+      </div>
       <div className="dashboard-card-body">{body}</div>
       <button className="dashboard-card-action" onClick={click}>{action}<span>↗</span></button>
     </article>;
@@ -253,10 +511,10 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onNavig
     // is more use than dropping someone straight into the settings panel.
     calendar: card('calendar', 'Calendar', 'Calendar', calendarBody(3), 'View schedule', go('Calendar'), summary?.calendar.data?.events.length),
     health: card('health', 'Health', 'Health & Performance', healthBody(), 'View health', go('Health')),
-    family: card('family', 'Family', 'Family', <><p className="source-note">From your memories</p>{data.facts.error ? <p className="dashboard-empty">Memories couldn’t load.</p> : data.facts.loading ? <p className="dashboard-empty">Loading memories…</p> : family.length ? <Facts facts={family.slice(0, 3)} /> : <p className="dashboard-empty">No family memories saved yet.</p>}<p className="source-note">Family Chores · today</p>{ready(summary?.familyChores) ? <><ul className="dashboard-data-list">{chores.slice(0, 3).map((c, i) => <li key={i}><strong>{c.completed ? '✓' : '○'} {c.title}</strong><small>{c.completed ? 'Completed' : c.status || 'Open'}</small></li>)}</ul>{!chores.length && <p className="dashboard-empty">No chores returned for today.</p>}</> : <SourceNote source={summary?.familyChores} name="Family Chores" />}</>, 'View family', go('Family')),
+    family: card('family', 'Family', 'Family', <><p className="source-note">From your memories</p>{data.facts.error ? <p className="dashboard-empty">Memories couldn’t load.</p> : data.facts.loading ? <p className="dashboard-empty">Loading memories…</p> : family.length ? <Facts facts={family.slice(0, 3)} /> : <p className="dashboard-empty">No family memories saved yet.</p>}<SourceBlock source={summary?.familyChores} label="Family Chores · today" name="Family Chores"><ul className="dashboard-data-list">{chores.slice(0, 3).map((c, i) => <li key={i}><strong>{c.completed ? '✓' : '○'} {c.title}</strong><small>{c.completed ? 'Completed' : c.status || 'Open'}</small></li>)}</ul>{!chores.length && <p className="dashboard-empty">No chores returned for today.</p>}</SourceBlock></>, 'View family', go('Family')),
     work: card('work', 'Work', 'Work', workBody(1), 'View work', go('Work')),
     news: card('news', 'News', 'News & Updates', newsBody(3), 'View news', go('News'), news.length || undefined),
-    projects: card('projects', 'Projects', 'Projects', <><p className="source-note">Jira projects · your assigned issues</p>{issues.length ? <ul className="dashboard-data-list">{[...new Set(issues.map(i => i.project))].slice(0, 3).map(project => <li key={project}><strong>{project}</strong><small>{issues.filter(i => i.project === project).length} assigned issues in this snapshot</small></li>)}</ul> : <SourceNote source={summary?.jira} name="Jira" />}<p className="source-note">Saved goals</p>{projects.length ? <Facts facts={projects.slice(0, 2)} /> : <p className="dashboard-empty">{data.facts.error ? 'Memories unavailable.' : 'No saved goals yet.'}</p>}</>, 'View projects', go('Projects')),
+    projects: card('projects', 'Projects', 'Projects', <><SourceBlock source={summary?.jira} label="Jira projects · your assigned issues" name="Jira">{issues.length ? <ul className="dashboard-data-list">{[...new Set(issues.map(i => i.project))].slice(0, 3).map(project => <li key={project}><strong>{project}</strong><small>{issues.filter(i => i.project === project).length} assigned issues in this snapshot</small></li>)}</ul> : <p className="dashboard-empty">No assigned issues in this snapshot.</p>}</SourceBlock><p className="source-note">Saved goals</p>{projects.length ? <Facts facts={projects.slice(0, 2)} /> : <p className="dashboard-empty">{data.facts.error ? 'Memories unavailable.' : 'No saved goals yet.'}</p>}</>, 'View projects', go('Projects')),
     notifications: card('notifications', 'Notifications', 'Notifications', <>{data.actions.loading ? <p className="dashboard-empty">Checking approvals…</p> : data.actions.error ? <p className="dashboard-empty">Approvals couldn’t load.</p> : pending.length ? <ul className="dashboard-data-list">{pending.slice(0, 3).map(a => <li key={a.uuid}><strong>{a.label}</strong><small>{a.summary}</small></li>)}</ul> : <p className="dashboard-empty">Nothing waiting for your approval.</p>}<p className="source-note">You decide what happens next.</p></>, 'Review actions', () => onPanel('actions'), data.actions.data ? pending.length : undefined),
   };
 
@@ -277,7 +535,7 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onNavig
       ask="Walk me through today — what matters most, and what can wait?"
       stats={<>
         <Stat label="Next up" value={nextEvent ? eventTime(nextEvent, timeZone) : '—'} note={nextEvent?.title || (ready(summary?.calendar) ? 'Nothing left today' : 'Calendar unavailable')} />
-        <Stat label="Recovery" value={recovery?.recovery_score ?? '—'} note={recovery ? dateLabel(`${recovery.date}T12:00:00Z`, { timeZone: 'UTC' }) : 'No scored result'} tone={recovery?.recovery_score == null ? 'idle' : recovery.recovery_score >= 67 ? 'good' : recovery.recovery_score >= 34 ? 'ok' : 'low'} />
+        <Stat label="Recovery" value={readiness ? readiness.label : recovery?.recovery_score ?? '—'} note={readiness ? `${recovery?.recovery_score}% · ${readiness.headline}` : 'No scored result'} tone={readiness?.level === 'go' ? 'good' : readiness?.level === 'rest' ? 'ok' : readiness?.level === 'warning' ? 'low' : 'idle'} />
         <Stat label="Chores" value={chores.length ? `${choresDone}/${chores.length}` : '—'} note={chores.length ? (choresDone === chores.length ? 'All done' : `${chores.length - choresDone} still open`) : 'Nothing for today'} />
         <Stat label="Waiting on you" value={pending.length} note={pending.length ? 'Athena needs an answer' : 'Nothing to approve'} tone={pending.length ? 'ok' : 'idle'} />
       </>}
@@ -332,17 +590,34 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onNavig
     const recoveryWeek = week(summary?.recovery.data?.filter(r => r.state === 'SCORED'), r => r.recovery_score);
     const sleepWeek = week(summary?.sleep.data?.filter(s => !s.nap), s => s.hours_asleep ?? null);
     const strainWeek = week(summary?.strain.data, s => s.day_strain);
+    const rhrWeek = week(summary?.recovery.data?.filter(r => r.state === 'SCORED'), r => r.resting_heart_rate ?? null);
+    const hrvWeek = week(summary?.recovery.data?.filter(r => r.state === 'SCORED'), r => r.hrv_ms ?? null);
+    const avgHrWeek = week(summary?.strain.data, s => s.average_heart_rate ?? null);
     return <SectionPage ctx={ctx}
       eyebrow="HOW YOUR BODY IS DOING" title="Health & Performance"
-      blurb="A week of WHOOP recovery, sleep and strain, and what you did with it."
-      ask="Help me review my WHOOP recovery, sleep and Strava activities."
+      blurb="A week of WHOOP recovery, sleep and strain, and what you did with it — read against the fortnight behind it, so a number that moved says so."
+      ask="Help me review my WHOOP recovery, heart rate, HRV and sleep. Am I trending the right way?"
       stats={<>
+        <Stat label="Today" value={readiness ? readiness.label : '—'} note={readiness ? readiness.headline : 'No scored recovery to judge'} tone={readiness?.level === 'go' ? 'good' : readiness?.level === 'rest' ? 'ok' : readiness?.level === 'warning' ? 'low' : 'idle'} />
         <Stat label="Recovery" value={recovery?.recovery_score ?? '—'} note={recovery ? dateLabel(`${recovery.date}T12:00:00Z`, { timeZone: 'UTC' }) : 'No scored result'} tone={recovery?.recovery_score == null ? 'idle' : recovery.recovery_score >= 67 ? 'good' : recovery.recovery_score >= 34 ? 'ok' : 'low'} />
         <Stat label="Sleep" value={sleep ? hoursMinutes(sleep.hours_asleep) : '—'} note={sleep?.sleep_performance_percent != null ? `${sleep.sleep_performance_percent}% of need` : 'No sleep recorded'} />
-        <Stat label="Day strain" value={strain?.day_strain ?? '—'} note={strain?.date || 'No strain recorded'} />
+        <Stat label="Day strain" value={strain?.day_strain != null ? strain.day_strain.toFixed(1) : '—'} note={strain ? dateLabel(`${strain.date}T12:00:00Z`, { timeZone: 'UTC' }) : 'No strain recorded'} />
         <Stat label="Activities" value={activities.length} note="logged in the last 7 days" />
       </>}
     >
+      <Panel title="Heart" note={`goals · ${HEART_GOALS.restingHeartRate} bpm resting, ${HEART_GOALS.hrvMs} ms HRV`} wide>
+        {ready(summary?.recovery) ? <div className="health-metrics health-metrics-wide">{heartMetrics(true)}</div>
+          : <Unavailable source={summary?.recovery} name="WHOOP recovery" onPanel={() => onPanel('integrations')} />}
+      </Panel>
+      <Panel title="Resting heart rate" note={`45–75 bpm · line is your ${HEART_GOALS.restingHeartRate} goal`}>
+        {ready(summary?.recovery) ? <Trend rows={rhrWeek} min={45} max={75} goal={HEART_GOALS.restingHeartRate} unit="resting beats per minute" neutral /> : <Unavailable source={summary?.recovery} name="WHOOP recovery" onPanel={() => onPanel('integrations')} />}
+      </Panel>
+      <Panel title="HRV" note={`20–90 ms · line is your ${HEART_GOALS.hrvMs} goal`}>
+        {ready(summary?.recovery) ? <Trend rows={hrvWeek} min={20} max={90} goal={HEART_GOALS.hrvMs} unit="milliseconds of heart rate variability" neutral /> : <Unavailable source={summary?.recovery} name="WHOOP recovery" onPanel={() => onPanel('integrations')} />}
+      </Panel>
+      <Panel title="Average heart rate" note="50–90 bpm · whole day">
+        {ready(summary?.strain) ? <Trend rows={avgHrWeek} min={50} max={90} unit="average beats per minute" neutral /> : <Unavailable source={summary?.strain} name="WHOOP strain" onPanel={() => onPanel('integrations')} />}
+      </Panel>
       <Panel title="Recovery" note="last 7 days · %">
         {ready(summary?.recovery) ? <Trend rows={recoveryWeek} max={100} unit="percent recovered" /> : <Unavailable source={summary?.recovery} name="WHOOP recovery" onPanel={() => onPanel('integrations')} />}
       </Panel>
@@ -508,7 +783,7 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onNavig
 
   return <main className={`dashboard-content ${compact ? 'dashboard-compact' : ''}`}>
     <div className="dashboard-toolbar"><span className="dashboard-eyebrow">YOUR DAILY BRIEFING</span><time dateTime={new Date().toISOString()}>{new Date().toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}</time><button onClick={() => onAsk('')} className="ask-athena">ϟ <span>Ask Athena…</span> ↗</button></div>
-    <section className="dashboard-greeting"><div><p className="dashboard-eyebrow">A NEW PERSPECTIVE, EVERY DAY</p><h1>{greeting}, {firstName}</h1><p>Here’s what’s on your radar today.</p></div><span className="dashboard-mantra">DISCIPLINE TODAY.<br />A WILDER TOMORROW.</span></section>
+    <section className="dashboard-greeting"><div><h1>{greeting}, {firstName}</h1><p>Here’s what’s on your radar today.</p></div></section>
     {data.summary.error && <p className="dashboard-notice" role="status">Connected data is unavailable. {data.summary.error}</p>}
     <div className="dashboard-grid">{ranked.slice(0, PRIMARY_SLOTS).map(entry => cards[entry.id])}</div>
     <div className="dashboard-secondary">{ranked.slice(PRIMARY_SLOTS).map(entry => cards[entry.id])}</div>
