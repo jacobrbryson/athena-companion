@@ -46,17 +46,17 @@ export interface NewsItem { title: string; url: string | null; summary: string |
 export interface NewsResult { sources: NewsSource[]; items: NewsItem[]; checkedAt: string | null }
 export const dashboardApi = {
   summary: async () => {
-    const value = await api.get<DashboardSummary>('/api/v1/dashboard');
+    const value = await api.cachedGet<DashboardSummary>('/api/v1/dashboard');
     if (!value.calendar || !value.jira) throw new Error('Dashboard API needs updating.');
     return value;
   },
   news: async () => {
-    const value = await api.get<NewsResult>('/api/v1/dashboard/news');
+    const value = await api.cachedGet<NewsResult>('/api/v1/dashboard/news');
     if (!Array.isArray(value.items)) throw new Error('News API needs updating.');
     return value;
   },
   priority: async () => {
-    const value = await api.get<DashboardPriority>('/api/v1/dashboard/priority');
+    const value = await api.cachedGet<DashboardPriority>('/api/v1/dashboard/priority');
     if (!Array.isArray(value?.order)) throw new Error('Priority API needs updating.');
     return value;
   },

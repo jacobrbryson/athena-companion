@@ -35,6 +35,9 @@ export function InitiativePanel({ onClose }: { onClose: () => void }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<TestNotificationResult | null>(null);
   const [why, setWhy] = useState<InitiativeDiagnostics | null>(null);
+  const [smsPhone, setSmsPhone] = useState('');
+  const [smsCode, setSmsCode] = useState('');
+  const [smsPending, setSmsPending] = useState(false);
   const webPush = useWebPush();
 
   async function sendTest() {
@@ -121,8 +124,59 @@ export function InitiativePanel({ onClose }: { onClose: () => void }) {
     }
   }
 
+  async function startSms() {
+    setBusy('sms');
+    setError(null);
+    try {
+      await initiativeApi.startSms(smsPhone);
+      setSmsPending(true);
+    } catch (e) {
+      const err = e as Error & { body?: { message?: string } };
+      const providerCode = (err.body as { code?: string } | undefined)?.code;
+      setError(
+        providerCode
+          ? `${err.body?.message || err.message || 'Could not send the verification text.'} (${providerCode})`
+          : err.body?.message || err.message || 'Could not send the verification text.'
+      );
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function confirmSms() {
+    setBusy('sms');
+    setError(null);
+    try {
+      await initiativeApi.confirmSms(smsPhone, smsCode);
+      setSmsCode('');
+      setSmsPending(false);
+      refresh();
+    } catch (e) {
+      const err = e as Error & { body?: { message?: string } };
+      setError(err.body?.message || err.message || 'Could not confirm that number.');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function forgetSms() {
+    setBusy('sms');
+    setError(null);
+    try {
+      await initiativeApi.forgetSms();
+      setSmsPhone('');
+      setSmsPending(false);
+      refresh();
+    } catch (e) {
+      setError((e as Error).message || 'Could not turn off text messages.');
+    } finally {
+      setBusy(null);
+    }
+  }
+
   const pref = status?.pref;
   const muted = new Set(status?.muted || []);
+  const smsDevice = status?.push.devices.find((device) => device.platform === 'sms');
 
   return (
     <Drawer eyebrow="when athena speaks first" title="Initiative" onClose={onClose}>
@@ -249,7 +303,7 @@ export function InitiativePanel({ onClose }: { onClose: () => void }) {
                   {status.push.devices.length
                     ? `${status.push.devices.map((d) => d.name).join(', ')} · `
                     : 'nowhere registered yet · '}
-                  same limits apply · one notification at a time
+                  same limits apply · each notification is kept
                 </p>
               </div>
 
@@ -293,6 +347,106 @@ export function InitiativePanel({ onClose }: { onClose: () => void }) {
                   </div>
                   {webPush.error && (
                     <p className="mt-1.5 text-xs text-amber-300/80">{webPush.error}</p>
+                  )}
+                </div>
+              )}
+
+              {pref.push_enabled && !status.push.transports.sms && (
+                <div className="rounded border border-emerald-500/10 bg-white/[0.02] p-3">
+                  <p className="text-sm opacity-80">Text messages</p>
+                  <p className="mt-1 text-xs opacity-60">
+                    Text messages aren’t configured on this server yet.
+                  </p>
+                </div>
+              )}
+
+              {pref.push_enabled && status.push.transports.sms && (
+                <div className="rounded border border-emerald-500/10 bg-white/[0.02] p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm opacity-80">Text messages</p>
+                      <p className="mt-1 font-mono text-[10px] opacity-45">
+                        {smsDevice
+                          ? `${smsDevice.name} · verified`
+                          : smsPending
+                            ? 'verification code sent · enter it below'
+                            : 'not connected yet'}
+                      </p>
+                    </div>
+                    {smsDevice && (
+                      <button
+                        type="button"
+                        disabled={busy === 'sms'}
+                        onClick={() => void forgetSms()}
+                        className="shrink-0 rounded border border-emerald-500/30 px-2 py-1 text-xs opacity-80 hover:opacity-100 disabled:opacity-40"
+                      >
+                        Turn off
+                      </button>
+                    )}
+                  </div>
+
+                  {!smsDevice && (
+                    <div className="mt-3 space-y-2">
+                      <label className="block text-xs opacity-70" htmlFor="initiative-sms-phone">
+                        Phone number
+                      </label>
+                      <input
+                        id="initiative-sms-phone"
+                        type="tel"
+                        value={smsPhone}
+                        disabled={busy === 'sms'}
+                        onChange={(e) => setSmsPhone(e.target.value)}
+                        placeholder="(555) 555-0123"
+                        className="h-9 w-full rounded border border-emerald-500/20 bg-white/5 px-2 text-sm outline-none"
+                      />
+                      {!smsPending ? (
+                        <button
+                          type="button"
+                          disabled={busy === 'sms' || !smsPhone.trim()}
+                          onClick={() => void startSms()}
+                          className="rounded border border-emerald-500/30 px-2 py-1 text-xs opacity-80 hover:opacity-100 disabled:opacity-40"
+                        >
+                          {busy === 'sms' ? 'Sending…' : 'Text me a verification code'}
+                        </button>
+                      ) : (
+                        <>
+                          <label className="block text-xs opacity-70" htmlFor="initiative-sms-code">
+                            Verification code
+                          </label>
+                          <input
+                            id="initiative-sms-code"
+                            inputMode="numeric"
+                            autoComplete="one-time-code"
+                            value={smsCode}
+                            disabled={busy === 'sms'}
+                            onChange={(e) => setSmsCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                            placeholder=" six digits"
+                            className="h-9 w-full rounded border border-emerald-500/20 bg-white/5 px-2 font-mono text-sm outline-none"
+                          />
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              disabled={busy === 'sms' || smsCode.length !== 6}
+                              onClick={() => void confirmSms()}
+                              className="rounded border border-emerald-500/30 px-2 py-1 text-xs opacity-80 hover:opacity-100 disabled:opacity-40"
+                            >
+                              {busy === 'sms' ? 'Checking…' : 'Confirm number'}
+                            </button>
+                            <button
+                              type="button"
+                              disabled={busy === 'sms'}
+                              onClick={() => setSmsPending(false)}
+                              className="rounded px-2 py-1 text-xs opacity-60 hover:opacity-100 disabled:opacity-40"
+                            >
+                              start over
+                            </button>
+                          </div>
+                        </>
+                      )}
+                      <p className="font-mono text-[10px] opacity-45">
+                        Athena will text only this verified number. The test below sends to every registered destination.
+                      </p>
+                    </div>
                   )}
                 </div>
               )}

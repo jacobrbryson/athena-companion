@@ -311,7 +311,7 @@ export interface PushStatus {
    * "your phone works but this browser cannot" stays a describable state
    * instead of collapsing into one mysterious flag.
    */
-  transports: { fcm: boolean; webpush: boolean };
+  transports: { fcm: boolean; webpush: boolean; sms: boolean };
   enabled: boolean;
   devices: { uuid: string; name: string; platform?: string; provider?: string }[];
 }
@@ -431,6 +431,20 @@ export const initiativeApi = {
     api.post<{ success: true } & TestNotificationResult>('/api/v1/initiative/test-notification'),
   /** The VAPID public key this browser subscribes with; null when unconfigured. */
   webPushKey: () => api.get<{ public_key: string | null }>('/api/v1/initiative/web-push'),
+  /** Start verifying the phone number that should receive Athena's texts. */
+  startSms: (phone: string) =>
+    api.post<{ success: true; device_uuid: string; number: string; sent: true }>(
+      '/api/v1/initiative/sms',
+      { phone }
+    ),
+  /** Confirm the code sent to the phone number. */
+  confirmSms: (phone: string, code: string) =>
+    api.put<{ success: true; device_uuid: string; number: string; confirmed: true }>(
+      '/api/v1/initiative/sms',
+      { phone, code }
+    ),
+  /** Stop sending Athena texts to the registered number. */
+  forgetSms: () => api.del<{ success: true }>('/api/v1/initiative/sms'),
   registerWebPush: (body: { subscription: PushSubscriptionJSON; browser_id: string; name: string }) =>
     api.put<{ success: true; browserId: string; device_uuid: string }>(
       '/api/v1/initiative/web-push',

@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { SESSION_EXPIRED_EVENT, type ApiError } from '../api/client';
 import { fetchMe, fetchProfile, fetchAccess, googleSignIn, signOut as apiSignOut, type CompanionUser, type Profile } from '../api/auth';
 import { unlinkAndroidPhone } from '../native/registration';
+import { invalidateReads } from '../api/readCache';
 
 /**
  * `unreachable` is deliberately distinct from `locked`: a failed access check
@@ -81,6 +82,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const loadProfile = useCallback(async () => {
     const p = await fetchProfile();
     if (!p?.uuid) throw new Error('No profile');
+    invalidateReads();
     setProfile(p);
     return p;
   }, []);

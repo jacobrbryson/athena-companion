@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import { dashboardApi, type DashboardSummary, type NewsResult, type DashboardPriority } from '../api/dashboard';
 import { memoryApi, actionsApi, type Fact, type AthenaAction } from '../api/companion';
 import { DASHBOARD_REFRESH_EVENT } from '../athena/useChat';
+import { invalidateReads } from '../api/readCache';
 
 interface Result<T> { data: T | null; loading: boolean; error: string | null }
 const initial = { data: null, loading: true, error: null };
@@ -26,34 +27,49 @@ export function useDashboardData() {
   const [priority, setPriority] = useState<DashboardPriority | null>(null);
   const alive = useRef(false);
   const inFlight = useRef(false);
+  const queued = useRef(false);
+  const revision = useRef(0);
   const lastRefresh = useRef(0);
   const refresh = useCallback(async () => {
-    if (inFlight.current) return;
+    if (inFlight.current) { queued.current = true; return; }
     inFlight.current = true;
-    async function load<T>(fetcher: () => Promise<T>, setter: (value: Result<T>) => void) {
-      // Clear previous contents so failures cannot present stale private data
-      // as current after a disconnect, deletion, or permission change.
-      setter({ data: null, loading: true, error: null });
-      try { const data = await fetcher(); if (alive.current) setter({ data, loading: false, error: null }); }
-      catch (e) { if (alive.current) setter({ data: null, loading: false, error: (e as Error).message || 'Unavailable' }); }
-    }
-    await Promise.allSettled([load(dashboardApi.summary, setSummary), load(memoryApi.facts, setFacts), load(actionsApi.pending, setActions), load(dashboardApi.news, setNews)]);
-    inFlight.current = false; lastRefresh.current = Date.now();
-    // After the data, never with it: the ordering is read from the snapshot
-    // the server just built, and it must never hold up the cards themselves.
-    // A failure here leaves the previous order standing rather than shuffling
-    // the page out from under someone mid-read.
-    void dashboardApi.priority().then(value => { if (alive.current) setPriority(value); }).catch(() => undefined);
+    do {
+      queued.current = false;
+      const current = ++revision.current;
+      const canPublish = () => alive.current && current === revision.current;
+      async function load<T>(fetcher: () => Promise<T>, setter: Dispatch<SetStateAction<Result<T>>>) {
+        // Keep cards steady during routine polling. Push invalidation clears
+        // them immediately below; a failed read also removes the old contents.
+        setter(previous => ({ ...previous, loading: previous.data === null, error: null }));
+        try { const data = await fetcher(); if (canPublish()) setter({ data, loading: false, error: null }); }
+        catch (e) { if (canPublish()) setter({ data: null, loading: false, error: (e as Error).message || 'Unavailable' }); }
+      }
+      await Promise.allSettled([load(dashboardApi.summary, setSummary), load(memoryApi.facts, setFacts), load(actionsApi.pending, setActions), load(dashboardApi.news, setNews)]);
+      lastRefresh.current = Date.now();
+      // After the data, never with it: the ordering is read from the snapshot
+      // the server just built, and it must never hold up the cards themselves.
+      // A failure here leaves the previous order standing rather than shuffling
+      // the page out from under someone mid-read.
+      if (canPublish() && !queued.current) {
+        void dashboardApi.priority().then(value => { if (canPublish()) setPriority(value); }).catch(() => undefined);
+      }
+    } while (alive.current && queued.current);
+    inFlight.current = false;
   }, []);
   useEffect(() => {
     alive.current = true;
     void refresh();
     const tick = () => { if (!document.hidden && Date.now() - lastRefresh.current >= SILENT_REFRESH_MS) void refresh(); };
-    const refreshNow = () => { void refresh(); };
+    const refreshNow = () => {
+      revision.current++;
+      invalidateReads();
+      setSummary(initial); setFacts(initial); setActions(initial); setNews(initial); setPriority(null);
+      void refresh();
+    };
     const timer = window.setInterval(tick, SILENT_REFRESH_MS);
     document.addEventListener('visibilitychange', tick);
     window.addEventListener(DASHBOARD_REFRESH_EVENT, refreshNow);
-    return () => { alive.current = false; window.clearInterval(timer); document.removeEventListener('visibilitychange', tick); window.removeEventListener(DASHBOARD_REFRESH_EVENT, refreshNow); };
+    return () => { alive.current = false; revision.current++; window.clearInterval(timer); document.removeEventListener('visibilitychange', tick); window.removeEventListener(DASHBOARD_REFRESH_EVENT, refreshNow); };
   }, [refresh]);
   return { summary, facts, actions, news, priority, refresh, loading: summary.loading || facts.loading || actions.loading || news.loading };
 }

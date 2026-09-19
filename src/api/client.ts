@@ -1,4 +1,5 @@
 import { CLIENT_HEADERS, proxyUrl } from '../config';
+import { readCache, invalidateReads } from './readCache';
 
 /**
  * Thin fetch wrapper (same as Guardians). Every request carries credentials so
@@ -50,28 +51,36 @@ function refreshSession(): Promise<boolean> {
 }
 
 async function request<T>(path: string, init: RequestInit = {}, as: 'json' | 'text' = 'json'): Promise<T> {
-  const res = await send(path, init);
+  const mutating = !!init.method && init.method !== 'GET';
+  if (mutating) invalidateReads();
+  try {
+    const res = await send(path, init);
 
-  const isJson = res.headers.get('content-type')?.includes('application/json');
-  let body: unknown;
-  if (as === 'text' && res.ok) body = await res.text();
-  else if (isJson) body = await res.json().catch(() => undefined);
+    const isJson = res.headers.get('content-type')?.includes('application/json');
+    let body: unknown;
+    if (as === 'text' && res.ok) body = await res.text();
+    else if (isJson) body = await res.json().catch(() => undefined);
 
-  if (!res.ok) {
-    if (res.status === 403 && (body as { code?: string })?.code === 'ACCESS_REQUIRED') {
-      window.dispatchEvent(new Event('athena-access-required'));
+    if (!res.ok) {
+      if (res.status === 401 || res.status === 403) invalidateReads();
+      if (res.status === 403 && (body as { code?: string })?.code === 'ACCESS_REQUIRED') {
+        window.dispatchEvent(new Event('athena-access-required'));
+      }
+      if (res.status === 401 && !isAuthPath(path)) {
+        window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT));
+      }
+      const b = body as { message?: string; error?: string; code?: string } | undefined;
+      const err = new Error(b?.message || b?.error || `Request failed (${res.status})`) as ApiError;
+      err.status = res.status;
+      err.body = body;
+      err.code = b?.code;
+      throw err;
     }
-    if (res.status === 401 && !isAuthPath(path)) {
-      window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT));
-    }
-    const b = body as { message?: string; error?: string; code?: string } | undefined;
-    const err = new Error(b?.message || b?.error || `Request failed (${res.status})`) as ApiError;
-    err.status = res.status;
-    err.body = body;
-    err.code = b?.code;
-    throw err;
+    return body as T;
+  } finally {
+    // Even an unsuccessful/ambiguous write may have changed server state.
+    if (mutating) invalidateReads();
   }
-  return body as T;
 }
 
 /**
@@ -103,6 +112,8 @@ function rawFetch(path: string, init: RequestInit = {}): Promise<Response> {
 }
 
 export const api = {
+  // Explicit opt-in only. Auth, grants, approvals and chat use ordinary reads.
+  cachedGet: <T>(path: string, ttlMs = 15000) => readCache.get(path, ttlMs, () => request<T>(path, { method: 'GET' })),
   get: <T>(path: string) => request<T>(path, { method: 'GET' }),
   text: (path: string) => request<string>(path, { method: 'GET' }, 'text'),
   post: <T>(path: string, data?: unknown) =>
