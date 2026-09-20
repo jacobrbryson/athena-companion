@@ -107,7 +107,7 @@ export function UnityAthena({ sessionId, isThinking, onReady }: Props) {
             frameworkUrl: u('Build/unity.framework.js'),
             codeUrl: u('Build/unity.wasm'),
             streamingAssetsUrl: 'StreamingAssets',
-            companyName: 'Orcwood',
+            companyName: 'Athena',
             productName: 'Athena',
             productVersion: '0.1.0',
           },

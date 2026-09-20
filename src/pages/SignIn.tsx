@@ -4,6 +4,7 @@ import { SequenceOverlay } from '../components/SequenceOverlay';
 import { VERIFY_MESSAGES } from '../athena/sequences';
 import { GOOGLE_CLIENT_ID } from '../config';
 import { androidCall, isAndroidCompanion } from '../native/android';
+import { LegalLinks } from '../components/LegalLinks';
 
 /**
  * The Companion gate — the Guardians access point, but the credential is a
@@ -88,6 +89,7 @@ export function SignIn() {
           finally { if (mountedRef.current) setVerifying(false); }
         }}>{verifying ? 'Signing in…' : 'Continue with Google'}</button>
         <small>Signing in links this phone to your Athena account.</small>
+        <div className="mt-4"><LegalLinks /></div>
         {error && <p role="alert" className="android-signin-error">{error}</p>}
       </div>
     </main>;
@@ -132,6 +134,7 @@ export function SignIn() {
             </p>
           )}
         </div>
+        <div className="mt-8"><LegalLinks /></div>
       </div>
     </main>
   );

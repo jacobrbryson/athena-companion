@@ -59,7 +59,7 @@ npm run build && npm start        # serves ./dist on $PORT (default 8080)
 gcloud builds submit --config cloudbuild.yaml --project athena-476423 --region us-central1   # manual deploy
 ```
 
-Live: https://athena-companion-mlkumvppsa-uc.a.run.app
+Live: https://athena-companion-12367074465.us-central1.run.app
 
 In production Unity loads straight from the GCS bucket (`_VITE_UNITY_ASSET_BASE`).
 The same-origin `/unity` proxy is dev-only: the ~49 MB `unity.wasm` exceeds Cloud

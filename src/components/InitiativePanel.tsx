@@ -9,6 +9,7 @@ import {
   type TestNotificationResult,
 } from '../api/companion';
 import { useWebPush } from '../athena/useWebPush';
+import { LegalLinks } from './LegalLinks';
 
 /**
  * When Athena may speak first.
@@ -40,6 +41,7 @@ export function InitiativePanel({ onClose }: { onClose: () => void }) {
   const [smsPhone, setSmsPhone] = useState('');
   const [smsCode, setSmsCode] = useState('');
   const [smsPending, setSmsPending] = useState(false);
+  const [smsConsent, setSmsConsent] = useState(false);
   const [locationPref, setLocationPref] = useState<LocationPref | null>(null);
   const webPush = useWebPush();
 
@@ -145,6 +147,10 @@ export function InitiativePanel({ onClose }: { onClose: () => void }) {
   }
 
   async function startSms() {
+    if (!smsConsent) {
+      setError('Please consent to Athena SMS before requesting a verification code.');
+      return;
+    }
     setBusy('sms');
     setError(null);
     try {
@@ -186,6 +192,7 @@ export function InitiativePanel({ onClose }: { onClose: () => void }) {
       await initiativeApi.forgetSms();
       setSmsPhone('');
       setSmsPending(false);
+      setSmsConsent(false);
       refresh();
     } catch (e) {
       setError((e as Error).message || 'Could not turn off text messages.');
@@ -460,10 +467,26 @@ export function InitiativePanel({ onClose }: { onClose: () => void }) {
                         placeholder="(555) 555-0123"
                         className="h-9 w-full rounded border border-emerald-500/20 bg-white/5 px-2 text-sm outline-none"
                       />
+                      <label className="flex items-start gap-2 text-xs leading-relaxed opacity-75">
+                        <input
+                          type="checkbox"
+                          checked={smsConsent}
+                          disabled={busy === 'sms' || smsPending}
+                          onChange={(e) => setSmsConsent(e.target.checked)}
+                          className="mt-0.5 h-4 w-4 shrink-0 accent-emerald-500"
+                        />
+                        <span>
+                          I agree to receive recurring automated SMS from <strong>Athena</strong>
+                          about reminders, calendar notifications, task updates, and replies to messages I
+                          initiate. Consent is not required to use Athena. Message frequency varies; message
+                          and data rates may apply. Reply STOP to opt out or HELP for help.
+                          <span className="mt-1 block"><LegalLinks /></span>
+                        </span>
+                      </label>
                       {!smsPending ? (
                         <button
                           type="button"
-                          disabled={busy === 'sms' || !smsPhone.trim()}
+                          disabled={busy === 'sms' || !smsPhone.trim() || !smsConsent}
                           onClick={() => void startSms()}
                           className="rounded border border-emerald-500/30 px-2 py-1 text-xs opacity-80 hover:opacity-100 disabled:opacity-40"
                         >

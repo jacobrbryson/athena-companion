@@ -308,3 +308,4 @@ article.dashboard-card { display: flex; flex-direction: column; min-height: 302p
   .trend-bars b { font-size: 10px; }
 }
 .trend-plain { background: linear-gradient(180deg,#6fe0f8,#1a7793); }
+.system-balance { margin: 15px 0 4px; color: #7df3d3; font-size: 28px; font-weight: 300; }

@@ -9,6 +9,7 @@ import { useState } from 'react';
 import { LocalServerPanel } from './components/LocalServerPanel';
 import { connection } from './localConnection';
 import { AndroidRegistration } from './native/AndroidRegistration';
+import { LegalPage } from './pages/LegalPage';
 
 /** Home: Athena when signed in, otherwise the sign-in gate. */
 function Home() {
@@ -30,6 +31,8 @@ export default function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<Home />} />
+          <Route path="/privacy" element={<LegalPage kind="privacy" />} />
+          <Route path="/terms" element={<LegalPage kind="terms" />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>
