@@ -2,8 +2,10 @@ import { useCallback, useEffect, useState } from 'react';
 import { Drawer, Label, ago } from './Drawer';
 import {
   initiativeApi,
+  locationApi,
   type InitiativeDiagnostics,
   type InitiativeStatus,
+  type LocationPref,
   type TestNotificationResult,
 } from '../api/companion';
 import { useWebPush } from '../athena/useWebPush';
@@ -38,6 +40,7 @@ export function InitiativePanel({ onClose }: { onClose: () => void }) {
   const [smsPhone, setSmsPhone] = useState('');
   const [smsCode, setSmsCode] = useState('');
   const [smsPending, setSmsPending] = useState(false);
+  const [locationPref, setLocationPref] = useState<LocationPref | null>(null);
   const webPush = useWebPush();
 
   async function sendTest() {
@@ -78,6 +81,23 @@ export function InitiativePanel({ onClose }: { onClose: () => void }) {
       .catch((e) => setError((e as Error).message));
   }, []);
   useEffect(refresh, [refresh]);
+  useEffect(() => {
+    locationApi.status().then((res) => setLocationPref(res.pref)).catch((e) => setError((e as Error).message));
+  }, []);
+
+  async function patchLocation(next: Partial<LocationPref>, key: string) {
+    setBusy(key);
+    setError(null);
+    try {
+      const res = await locationApi.setPref(next);
+      setLocationPref(res.pref);
+    } catch (e) {
+      const err = e as Error & { body?: { message?: string } };
+      setError(err.body?.message || err.message || 'Could not save location sharing.');
+    } finally {
+      setBusy(null);
+    }
+  }
 
   async function patch(next: Parameters<typeof initiativeApi.setPref>[0], key: string) {
     setBusy(key);
@@ -185,6 +205,47 @@ export function InitiativePanel({ onClose }: { onClose: () => void }) {
           {error}
         </p>
       )}
+
+      <section className="mb-8">
+        <Label>location context</Label>
+        <p className="mb-3 text-sm opacity-70">
+          If you choose, I can use recent phone location context for future, location-aware notifications.
+          This is separate from Initiative and is off until you turn it on.
+        </p>
+        {!locationPref?.enabled ? (
+          <button
+            onClick={() => void patchLocation({ enabled: true }, 'location')}
+            disabled={busy === 'location' || !locationPref}
+            className="h-10 rounded border border-emerald-500/30 px-3 font-mono text-[10px] uppercase hover:bg-white/5 disabled:opacity-40"
+          >
+            {busy === 'location' ? 'Saving…' : 'Share phone location'}
+          </button>
+        ) : (
+          <div className="space-y-3 rounded border border-emerald-500/10 bg-white/[0.02] p-3">
+            <p className="text-sm opacity-80">Location sharing is on. Samples are kept for {locationPref.retention_days} day(s).</p>
+            <label className="block text-xs opacity-70" htmlFor="location-interval">send at most every</label>
+            <select
+              id="location-interval"
+              value={locationPref.interval_seconds}
+              onChange={(e) => void patchLocation({ interval_seconds: Number(e.target.value) }, 'location-interval')}
+              disabled={busy === 'location-interval'}
+              className="w-full rounded border border-emerald-500/20 bg-black/20 px-3 py-2 font-mono text-xs"
+            >
+              <option value={300}>5 minutes</option>
+              <option value={900}>15 minutes</option>
+              <option value={1800}>30 minutes</option>
+              <option value={3600}>1 hour</option>
+            </select>
+            <button
+              onClick={() => void patchLocation({ enabled: false }, 'location')}
+              disabled={busy === 'location'}
+              className="rounded border border-red-500/20 px-3 py-1.5 font-mono text-[10px] uppercase hover:bg-white/5 disabled:opacity-40"
+            >
+              turn off and delete stored samples
+            </button>
+          </div>
+        )}
+      </section>
 
       <section className="mb-8">
         <Label>speaking first</Label>

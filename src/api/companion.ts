@@ -454,6 +454,20 @@ export const initiativeApi = {
     api.del<{ success: true }>(`/api/v1/initiative/web-push?browser_id=${encodeURIComponent(browserId)}`),
 };
 
+// ------------------------------------------------------------- location ---
+
+export interface LocationPref {
+  enabled: boolean;
+  interval_seconds: number;
+  retention_days: number;
+}
+
+export const locationApi = {
+  status: () => api.get<{ pref: LocationPref }>('/api/v1/location/pref'),
+  setPref: (patch: Partial<LocationPref>) =>
+    api.put<{ success: true; pref: LocationPref }>('/api/v1/location/pref', patch),
+};
+
 // ---------------------------------------------------------------- vision ---
 
 export interface SceneObject {
