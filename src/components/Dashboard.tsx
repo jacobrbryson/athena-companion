@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import type { CalendarEvent, Source, JiraIssue, RecoveryDay, DashboardSummary, TwilioBilling, TwilioUsageRecord } from '../api/dashboard';
+import type { CalendarEvent, Source, JiraIssue, RecoveryDay, DashboardSummary, TwilioBilling } from '../api/dashboard';
 import { dashboardApi } from '../api/dashboard';
 import type { Fact } from '../api/companion';
 import { useDashboardData } from './useDashboardData';
@@ -21,9 +21,11 @@ export function DashboardIcon({ name }: { name: string }) {
   }
   return <span aria-hidden="true" className="dashboard-icon" style={{ backgroundPosition: `${-(icons[name] ?? icons.Home) * .4}px -16px` }} />;
 }
-// Left-hand navigation. "Home" replaces the old Quick Actions entry, which
-// now lives on as the Notifications card and its bell in the top bar.
-export const dashboardSections: DashboardSection[] = ['Home', 'Today', 'Calendar', 'Health', 'Family', 'Work', 'Projects', 'News', 'System'];
+// Left-hand navigation. "Home" is presented to people as Dashboard; it also
+// replaces the old Quick Actions entry, which now lives on as the Notifications
+// card and its bell in the top bar. Today remains an internal page for now but
+// is not a left-navigation entry.
+export const dashboardSections: DashboardSection[] = ['Home', 'Calendar', 'Health', 'Family', 'Work', 'Projects', 'News', 'System'];
 // The card set and the order the dashboard falls back to when Athena has not
 // ranked it. Ids are shared with services/dashboardPriority.js in core_api —
 // changing one means changing both.
@@ -172,14 +174,6 @@ function SectionPage({ eyebrow, title, blurb, stats, children, ask, ctx }: {
   </main>;
 }
 
-function UsageRows({ rows }: { rows: TwilioUsageRecord[] }) {
-  if (!rows.length) return <p className="dashboard-empty">No usage recorded in this window.</p>;
-  return <ul className="dashboard-data-list">{rows.map((row, index) => <li key={`${row.category}-${index}`}>
-    <strong>{row.description}</strong>
-    <small>{row.count !== null ? `${row.count} ${row.countUnit || ''}`.trim() : 'Count unavailable'}{row.price !== null ? ` · ${row.price} ${row.priceUnit || ''}`.trim() : ''}</small>
-  </li>)}</ul>;
-}
-
 function SystemPage({ ctx }: { ctx: SectionContext }) {
   const [billing, setBilling] = useState<TwilioBilling | null>(null);
   const [loading, setLoading] = useState(true);
@@ -198,23 +192,16 @@ function SystemPage({ ctx }: { ctx: SectionContext }) {
   const unavailable = error || (billing && !billing.configured ? 'Twilio is not configured on this Athena system.' : null);
   const balance = billing?.balance?.amount && billing.balance.currency ? `${billing.balance.currency} ${billing.balance.amount}` : '—';
   return <SectionPage ctx={ctx}
-    eyebrow="ATHENA SYSTEM" title="System" blurb="A live view of the services Athena uses to reach you. This page is read-only and shows Twilio account data when the system owner has configured it."
+    eyebrow="ATHENA SYSTEM" title="System" blurb="A small, live view of the Twilio service Athena uses to reach you."
     ask="What should I know about the Athena system right now?"
     stats={<>
       <Stat label="Twilio balance" value={loading ? '…' : balance} note={billing?.balance?.currency ? 'Current account balance' : 'No balance returned'} tone={billing?.balance?.amount ? 'good' : 'idle'} />
-      <Stat label="Today" value={loading ? '…' : billing?.today?.length ?? '—'} note="Usage categories returned" />
-      <Stat label="This month" value={loading ? '…' : billing?.month?.length ?? '—'} note="Usage categories returned" />
-      <Stat label="Checked" value={loading ? '…' : billing?.checkedAt ? dateLabel(billing.checkedAt, { hour: 'numeric', minute: '2-digit' }) : '—'} note="Live provider read" />
+      <Stat label="SMS messages sent" value={loading ? '…' : billing?.smsMessagesSent ?? '—'} note="This month" />
+      <Stat label="SMS cost" value={loading ? '…' : billing?.smsCostThisMonth != null && billing?.balance?.currency ? `${billing.balance.currency} ${billing.smsCostThisMonth.toFixed(2)}` : '—'} note="This month" />
     </>}
   >
-    <Panel title="Twilio billing" note="live account read">
-      {unavailable ? <div className="section-unavailable"><p className="dashboard-empty">{unavailable}</p><p className="source-detail">The system owner can check the Twilio credentials and account permissions.</p></div> : <><p className="source-note">Account balance</p><p className="system-balance">{balance}</p></>}
-    </Panel>
-    <Panel title="Today’s usage" note="Twilio usage records">
-      {loading ? <p className="dashboard-empty">Reading Twilio…</p> : error ? <p className="dashboard-empty">Usage couldn’t load.</p> : <UsageRows rows={billing?.today || []} />}
-    </Panel>
-    <Panel title="This month" note="Twilio usage records" wide>
-      {loading ? <p className="dashboard-empty">Reading Twilio…</p> : error ? <p className="dashboard-empty">Usage couldn’t load.</p> : <UsageRows rows={billing?.month || []} />}
+    <Panel title="Twilio" note="live account read" wide>
+      {unavailable ? <div className="section-unavailable"><p className="dashboard-empty">{unavailable}</p><p className="source-detail">The system owner can check the Twilio credentials and account permissions.</p></div> : <div className="system-summary-grid"><div><span>Balance</span><strong>{balance}</strong></div><div><span>SMS messages sent · this month</span><strong>{loading ? '…' : billing?.smsMessagesSent ?? '—'}</strong></div><div><span>SMS cost · this month</span><strong>{loading ? '…' : billing?.smsCostThisMonth != null && billing?.balance?.currency ? `${billing.balance.currency} ${billing.smsCostThisMonth.toFixed(2)}` : '—'}</strong></div></div>}
     </Panel>
   </SectionPage>;
 }

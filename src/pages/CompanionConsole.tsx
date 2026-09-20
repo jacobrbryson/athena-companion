@@ -366,6 +366,7 @@ export function CompanionConsole() {
     { icon: '⚡', label: 'Actions', onClick: () => openPanel('actions') },
     { icon: '💡', label: 'Initiative', onClick: () => openPanel('initiative') },
     { icon: '🔗', label: 'Connected apps', onClick: () => openPanel('integrations') },
+    { icon: '🖥️', label: 'System', onClick: () => navigateDashboard('System') },
   ];
 
   return (
@@ -373,7 +374,7 @@ export function CompanionConsole() {
       <aside className="dashboard-sidebar">
         <button className="athena-wordmark" onClick={() => navigateDashboard('Home')}><AthenaAvatar /> ATHENA</button>
         <span className="sidebar-caption">YOUR COMPANION</span>
-        <nav aria-label="Main navigation">{dashboardSections.map(section => <button key={section} className={view === 'dashboard' && activeSection === section ? 'active' : ''} aria-current={view === 'dashboard' && activeSection === section ? 'page' : undefined} onClick={() => navigateDashboard(section)}><DashboardIcon name={section} /><span>{section}</span></button>)}</nav>
+        <nav aria-label="Main navigation">{dashboardSections.map(section => <button key={section} className={view === 'dashboard' && activeSection === section ? 'active' : ''} aria-current={view === 'dashboard' && activeSection === section ? 'page' : undefined} onClick={() => navigateDashboard(section)}><DashboardIcon name={section} /><span>{section === 'Home' ? 'Dashboard' : section}</span></button>)}</nav>
         <button className={`sidebar-chat ${view === 'chat' ? 'active' : ''}`} onClick={() => setView('chat')}><DashboardIcon name="Chat" /><span>Talk to Athena</span><span className="sidebar-chat-arrow">↗</span></button>
         {/* The account row IS the menu. Settings, the panels and sign-out all
             used to be split between a sidebar button and a ⋯ in the far
@@ -407,7 +408,7 @@ export function CompanionConsole() {
           />
           <span className="truncate opacity-70">{firstName} · Companion</span>
         </div>
-        <button className="mobile-wordmark" onClick={() => navigateDashboard('Today')}>ATHENA</button>
+        <button className="mobile-wordmark" onClick={() => navigateDashboard('Home')}>ATHENA</button>
         <div className="flex items-center gap-2">
           {view === 'chat' && <button className="briefing-trigger" onClick={() => setBriefing(true)}>▦ <span>Daily briefing</span></button>}
           {/* Up whenever the camera is actually open, including for a look she
@@ -660,7 +661,7 @@ export function CompanionConsole() {
         style={{ position: 'fixed', width: 1, height: 1, opacity: 0, pointerEvents: 'none', bottom: 0, left: 0 }}
       />
       <nav className="mobile-navigation" aria-label="Mobile navigation">
-        <button className={view === 'dashboard' ? 'active' : ''} onClick={() => navigateDashboard('Home')}><DashboardIcon name="Home" /><span>Home</span></button>
+        <button className={view === 'dashboard' ? 'active' : ''} onClick={() => navigateDashboard('Home')}><DashboardIcon name="Home" /><span>Dashboard</span></button>
         <button className={view === 'chat' ? 'active' : ''} onClick={() => setView('chat')}><DashboardIcon name="Chat" /><span>Chat</span></button>
         <button className="mobile-athena" aria-label="Talk to Athena" onClick={() => setView('chat')}><AthenaAvatar /></button>
         <button className="mobile-notifications" onClick={() => openPanel('actions')}><DashboardIcon name="Notifications" /><span>Alerts</span>{waitingCount > 0 && <i className="topbar-badge">{waitingCount > 9 ? '9+' : waitingCount}</i>}</button>

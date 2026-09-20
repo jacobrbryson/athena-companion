@@ -29,8 +29,7 @@ export interface DashboardSummary {
 export interface PriorityEntry { id: string; why: string | null }
 /** `source` is 'default' when no model ranked this — the UI stays quiet then. */
 export interface DashboardPriority { order: PriorityEntry[]; source: 'athena' | 'default'; model?: string | null; generatedAt: string }
-export interface TwilioUsageRecord { category: string; description: string; count: string | null; countUnit: string | null; price: string | null; priceUnit: string | null }
-export interface TwilioBilling { configured: boolean; checkedAt: string; balance?: { amount: string | null; currency: string | null }; today?: TwilioUsageRecord[]; month?: TwilioUsageRecord[] }
+export interface TwilioBilling { configured: boolean; checkedAt: string; balance?: { amount: string | null; currency: string | null }; smsMessagesSent?: number; smsCostThisMonth?: number }
 /**
  * A page Athena watches, and the rhythm she has settled on for it. The rhythm
  * is hers: there is no endpoint for setting it, only for saying which pages to
