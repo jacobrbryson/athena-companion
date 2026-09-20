@@ -7,6 +7,7 @@ import {
 } from '../api/companion';
 import type { ApiError } from '../api/client';
 import { androidCall, isAndroidCompanion } from '../native/android';
+import { WhoopActivityReviews } from './WhoopActivityReviews';
 
 /**
  * Connect Athena to Google Calendar, Strava and Whoop.
@@ -250,6 +251,7 @@ function ProviderRow({
           asks for health-data consent first
         </p>
       )}
+      {provider.provider === 'whoop' && <WhoopActivityReviews connected={provider.connected && !needsReauth} />}
     </li>
   );
 }

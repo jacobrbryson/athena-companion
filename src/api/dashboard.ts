@@ -45,6 +45,52 @@ export interface NewsSource {
 /** `firstSeen` is when Athena read it — trustworthy, unlike half of `published`. */
 export interface NewsItem { title: string; url: string | null; summary: string | null; published: string | null; firstSeen: string; slot: number | null; sourceUuid: string; source: string }
 export interface NewsResult { sources: NewsSource[]; items: NewsItem[]; checkedAt: string | null }
+/**
+ * One place Athena watches, and where it stands right now. `now.openNow` is
+ * deliberately three-valued: `null` means the page never said, and the UI must
+ * never round that up to open.
+ */
+export interface Place {
+  uuid: string; label: string; url: string; host: string; activity: string;
+  distanceMi: number | null; latitude: number | null; longitude: number | null; enabled: boolean;
+  state: 'open' | 'closed' | 'unknown'; statusText: string | null; weatherDependent: boolean;
+  hours: Record<string, [string, string][]> | null;
+  lastCheckedAt: string | null; lastChangedAt: string | null; lastError: string | null;
+  now: { openNow: boolean | null; why: string; closesAt?: string | null; closesInMinutes?: number | null;
+    opensAt?: string | null; opensInMinutes?: number | null; todaysHours: string[] };
+}
+export type ProjectStatus = 'todo' | 'in_progress' | 'blocked' | 'done';
+export interface HomeProject {
+  uuid: string; title: string; detail: string | null; area: string | null;
+  status: ProjectStatus; priority: 'low' | 'normal' | 'high';
+  effortMinutes: number | null; indoor: boolean | null; costEstimate: number | null;
+  dueDate: string | null; blockedOn: string | null; source: string;
+}
+export interface ProjectCounts { todo: number; inProgress: number; blocked: number; done: number; open: number }
+/** What Athena is putting in front of them, and everything it was drawn from. */
+export interface Suggestion {
+  id: string; kind: 'place' | 'project'; title: string; why: string | null;
+  activity?: string; url?: string; distanceMi?: number | null; driveMinutes?: number | null;
+  closesAt?: string | null; closesInMinutes?: number | null; todaysHours?: string[];
+  usableMinutes?: number | null; weatherDependent?: boolean;
+  weather?: { outlook: 'wet' | 'fine'; now: string | null; temperatureF: number | null; precipitationChance: number | null } | null;
+  rhythm?: { activity: string; perWeek: number; usualDay: string | null; daysSince: number | null; thisWeek: number; isUsualDayToday: boolean } | null;
+  area?: string | null; effortMinutes?: number | null; indoor?: boolean | null;
+  status?: ProjectStatus; priority?: string; fitsWindow?: boolean; dueDate?: string | null;
+}
+export interface RightNow {
+  headline: string | null;
+  lead: Suggestion | null;
+  alternates: Suggestion[];
+  /** Why the obvious answer is not on offer — a closed park beats a blank card. */
+  ruledOut: { id: string; title: string; reason: string; url?: string }[];
+  window: { freeMinutes: number | null; busyWith: string | null;
+    nextEvent: { title: string; start: string; inMinutes: number | null } | null };
+  reason?: string | null;
+  source: 'athena' | 'default';
+  model?: string | null;
+  generatedAt: string;
+}
 export const dashboardApi = {
   summary: async () => {
     const value = await api.cachedGet<DashboardSummary>('/api/v1/dashboard');
@@ -61,6 +107,27 @@ export const dashboardApi = {
     if (!Array.isArray(value?.order)) throw new Error('Priority API needs updating.');
     return value;
   },
+  rightNow: async () => {
+    const value = await api.cachedGet<RightNow>('/api/v1/dashboard/right-now');
+    if (!value || !Array.isArray(value.alternates)) throw new Error('Right-now API needs updating.');
+    return value;
+  },
+  places: () => api.get<{ places: Place[]; maxPlaces: number }>('/api/v1/dashboard/places'),
+  addPlace: (place: { url: string; label?: string; activity: string; distanceMi?: number | null; latitude?: number | null; longitude?: number | null }) =>
+    api.post<{ place: Place | null }>('/api/v1/dashboard/places', place),
+  updatePlace: (uuid: string, patch: { label?: string; activity?: string; distanceMi?: number | null; enabled?: boolean }) =>
+    api.patch<{ place: Place }>(`/api/v1/dashboard/places/${encodeURIComponent(uuid)}`, patch),
+  removePlace: (uuid: string) => api.del<{ success: true }>(`/api/v1/dashboard/places/${encodeURIComponent(uuid)}`),
+  checkPlace: (uuid: string) => api.post<{ place: Place }>(`/api/v1/dashboard/places/${encodeURIComponent(uuid)}/check`, {}),
+  projects: () => api.get<{ projects: HomeProject[]; counts: ProjectCounts; maxProjects: number }>('/api/v1/dashboard/projects'),
+  addProject: (project: Partial<HomeProject>) => api.post<{ project: HomeProject }>('/api/v1/dashboard/projects', project),
+  updateProject: (uuid: string, patch: Partial<HomeProject>) =>
+    api.patch<{ project: HomeProject }>(`/api/v1/dashboard/projects/${encodeURIComponent(uuid)}`, patch),
+  removeProject: (uuid: string) => api.del<{ success: true }>(`/api/v1/dashboard/projects/${encodeURIComponent(uuid)}`),
+  /** `dryRun` shows what the import would create without writing any of it. */
+  importProjects: (text: string, dryRun = false) =>
+    api.post<{ projects: HomeProject[]; created: number; skipped: { line: number | null; reason: string }[]; columns: string[]; unmapped: string[] }>(
+      '/api/v1/dashboard/projects/import', { text, dryRun }),
   systemTwilio: () => api.get<TwilioBilling>('/api/v1/system/twilio-billing'),
   sources: () => api.get<{ sources: NewsSource[]; maxSources: number }>('/api/v1/dashboard/news/sources'),
   saveSources: (sources: (string | { url: string; label?: string | null; scope?: 'world' | 'personal' })[]) =>

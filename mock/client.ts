@@ -247,6 +247,49 @@ function dashboardSummary() {
   };
 }
 
+// --------------------------------------------------------- right now ---
+// The scenario this feature was designed against, wired up end to end: a park
+// three miles away that is open until 7:30, a rider who has not ridden this
+// week, and nothing on the calendar until piano. The alternate is deliberately
+// the other kind of answer, because that pairing is the whole point.
+let mockPlaces = [
+  {
+    uuid: 'place-lake-norman', label: 'Lake Norman State Park',
+    url: 'https://www.ncparks.gov/state-parks/lake-norman-state-park', host: 'ncparks.gov',
+    activity: 'mountain biking', distanceMi: 3, latitude: 35.6516, longitude: -80.9337, enabled: true,
+    state: 'open' as const, statusText: 'Open · Weather Dependent', weatherDependent: true,
+    hours: { sun: [['07:00', '19:30']] } as Record<string, [string, string][]>,
+    lastCheckedAt: new Date(now - 40 * 60_000).toISOString(), lastChangedAt: null, lastError: null,
+    now: { openNow: true as boolean | null, why: 'Open · Weather Dependent', closesAt: '7:30 PM', closesInMinutes: 300, todaysHours: ['7:00 AM – 7:30 PM'] },
+  },
+];
+let mockProjects = [
+  { uuid: 'proj-shelves', title: 'Rehang the garage shelves', detail: 'Brackets are already in the truck', area: 'Garage', status: 'todo' as const, priority: 'normal' as const, effortMinutes: 120, indoor: true, costEstimate: null, dueDate: null, blockedOn: null, source: 'import' },
+  { uuid: 'proj-deck', title: 'Stain the deck', detail: null, area: 'Backyard', status: 'in_progress' as const, priority: 'high' as const, effortMinutes: 360, indoor: false, costEstimate: 140, dueDate: null, blockedOn: null, source: 'import' },
+];
+const mockRightNow = () => ({
+  headline: 'Ride Lake Norman before piano',
+  source: 'athena' as const,
+  model: 'qwen3:8b',
+  generatedAt: new Date().toISOString(),
+  window: { freeMinutes: 265, busyWith: null, nextEvent: { title: 'Piano lessons', start: inMinutes(265), inMinutes: 265 } },
+  lead: {
+    id: 'place:place-lake-norman', kind: 'place' as const, title: 'Lake Norman State Park',
+    why: 'You ride most Sundays and haven’t this week — the trails are open and you have the afternoon.',
+    activity: 'mountain biking', url: 'https://www.ncparks.gov/state-parks/lake-norman-state-park',
+    distanceMi: 3, driveMinutes: 10, closesAt: '7:30 PM', closesInMinutes: 300, usableMinutes: 245,
+    weatherDependent: true,
+    weather: { outlook: 'fine' as const, now: 'Partly Sunny', temperatureF: 74, precipitationChance: 10 },
+    rhythm: { activity: 'mountain biking', perWeek: 1.1, usualDay: 'Sunday', daysSince: 8, thisWeek: 0, isUsualDayToday: true },
+  },
+  alternates: [{
+    id: 'project:proj-shelves', kind: 'project' as const, title: 'Rehang the garage shelves',
+    why: 'Two hours indoors would clear it, if you would rather not drive.',
+    area: 'Garage', effortMinutes: 120, indoor: true, status: 'todo' as const, priority: 'normal', fitsWindow: true, dueDate: null,
+  }],
+  ruledOut: [],
+});
+
 // The shape core_api returns, including the one-line reasons. Ordering here is
 // fixed rather than modelled — the point is to exercise the rendering.
 const dashboardPriority = () => ({
@@ -564,6 +607,57 @@ async function route(method: string, path: string, body?: any): Promise<any> {
     // The real one visits whatever is due and returns when it has. Nothing to
     // fetch here, so it reports the pages it would have read.
     return { checked: newsSources.length, changed: 0, failed: 0, cooling: false };
+  }
+  if (p === '/api/v1/dashboard/right-now') return mockRightNow();
+  if (p === '/api/v1/dashboard/places') {
+    if (method === 'POST') {
+      const place = {
+        ...mockPlaces[0], uuid: `place-${Date.now()}`, label: body?.label || 'A new place',
+        url: String(body?.url || ''), activity: String(body?.activity || 'something'),
+        distanceMi: body?.distanceMi ?? null,
+        state: 'unknown' as const, statusText: null, weatherDependent: false, hours: null,
+        now: { openNow: null as boolean | null, why: 'Hours unknown', closesAt: null, closesInMinutes: null, todaysHours: [] },
+      };
+      mockPlaces = [...mockPlaces, place];
+      return { place };
+    }
+    return { places: mockPlaces, maxPlaces: 25 };
+  }
+  if (p.startsWith('/api/v1/dashboard/places/')) {
+    const uuid = decodeURIComponent(p.split('/')[5]);
+    const place = mockPlaces.find(x => x.uuid === uuid);
+    if (!place) fail(404, 'That place is not on your list.');
+    if (method === 'DELETE') { mockPlaces = mockPlaces.filter(x => x.uuid !== uuid); return { success: true }; }
+    if (p.endsWith('/check')) { place!.lastCheckedAt = new Date().toISOString(); return { result: { status: 'unchanged' }, place }; }
+    return { place };
+  }
+  if (p === '/api/v1/dashboard/projects/import') {
+    // The real parser lives in core_api; this stands in for its answer so the
+    // preview-then-import flow can be exercised.
+    const rows = String(body?.text || '').trim().split(/\r?\n/).filter(Boolean).slice(1);
+    const projects = rows.map((row: string, i: number) => ({
+      ...mockProjects[0], uuid: `proj-import-${i}`, title: row.split(/[,\t]/)[0], source: 'import',
+    }));
+    if (body?.dryRun) return { projects, created: 0, skipped: [], columns: ['title', 'area', 'status'], unmapped: [] };
+    mockProjects = [...mockProjects, ...projects];
+    return { projects, created: projects.length, skipped: [], columns: ['title', 'area', 'status'], unmapped: [] };
+  }
+  if (p === '/api/v1/dashboard/projects') {
+    if (method === 'POST') {
+      const project = { ...mockProjects[0], uuid: `proj-${Date.now()}`, ...body, status: 'todo' as const, source: 'manual' };
+      mockProjects = [...mockProjects, project];
+      return { project };
+    }
+    const counts = { todo: mockProjects.filter(x => x.status === 'todo').length, inProgress: mockProjects.filter(x => x.status === 'in_progress').length, blocked: 0, done: 0, open: mockProjects.length };
+    return { projects: mockProjects, counts, maxProjects: 500 };
+  }
+  if (p.startsWith('/api/v1/dashboard/projects/')) {
+    const uuid = decodeURIComponent(p.split('/')[5]);
+    const project = mockProjects.find(x => x.uuid === uuid);
+    if (!project) fail(404, 'That project is not on your list.');
+    if (method === 'DELETE') { mockProjects = mockProjects.filter(x => x.uuid !== uuid); return { success: true }; }
+    mockProjects = mockProjects.map(x => (x.uuid === uuid ? { ...x, ...body } : x));
+    return { project: mockProjects.find(x => x.uuid === uuid) };
   }
   if (p === '/api/v1/dashboard/news') return dashboardNews();
   if (p === '/api/v1/session') return { session: { uuid: 'mock-session', mode: 'companion' } };
@@ -893,6 +987,10 @@ async function request<T>(method: string, path: string, data?: unknown): Promise
 
 export const api = {
   get: <T>(path: string) => request<T>('GET', path),
+  // The real client dedupes and caches these for a few seconds. Nothing here
+  // is worth caching, but the dashboard calls it by name and a mock that is
+  // missing a method answers every card with "is not a function".
+  cachedGet: <T>(path: string) => request<T>('GET', path),
   text: (path: string) => request<string>('GET', path),
   post: <T>(path: string, data?: unknown) => request<T>('POST', path, data),
   put: <T>(path: string, data?: unknown) => request<T>('PUT', path, data),

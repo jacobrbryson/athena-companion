@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
-import { dashboardApi, type DashboardSummary, type NewsResult, type DashboardPriority } from '../api/dashboard';
+import { dashboardApi, type DashboardSummary, type NewsResult, type DashboardPriority, type RightNow } from '../api/dashboard';
 import { memoryApi, actionsApi, type Fact, type AthenaAction } from '../api/companion';
 import { DASHBOARD_REFRESH_EVENT } from '../athena/useChat';
 import { invalidateReads } from '../api/readCache';
@@ -25,6 +25,7 @@ export function useDashboardData() {
   const [actions, setActions] = useState<Result<AthenaAction[]>>(initial);
   const [news, setNews] = useState<Result<NewsResult>>(initial);
   const [priority, setPriority] = useState<DashboardPriority | null>(null);
+  const [rightNow, setRightNow] = useState<Result<RightNow>>(initial);
   const alive = useRef(false);
   const inFlight = useRef(false);
   const queued = useRef(false);
@@ -52,6 +53,10 @@ export function useDashboardData() {
       // the page out from under someone mid-read.
       if (canPublish() && !queued.current) {
         void dashboardApi.priority().then(value => { if (canPublish()) setPriority(value); }).catch(() => undefined);
+        // The suggestion is read from the same snapshot, for the same reason,
+        // and fails the same way: a card that cannot be built leaves the day's
+        // data standing rather than taking the page down with it.
+        void load(dashboardApi.rightNow, setRightNow);
       }
     } while (alive.current && queued.current);
     inFlight.current = false;
@@ -63,7 +68,7 @@ export function useDashboardData() {
     const refreshNow = () => {
       revision.current++;
       invalidateReads();
-      setSummary(initial); setFacts(initial); setActions(initial); setNews(initial); setPriority(null);
+      setSummary(initial); setFacts(initial); setActions(initial); setNews(initial); setPriority(null); setRightNow(initial);
       void refresh();
     };
     const timer = window.setInterval(tick, SILENT_REFRESH_MS);
@@ -71,5 +76,5 @@ export function useDashboardData() {
     window.addEventListener(DASHBOARD_REFRESH_EVENT, refreshNow);
     return () => { alive.current = false; revision.current++; window.clearInterval(timer); document.removeEventListener('visibilitychange', tick); window.removeEventListener(DASHBOARD_REFRESH_EVENT, refreshNow); };
   }, [refresh]);
-  return { summary, facts, actions, news, priority, refresh, loading: summary.loading || facts.loading || actions.loading || news.loading };
+  return { summary, facts, actions, news, priority, rightNow, refresh, loading: summary.loading || facts.loading || actions.loading || news.loading };
 }
