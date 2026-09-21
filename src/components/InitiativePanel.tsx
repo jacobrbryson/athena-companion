@@ -10,6 +10,7 @@ import {
 } from '../api/companion';
 import { useWebPush } from '../athena/useWebPush';
 import { LegalLinks } from './LegalLinks';
+import { SMS_SENDER } from '../legal';
 
 /**
  * When Athena may speak first.
@@ -476,7 +477,7 @@ export function InitiativePanel({ onClose }: { onClose: () => void }) {
                           className="mt-0.5 h-4 w-4 shrink-0 accent-emerald-500"
                         />
                         <span>
-                          I agree to receive recurring automated SMS from <strong>Athena</strong>
+                          I agree to receive recurring automated SMS from <strong>{SMS_SENDER}</strong>{' '}
                           about reminders, calendar notifications, task updates, and replies to messages I
                           initiate. Consent is not required to use Athena. Message frequency varies; message
                           and data rates may apply. Reply STOP to opt out or HELP for help.

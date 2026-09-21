@@ -10,7 +10,7 @@
     "test:local": "node --test scripts/localConnection.test.mjs scripts/localUnityAssets.test.mjs",
     "dev": "vite",
     "dev:mock": "vite --config vite.mock.config.ts",
-    "build": "vite build",
+    "build": "vite build && vite build --ssr src/prerender.tsx --outDir dist-ssr && node scripts/prerender.mjs",
     "typecheck": "tsc --noEmit",
     "preview": "vite preview",
     "start": "node server.js"

@@ -1,4 +1,5 @@
 import { LegalLinks } from '../components/LegalLinks';
+import { SMS_OPERATOR, SMS_SENDER } from '../legal';
 
 type LegalPageProps = { kind: 'privacy' | 'terms' };
 
@@ -28,7 +29,8 @@ function PrivacyContent() {
       <section>
         <h2 className="text-lg text-emerald-300">What this covers</h2>
         <p className="mt-2 opacity-80">
-          This policy describes how Athena Companion handles information when you use the personal AI companion service.
+          This policy describes how Athena Companion, a personal AI companion service operated by {SMS_OPERATOR}, a
+          sole proprietor, handles information when you use it.
         </p>
       </section>
       <section>
@@ -68,16 +70,23 @@ function TermsContent() {
       <section>
         <h2 className="text-lg text-emerald-300">Using Athena</h2>
         <p className="mt-2 opacity-80">
-          Athena is a personal software service. Use it lawfully and do not attempt to access another person’s account,
+          Athena is a personal software service operated by {SMS_OPERATOR}, a sole proprietor. Use it lawfully and do not attempt to access another person’s account,
           bypass access controls, or interfere with the service.
         </p>
       </section>
       <section>
         <h2 className="text-lg text-emerald-300">SMS messages</h2>
         <p className="mt-2 opacity-80">
-          SMS is optional and is not required to use Athena. By enabling it, you agree to receive recurring automated
-          messages such as reminders, calendar notifications, task updates, and replies to messages you initiate.
-          Message frequency varies and message and data rates may apply. Reply STOP to opt out or HELP for help.
+          SMS is optional and is not required to use Athena. By selecting the SMS consent checkbox in the Initiative
+          panel and verifying your mobile number, you agree to receive recurring automated messages from {SMS_SENDER}{' '}
+          such as reminders, calendar notifications, task updates, notification tests, and replies to messages you
+          initiate. Messages are not marketing.
+        </p>
+        <p className="mt-2 opacity-80">
+          Message frequency varies. Message and data rates may apply. Reply STOP at any time to cancel; you will
+          receive one confirmation message and no further SMS unless you opt in again. Reply HELP for help. Carriers
+          are not liable for delayed or undelivered messages. See the Privacy Policy for how your mobile number is
+          handled; mobile numbers and SMS consent are never sold or shared with third parties for marketing.
         </p>
       </section>
       <section>

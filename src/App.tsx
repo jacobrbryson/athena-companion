@@ -10,6 +10,7 @@ import { LocalServerPanel } from './components/LocalServerPanel';
 import { connection } from './localConnection';
 import { AndroidRegistration } from './native/AndroidRegistration';
 import { LegalPage } from './pages/LegalPage';
+import { SmsConsentPage } from './pages/SmsConsentPage';
 
 /** Home: Athena when signed in, otherwise the sign-in gate. */
 function Home() {
@@ -33,6 +34,7 @@ export default function App() {
           <Route path="/" element={<Home />} />
           <Route path="/privacy" element={<LegalPage kind="privacy" />} />
           <Route path="/terms" element={<LegalPage kind="terms" />} />
+          <Route path="/sms-consent" element={<SmsConsentPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>

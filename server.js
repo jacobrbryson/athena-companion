@@ -79,6 +79,15 @@ app.use(
 // App Links, say — still serves.
 app.use('/.well-known', (_req, res) => res.status(404).json({ error: 'not found' }));
 
+// Public legal pages are prerendered at build time (scripts/prerender.mjs) so
+// carrier reviewers, who fetch without running JavaScript, see the content.
+for (const page of ['privacy', 'terms', 'sms-consent']) {
+  app.get(`/${page}`, (_req, res) => {
+    res.setHeader('Cache-Control', 'no-cache');
+    res.sendFile(path.join(DIST, `${page}.html`));
+  });
+}
+
 // SPA fallback — every non-asset route returns index.html.
 app.get('*', (_req, res) => {
   res.sendFile(path.join(DIST, 'index.html'));
