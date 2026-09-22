@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import type { CalendarEvent, Source, JiraIssue, RecoveryDay, DashboardSummary, TwilioBilling } from '../api/dashboard';
+import type { CalendarEvent, Source, JiraIssue, RecoveryDay, DashboardSummary, TwilioBilling, TriageEmail } from '../api/dashboard';
 import { dashboardApi } from '../api/dashboard';
 import type { Fact } from '../api/companion';
 import { useDashboardData } from './useDashboardData';
@@ -8,8 +8,9 @@ import { NewsSourcesPanel } from './NewsSourcesPanel';
 import { PlansPanel } from './PlansPanel';
 import { EmergencyBanner } from './EmergencyBanner';
 import { RightNowCard } from './RightNowCard';
+import { EmailPanel, CATEGORY_LABEL } from './EmailPanel';
 
-export type DashboardSection = 'Home' | 'Today' | 'Calendar' | 'Health' | 'Family' | 'Work' | 'Projects' | 'News' | 'System';
+export type DashboardSection = 'Home' | 'Today' | 'Calendar' | 'Health' | 'Family' | 'Mail' | 'Work' | 'Projects' | 'News' | 'System';
 // Explicit sprite windows preserve the borders on this irregular sheet. Today
 // uses the supplied calendar tile so it has the same framed treatment as the
 // other navigation links; the page itself remains distinct from Calendar.
@@ -17,6 +18,7 @@ const icons: Record<string, number> = { Home: 24, Today: 130, Calendar: 130, Hea
 // Icons the supplied sheet has no window for, drawn to sit in the same box.
 const drawn: Record<string, ReactNode> = {
   Notifications: <><path d="M12 3.6a5.4 5.4 0 0 0-5.4 5.4c0 4.2-1.5 5.6-1.5 5.6h13.8s-1.5-1.4-1.5-5.6A5.4 5.4 0 0 0 12 3.6Z" /><path d="M10.4 18a1.8 1.8 0 0 0 3.2 0" /></>,
+  Mail: <><rect x="3.6" y="6" width="16.8" height="12" rx="1.4" /><path d="m4.2 6.8 7.8 6 7.8-6" /></>,
 };
 export function DashboardIcon({ name }: { name: string }) {
   const art = drawn[name];
@@ -29,11 +31,11 @@ export function DashboardIcon({ name }: { name: string }) {
 // replaces the old Quick Actions entry, which now lives on as the Notifications
 // card and its bell in the top bar. Today remains an internal page for now but
 // is not a left-navigation entry.
-export const dashboardSections: DashboardSection[] = ['Home', 'Calendar', 'Health', 'Family', 'Work', 'Projects', 'News', 'System'];
+export const dashboardSections: DashboardSection[] = ['Home', 'Calendar', 'Health', 'Family', 'Mail', 'Work', 'Projects', 'News', 'System'];
 // The card set and the order the dashboard falls back to when Athena has not
 // ranked it. Ids are shared with services/dashboardPriority.js in core_api —
 // changing one means changing both.
-const DEFAULT_CARD_ORDER = ['calendar', 'health', 'family', 'work', 'news', 'projects', 'notifications'];
+const DEFAULT_CARD_ORDER = ['calendar', 'health', 'family', 'mail', 'work', 'news', 'projects', 'notifications'];
 // The first row holds three cards; whatever ranks below them drops to the second.
 const PRIMARY_SLOTS = 3;
 /**
@@ -47,7 +49,8 @@ const PRIMARY_SLOTS = 3;
 const CARD_SOURCES: Partial<Record<string, (keyof DashboardSummary)[]>> = {
   calendar: ['calendar'],
   health: ['recovery', 'sleep', 'strain', 'activity'],
-  work: ['jira', 'gmail', 'slack'],
+  mail: ['emailTriage'],
+  work: ['jira', 'slack'],
 };
 const statusText = { not_connected: 'Not connected', needs_reauth: 'Reconnect to refresh', consent_required: 'Health consent required', error: 'Couldn’t load this source', ready: 'Connected' };
 /**
@@ -437,6 +440,44 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
   const summary = data.summary.data;
   const [sourcesOpen, setSourcesOpen] = useState(false);
   const [plansOpen, setPlansOpen] = useState(false);
+  const [selectedEmail, setSelectedEmail] = useState<string | null>(null);
+  // Bumped after propose/confirm/decline/dismiss so MailPage's own list refetches —
+  // it does not live in useDashboardData, same reasoning as places/projects below.
+  const [mailRefresh, setMailRefresh] = useState(0);
+  const [mailItems, setMailItems] = useState<TriageEmail[]>([]);
+  const [mailLoading, setMailLoading] = useState(false);
+  const [mailError, setMailError] = useState('');
+  const [mailScanning, setMailScanning] = useState(false);
+  const [mailScanNote, setMailScanNote] = useState('');
+
+  // Only fetched while the Mail page is actually open — 2,000 emails do not
+  // belong in the dashboard summary blob the way a week of calendar does.
+  useEffect(() => {
+    if (section !== 'Mail' || compact) return;
+    let active = true;
+    setMailLoading(true);
+    setMailError('');
+    dashboardApi.mailList({ status: 'new', limit: 200 })
+      .then(res => { if (active) { setMailItems(res.items); setMailLoading(false); } })
+      .catch(e => { if (active) { setMailError((e as Error).message); setMailLoading(false); } });
+    return () => { active = false; };
+  }, [section, compact, mailRefresh]);
+
+  const scanMoreMail = async () => {
+    setMailScanning(true);
+    setMailError('');
+    setMailScanNote('');
+    try {
+      const res = await dashboardApi.mailScan();
+      setMailScanNote(`Scanned ${res.scanned}, ${res.newCount} new to review.`);
+      setMailRefresh(n => n + 1);
+      void data.refresh();
+    } catch (e) {
+      setMailError((e as Error).message);
+    } finally {
+      setMailScanning(false);
+    }
+  };
   const facts = data.facts.data || [];
   const family = facts.filter(f => /^(person|family|pet)$/i.test(f.category));
   const projects = facts.filter(f => /^(goal|project)$/i.test(f.category));
@@ -529,12 +570,21 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
       <SourceBlock source={summary?.jira} label="Jira · assigned open issues" name="Jira">
         {!issues.length && <p className="dashboard-empty">No assigned open issues returned.</p>}<Issues issues={issues.slice(0, limit)} />{summary?.jira.data?.partial && <p className="source-note">Some sites could not be included.</p>}
       </SourceBlock>
-      <SourceBlock source={summary?.gmail} label={`Gmail · ${summary?.gmail.data?.account || 'work inbox'}`} name="Gmail">
-        <ul className="dashboard-data-list">{summary?.gmail.data?.messages.slice(0, limit).map(m => <li key={m.id}><ExternalLink url={m.url}><strong>{m.title}</strong><small>{m.from}</small></ExternalLink></li>)}</ul>{!summary?.gmail.data?.messages.length && <p className="dashboard-empty">No unread inbox messages.</p>}
-      </SourceBlock>
       <SourceBlock source={summary?.slack} label="Slack · recent mentions" name="Slack">
         <ul className="dashboard-data-list">{summary?.slack.data?.messages.slice(0, limit).map(m => <li key={m.timestamp}><ExternalLink url={m.url}><strong>#{m.channel}</strong><small>{m.text}</small></ExternalLink></li>)}</ul>{!summary?.slack.data?.messages.length && <p className="dashboard-empty">No mentions returned in the last 7 days.</p>}
       </SourceBlock></>;
+  }
+  function emailPreviewLine(email: TriageEmail) {
+    const who = email.from_name || email.from_address || 'Unknown sender';
+    return <li key={email.uuid}><button className="dashboard-link-row" onClick={() => setSelectedEmail(email.uuid)}><strong>{email.subject || '(no subject)'}</strong><small>{who} · {CATEGORY_LABEL[email.category]}</small></button></li>;
+  }
+  function mailBody(limit: number) {
+    const source = summary?.emailTriage;
+    if (!ready(source)) return <SourceNote source={source} name="Mail" />;
+    const preview = source?.data?.preview || [];
+    return <><p className="source-note">{source?.data?.newCount || 0} to review · receipts, travel, school</p>
+      {!preview.length && <p className="dashboard-empty">Nothing new to sort — try Scan more from the Mail page.</p>}
+      <ul className="dashboard-data-list">{preview.slice(0, limit).map(emailPreviewLine)}</ul></>;
   }
   function newsBody(limit: number) {
     const failing = newsSources.filter(s => s.lastError);
@@ -581,6 +631,7 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
     calendar: card('calendar', 'Calendar', 'Calendar', calendarBody(3), 'View schedule', go('Calendar'), summary?.calendar.data?.events.length),
     health: card('health', 'Health', 'Health & Performance', healthBody(), 'View health', go('Health')),
     family: card('family', 'Family', 'Family', <><p className="source-note">From your memories</p>{data.facts.error ? <p className="dashboard-empty">Memories couldn’t load.</p> : data.facts.loading ? <p className="dashboard-empty">Loading memories…</p> : family.length ? <Facts facts={family.slice(0, 3)} /> : <p className="dashboard-empty">No family memories saved yet.</p>}<SourceBlock source={summary?.familyChores} label="Family Chores · today" name="Family Chores"><ul className="dashboard-data-list">{chores.slice(0, 3).map((c, i) => <li key={i}><strong>{c.completed ? '✓' : '○'} {c.title}</strong><small>{c.completed ? 'Completed' : c.status || 'Open'}</small></li>)}</ul>{!chores.length && <p className="dashboard-empty">No chores returned for today.</p>}</SourceBlock></>, 'View family', go('Family')),
+    mail: card('mail', 'Mail', 'Mail', mailBody(3), 'Review inbox', go('Mail'), summary?.emailTriage.data?.newCount),
     work: card('work', 'Work', 'Work', workBody(1), 'View work', go('Work')),
     news: card('news', 'News', 'News & Updates', newsBody(3), 'View news', go('News'), news.length || undefined),
     projects: card('projects', 'Projects', 'Projects', <><SourceBlock source={summary?.jira} label="Jira projects · your assigned issues" name="Jira">{issues.length ? <ul className="dashboard-data-list">{[...new Set(issues.map(i => i.project))].slice(0, 3).map(project => <li key={project}><strong>{project}</strong><small>{issues.filter(i => i.project === project).length} assigned issues in this snapshot</small></li>)}</ul> : <p className="dashboard-empty">No assigned issues in this snapshot.</p>}</SourceBlock><p className="source-note">Saved goals</p>{projects.length ? <Facts facts={projects.slice(0, 2)} /> : <p className="dashboard-empty">{data.facts.error ? 'Memories unavailable.' : 'No saved goals yet.'}</p>}</>, 'View projects', go('Projects')),
@@ -733,16 +784,14 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
   }
 
   function WorkPage() {
-    const mail = summary?.gmail.data?.messages || [];
     const mentions = summary?.slack.data?.messages || [];
     const byStatus = [...new Set(issues.map(i => i.status))];
     return <SectionPage ctx={ctx}
       eyebrow="WHAT WORK IS ASKING FOR" title="Work"
-      blurb="Assigned Jira issues, unread mail and the Slack threads that named you."
-      ask="Help me review my Jira issues, Slack mentions and Gmail inbox."
+      blurb="Assigned Jira issues and the Slack threads that named you."
+      ask="Help me review my Jira issues and Slack mentions."
       stats={<>
         <Stat label="Open issues" value={ready(summary?.jira) ? issues.length : '—'} note="assigned to you" />
-        <Stat label="Unread mail" value={ready(summary?.gmail) ? mail.length : '—'} note={summary?.gmail.data?.account || 'Gmail not connected'} />
         <Stat label="Mentions" value={ready(summary?.slack) ? mentions.length : '—'} note={summary?.slack.data?.workspace || 'Slack not connected'} />
         <Stat label="Projects" value={ready(summary?.jira) ? new Set(issues.map(i => i.project)).size : '—'} note="in this snapshot" />
       </>}
@@ -755,11 +804,6 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
               <Issues issues={issues.filter(i => i.status === status)} />
             </div>)}
       </Panel>
-      <Panel title="Inbox" note={summary?.gmail.data?.account}>
-        {!ready(summary?.gmail) ? <Unavailable source={summary?.gmail} name="Gmail" onPanel={() => onPanel('integrations')} />
-          : !mail.length ? <p className="dashboard-empty">No unread inbox messages.</p>
-            : <ul className="dashboard-data-list">{mail.map(m => <li key={m.id}><ExternalLink url={m.url}><strong>{m.title}</strong><small>{m.from} · {dateLabel(m.date)}</small></ExternalLink></li>)}</ul>}
-      </Panel>
       <Panel title="Slack" note={summary?.slack.data?.workspace}>
         {!ready(summary?.slack) ? <Unavailable source={summary?.slack} name="Slack" onPanel={() => onPanel('integrations')} />
           : !mentions.length ? <p className="dashboard-empty">No mentions returned in the last 7 days.</p>
@@ -769,6 +813,52 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
         {facts.filter(f => f.category === 'work').length ? <Facts facts={facts.filter(f => f.category === 'work')} /> : <p className="dashboard-empty">Nothing saved about your work yet.</p>}
       </Panel>
     </SectionPage>;
+  }
+
+  function MailPage() {
+    const grouped = new Map<string, TriageEmail[]>();
+    const ungrouped: TriageEmail[] = [];
+    for (const email of mailItems) {
+      if (email.category === 'receipt' && email.group_key) {
+        const list = grouped.get(email.group_key) || [];
+        list.push(email);
+        grouped.set(email.group_key, list);
+      } else {
+        ungrouped.push(email);
+      }
+    }
+    const groupEntries = [...grouped.entries()];
+    return <>
+    <SectionPage ctx={ctx}
+      eyebrow="SORTING YOUR INBOX" title="Mail"
+      blurb="Receipts, travel and school emails Athena has sorted out of your inbox. Nothing moves, gets labeled or logged until you approve it."
+      ask="Help me get through my mail triage list."
+      stats={<>
+        <Stat label="New to review" value={summary?.emailTriage.data?.newCount ?? '—'} note="waiting for you" />
+        <Stat label="Receipts" value={summary?.emailTriage.data?.receiptCount ?? '—'} note="ready to file and log" />
+        <Stat label="Travel" value={summary?.emailTriage.data?.travelCount ?? '—'} note="may need a calendar event" />
+        <Stat label="School" value={summary?.emailTriage.data?.schoolCount ?? '—'} note="may need a calendar event" />
+      </>}
+    >
+      <Panel title="Your inbox" note={mailLoading ? 'Loading…' : `${mailItems.length} to review`} wide>
+        {!ready(summary?.emailTriage) ? <Unavailable source={summary?.emailTriage} name="Gmail" onPanel={() => onPanel('integrations')} /> : <>
+          <button className="dashboard-chat-cta" onClick={() => void scanMoreMail()} disabled={mailScanning}>{mailScanning ? 'Scanning…' : 'Scan more'} <span>↗</span></button>
+          {mailScanNote && <p className="source-note">{mailScanNote}</p>}
+          {mailError && <p className="dashboard-notice" role="status">{mailError}</p>}
+          {!mailLoading && !mailItems.length && <p className="dashboard-empty">Nothing new to sort. Scan more pulls the next batch from your inbox.</p>}
+          {groupEntries.map(([key, group]) => <div className="day-group" key={key}>
+            <h3>{group[0].from_name || group[0].from_address || 'Similar emails'} <span className="card-count">{group.length}</span></h3>
+            <ul className="dashboard-data-list">{group.map(emailPreviewLine)}</ul>
+          </div>)}
+          {ungrouped.length > 0 && <div className="day-group">
+            {groupEntries.length > 0 && <h3>Other emails <span className="card-count">{ungrouped.length}</span></h3>}
+            <ul className="dashboard-data-list">{ungrouped.map(emailPreviewLine)}</ul>
+          </div>}
+        </>}
+      </Panel>
+    </SectionPage>
+    {selectedEmail && <EmailPanel uuid={selectedEmail} onClose={() => setSelectedEmail(null)} onChanged={() => { setMailRefresh(n => n + 1); void data.refresh(); }} />}
+    </>;
   }
 
   function ProjectsPage() {
@@ -845,6 +935,7 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
     if (section === 'Calendar') return CalendarPage();
     if (section === 'Health') return HealthPage();
     if (section === 'Family') return FamilyPage();
+    if (section === 'Mail') return MailPage();
     if (section === 'Work') return WorkPage();
     if (section === 'Projects') return ProjectsPage();
     if (section === 'News') return NewsPage();
@@ -872,5 +963,6 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
     {compact && <button className="dashboard-chat-cta" onClick={onExpand}>Open full dashboard ↗</button>}
     {sourcesOpen && <NewsSourcesPanel onClose={() => setSourcesOpen(false)} onSaved={() => void data.refresh()} />}
     {plansOpen && <PlansPanel onClose={() => setPlansOpen(false)} onSaved={() => void data.refresh()} />}
+    {selectedEmail && <EmailPanel uuid={selectedEmail} onClose={() => setSelectedEmail(null)} onChanged={() => { setMailRefresh(n => n + 1); void data.refresh(); }} />}
   </main>;
 }

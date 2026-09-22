@@ -249,10 +249,7 @@ function dashboardSummary() {
       { key: 'OPS-77', title: 'Rotate connector keys', status: 'To Do', project: 'Ops', updated: iso(DAY * 2), due: null, site: 'athena', url: 'https://example.atlassian.net/browse/OPS-77' },
     ] }),
     slack: unready('not_connected'),
-    gmail: ready({ account: 'sam@example.com', messages: [
-      { id: 'g1', title: 'Re: Q4 planning doc', from: 'priya@example.com', date: iso(1800_000), url: 'https://mail.google.com/' },
-      { id: 'g2', title: 'Your Iceland booking', from: 'noreply@example.com', date: iso(7200_000), url: 'https://mail.google.com/' },
-    ] }),
+    emailTriage: ready(mailSummary()),
   };
 }
 
@@ -276,6 +273,38 @@ let mockProjects = [
   { uuid: 'proj-shelves', title: 'Rehang the garage shelves', detail: 'Brackets are already in the truck', area: 'Garage', status: 'todo' as const, priority: 'normal' as const, effortMinutes: 120, indoor: true, costEstimate: null, dueDate: null, blockedOn: null, source: 'import' },
   { uuid: 'proj-deck', title: 'Stain the deck', detail: null, area: 'Backyard', status: 'in_progress' as const, priority: 'high' as const, effortMinutes: 360, indoor: false, costEstimate: 140, dueDate: null, blockedOn: null, source: 'import' },
 ];
+
+// ------------------------------------------------------------------ mail ---
+// A small backlog exercising every path: two Kroger receipts sharing a
+// group_key (the "review as a group?" prompt), a utility bill, a flight with
+// a real date, and one 'other' email with nothing to propose.
+type MockEmail = {
+  uuid: string; gmail_message_id: string; thread_id: string | null;
+  subject: string | null; from_address: string | null; from_name: string | null;
+  received_at: string | null; category: 'receipt' | 'travel' | 'school' | 'other';
+  group_key: string | null; extracted: Record<string, unknown> | null;
+  status: 'new' | 'actioned' | 'dismissed'; created_at: string;
+};
+let mockEmails: MockEmail[] = [
+  { uuid: 'email-1', gmail_message_id: 'g-101', thread_id: 't-101', subject: 'Your Kroger order #48213', from_address: 'noreply@kroger.com', from_name: 'Kroger', received_at: iso(DAY), category: 'receipt', group_key: 'kroger', extracted: { merchant: 'Kroger', category: 'groceries', amount: 84.32, currency: 'USD', purchased_at: dayStamp(1) }, status: 'new', created_at: iso(DAY) },
+  { uuid: 'email-2', gmail_message_id: 'g-102', thread_id: 't-102', subject: 'Your Kroger order #48390', from_address: 'noreply@kroger.com', from_name: 'Kroger', received_at: iso(DAY * 4), category: 'receipt', group_key: 'kroger', extracted: { merchant: 'Kroger', category: 'groceries', amount: 61.10, currency: 'USD', purchased_at: dayStamp(4) }, status: 'new', created_at: iso(DAY * 4) },
+  { uuid: 'email-3', gmail_message_id: 'g-103', thread_id: 't-103', subject: 'Duke Energy: your October bill is ready', from_address: 'billing@duke-energy.com', from_name: 'Duke Energy', received_at: iso(DAY * 2), category: 'receipt', group_key: 'duke energy', extracted: { merchant: 'Duke Energy', category: 'energy', amount: 142.55, currency: 'USD', purchased_at: dayStamp(2) }, status: 'new', created_at: iso(DAY * 2) },
+  { uuid: 'email-4', gmail_message_id: 'g-104', thread_id: 't-104', subject: 'Your trip to Denver — confirmation', from_address: 'noreply@united.com', from_name: 'United Airlines', received_at: iso(DAY * 5), category: 'travel', group_key: null, extracted: { has_event: true, title: 'Flight to Denver (UA 512)', start: inMinutes(9 * 24 * 60), end: inMinutes(9 * 24 * 60 + 210), all_day: false, location: 'CLT → DEN' }, status: 'new', created_at: iso(DAY * 5) },
+  { uuid: 'email-5', gmail_message_id: 'g-105', thread_id: 't-105', subject: 'Riverside Elementary: early dismissal Friday', from_address: 'office@riverside.k12.example', from_name: 'Riverside Elementary', received_at: iso(DAY * 3), category: 'school', group_key: null, extracted: { has_event: true, title: 'Early dismissal — Riverside Elementary', start: dayStamp(-4), end: null, all_day: true, location: null }, status: 'new', created_at: iso(DAY * 3) },
+  { uuid: 'email-6', gmail_message_id: 'g-106', thread_id: 't-106', subject: 'Weekend plans?', from_address: 'priya@example.com', from_name: 'Priya', received_at: iso(DAY * 6), category: 'other', group_key: null, extracted: null, status: 'new', created_at: iso(DAY * 6) },
+];
+const mailSummary = () => {
+  const news = mockEmails.filter((e) => e.status === 'new');
+  const byCategory = (c: MockEmail['category']) => news.filter((e) => e.category === c).length;
+  return {
+    newCount: news.length,
+    receiptCount: byCategory('receipt'),
+    travelCount: byCategory('travel'),
+    schoolCount: byCategory('school'),
+    otherCount: byCategory('other'),
+    preview: news.slice(0, 3),
+  };
+};
 const mockRightNow = () => ({
   headline: 'Ride Lake Norman before piano',
   source: 'athena' as const,
@@ -444,6 +473,9 @@ const ACTION_CATALOG = [
   { id: 'create_calendar_event', label: 'Add a calendar event', provider: 'google_calendar', consent_type: 'action_authority', reversible: true, standing: true },
   { id: 'remember_fact', label: 'Save something to memory', provider: null, consent_type: null, reversible: true, standing: true },
   { id: 'look_through_camera', label: 'Take a look through your camera', provider: null, consent_type: 'action_authority', reversible: false, standing: true },
+  { id: 'file_receipt_email', label: 'File a receipt', provider: 'gmail', consent_type: 'action_authority', reversible: true, standing: false },
+  { id: 'file_travel_or_school_email', label: 'Add to calendar and file the email', provider: 'google_calendar', consent_type: 'action_authority', reversible: true, standing: false },
+  { id: 'dismiss_email', label: 'Dismiss from the mail list', provider: null, consent_type: 'action_authority', reversible: false, standing: false },
 ];
 
 /**
@@ -488,6 +520,41 @@ let proposals: MockAction[] = [
   { uuid: 'act-seed-2', action_id: 'remember_fact', label: 'Save something to memory', summary: 'Remember that coffee order: oat flat white, no sugar', rationale: 'You asked me to hold onto it', params: { key: 'coffee order' }, status: 'pending', approval: null, reversible: true, result_ref: null, error: null, created_at: iso(5400_000), expires_at: iso(-DAY), executed_at: null },
 ];
 const authorities: { action_id: string; label: string; expires_at: string | null; created_at: string }[] = [];
+
+/** Builds and stores the pending proposal for one email (or a group of receipts). */
+function proposeEmailAction(rows: MockEmail[], overrides: Record<string, unknown>): MockAction {
+  const isReceipt = rows[0].category === 'receipt';
+  const actionId = isReceipt ? 'file_receipt_email' : 'file_travel_or_school_email';
+  const catalogEntry = ACTION_CATALOG.find((a) => a.id === actionId)!;
+  let summary: string;
+  let params: Record<string, unknown>;
+  if (isReceipt) {
+    const label = (overrides.label as string) || 'Receipts';
+    if (rows.length === 1) {
+      const extracted = (rows[0].extracted || {}) as Record<string, unknown>;
+      const merchant = (overrides.merchant as string) || (extracted.merchant as string) || null;
+      const amount = overrides.amount ?? extracted.amount ?? null;
+      summary = `File this receipt${merchant ? ` from ${merchant}` : ''}${amount != null ? ` (USD ${Number(amount).toFixed(2)})` : ''} into "${label}" and log it to your spending`;
+    } else {
+      summary = `File ${rows.length} receipts into "${label}" and log them to your spending`;
+    }
+    params = { items: rows.map((r) => ({ email_triage_uuid: r.uuid, label, ...(r.extracted || {}) })) };
+  } else {
+    const extracted = (rows[0].extracted || {}) as Record<string, unknown>;
+    const label = (overrides.label as string) || (rows[0].category === 'travel' ? 'Travel' : 'School');
+    const title = (overrides.title as string) || (extracted.title as string) || rows[0].subject || 'Event';
+    summary = `Add "${title}" to your calendar and file this email into "${label}"`;
+    params = { email_triage_uuid: rows[0].uuid, label, title, ...extracted };
+  }
+  const action: MockAction = {
+    uuid: `act-email-${Date.now()}`, action_id: actionId, label: catalogEntry.label,
+    summary, rationale: null, params, status: 'pending', approval: null,
+    reversible: catalogEntry.reversible, result_ref: null, error: null,
+    created_at: new Date().toISOString(), expires_at: new Date(Date.now() + 15 * 60_000).toISOString(), executed_at: null,
+  };
+  proposals.push(action);
+  return action;
+}
 
 /** Which actions are usable: mirrors the server's linked + consented filter. */
 function availableActions(): string[] {
@@ -746,6 +813,61 @@ async function route(method: string, path: string, body?: any): Promise<any> {
     mockProjects = mockProjects.map(x => (x.uuid === uuid ? { ...x, ...body } : x));
     return { project: mockProjects.find(x => x.uuid === uuid) };
   }
+  if (p === '/api/v1/dashboard/email/scan') {
+    // Simulates "Scan more" turning up a bit more of the backlog, once.
+    const reserve: MockEmail[] = [
+      { uuid: 'email-7', gmail_message_id: 'g-107', thread_id: 't-107', subject: 'Your Chipotle order is on its way', from_address: 'noreply@chipotle.com', from_name: 'Chipotle', received_at: iso(DAY * 7), category: 'receipt', group_key: 'chipotle', extracted: { merchant: 'Chipotle', category: 'dining_out', amount: 14.75, currency: 'USD', purchased_at: dayStamp(7) }, status: 'new', created_at: iso(DAY * 7) },
+    ];
+    const already = new Set(mockEmails.map((e) => e.gmail_message_id));
+    const added = reserve.filter((e) => !already.has(e.gmail_message_id));
+    mockEmails = [...mockEmails, ...added];
+    const byCategory: Record<string, number> = {};
+    for (const e of added) byCategory[e.category] = (byCategory[e.category] || 0) + 1;
+    return { scanned: added.length, newCount: added.length, byCategory };
+  }
+  if (p === '/api/v1/dashboard/email/group/propose') {
+    const uuids: string[] = Array.isArray(body?.email_triage_uuids) ? body.email_triage_uuids : [];
+    const rows = mockEmails.filter((e) => uuids.includes(e.uuid));
+    if (!rows.length) fail(404, 'Those emails could not be found');
+    return { success: true, action: proposeEmailAction(rows, body?.overrides || {}) };
+  }
+  if (method === 'POST' && /^\/api\/v1\/dashboard\/email\/[^/]+\/propose$/.test(p)) {
+    const uuid = decodeURIComponent(p.split('/')[5]);
+    const row = mockEmails.find((e) => e.uuid === uuid);
+    if (!row) fail(404, 'That email could not be found');
+    if (row!.category === 'other') fail(400, "There's nothing to propose for this email — dismiss it instead");
+    return { success: true, action: proposeEmailAction([row!], body?.overrides || {}) };
+  }
+  if (method === 'POST' && /^\/api\/v1\/dashboard\/email\/[^/]+\/dismiss$/.test(p)) {
+    const uuid = decodeURIComponent(p.split('/')[5]);
+    const row = mockEmails.find((e) => e.uuid === uuid);
+    if (!row) fail(404, 'That email could not be found');
+    row!.status = 'dismissed';
+    const action: MockAction = {
+      uuid: `act-dismiss-${row!.uuid}`, action_id: 'dismiss_email', label: 'Dismiss from the mail list',
+      summary: 'Dismiss this email from your mail list (nothing changes in Gmail)', rationale: null,
+      params: { email_triage_uuid: row!.uuid }, status: 'done', approval: 'human', reversible: false,
+      result_ref: row!.uuid, error: null, created_at: new Date().toISOString(),
+      expires_at: iso(-DAY), executed_at: new Date().toISOString(),
+    };
+    proposals.push(action);
+    return { success: true, action };
+  }
+  if (p.startsWith('/api/v1/dashboard/email/')) {
+    const uuid = decodeURIComponent(p.slice('/api/v1/dashboard/email/'.length));
+    const row = mockEmails.find((e) => e.uuid === uuid);
+    if (!row) fail(404, 'That email could not be found');
+    const siblings = row!.group_key
+      ? mockEmails.filter((e) => e.uuid !== row!.uuid && e.group_key === row!.group_key && e.status === 'new')
+      : [];
+    return { ...row, siblings };
+  }
+  if (p === '/api/v1/dashboard/email') {
+    let items = mockEmails.filter((e) => e.status === (url.searchParams.get('status') || 'new'));
+    const category = url.searchParams.get('category');
+    if (category) items = items.filter((e) => e.category === category);
+    return { items };
+  }
   if (p === '/api/v1/dashboard/news') return dashboardNews();
   if (p === '/api/v1/session') return { session: { uuid: 'mock-session', mode: 'companion' } };
   if (p === '/api/v1/message' && method === 'GET') return [...messages];
@@ -970,6 +1092,15 @@ async function route(method: string, path: string, body?: any): Promise<any> {
     if (!action || action.status !== 'pending') fail(409, 'That request is already decided', 'not_pending');
     await wait(700);
     Object.assign(action!, { status: 'done', approval: 'human', result_ref: 'mock-evt-1', executed_at: new Date().toISOString() });
+    // The real execute() also marks the triaged email(s) 'actioned'; mirrored
+    // here so a filed email leaves the Mail list the same way.
+    if (action!.action_id === 'file_receipt_email') {
+      const ids = ((action!.params?.items as { email_triage_uuid: string }[]) || []).map((i) => i.email_triage_uuid);
+      mockEmails = mockEmails.map((e) => (ids.includes(e.uuid) ? { ...e, status: 'actioned' } : e));
+    } else if (action!.action_id === 'file_travel_or_school_email') {
+      const id = action!.params?.email_triage_uuid as string | undefined;
+      mockEmails = mockEmails.map((e) => (e.uuid === id ? { ...e, status: 'actioned' } : e));
+    }
     return { success: true, action };
   }
   if (method === 'POST' && /^\/api\/v1\/actions\/[^/]+\/decline$/.test(p)) {

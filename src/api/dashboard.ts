@@ -1,4 +1,5 @@
 import { api } from './client';
+import type { AthenaAction } from './companion';
 
 export type SourceStatus = 'ready' | 'not_connected' | 'needs_reauth' | 'consent_required' | 'error';
 /** `detail` is the provider's own reason a card is blank, redacted server-side.
@@ -23,8 +24,24 @@ export interface DashboardSummary {
   familyChores: Source<{ name: string; chores: { title: string; completed: boolean; status: string | null; dueDate: string | null }[] }>;
   jira: Source<{ issues: JiraIssue[]; partial: boolean }>;
   slack: Source<{ workspace: string; messages: { text: string; channel: string; url: string; timestamp: string }[] }>;
-  gmail: Source<{ account: string; messages: { id: string; title: string; from: string; date: string; url: string }[] }>;
+  emailTriage: Source<{ newCount: number; receiptCount: number; travelCount: number; schoolCount: number; otherCount: number; preview: TriageEmail[] }>;
 }
+export type EmailCategory = 'receipt' | 'travel' | 'school' | 'other';
+export type EmailTriageStatus = 'new' | 'actioned' | 'dismissed';
+/** One receipt/travel/school-announcement email Athena has sorted out of the inbox.
+ *  `extracted` is the LLM's structured read of it — receipt fields, or a candidate
+ *  calendar event — null for 'other', which gets no extraction pass at all. */
+export interface TriageEmail {
+  uuid: string; gmail_message_id: string; thread_id: string | null;
+  subject: string | null; from_address: string | null; from_name: string | null;
+  received_at: string | null; category: EmailCategory;
+  /** Set for receipts sharing a merchant/sender — how the panel offers "review as a group?" */
+  group_key: string | null;
+  extracted: Record<string, unknown> | null;
+  status: EmailTriageStatus; created_at: string;
+}
+/** Other 'new' emails sharing this one's group_key — the group-review prompt reads this. */
+export interface TriageEmailDetail extends TriageEmail { siblings: TriageEmail[] }
 /** One card, and Athena's one-line reason for putting it where she did. */
 export interface PriorityEntry { id: string; why: string | null }
 /** `source` is 'default' when no model ranked this — the UI stays quiet then. */
@@ -188,4 +205,30 @@ export const dashboardApi = {
   removeSource: (uuid: string) => api.del<{ success: true }>(`/api/v1/dashboard/news/sources/${encodeURIComponent(uuid)}`),
   /** "Look now", for the moment after someone adds a page. Rate limited server-side. */
   checkNews: () => api.post<{ checked: number; changed: number; failed: number; cooling: boolean }>('/api/v1/dashboard/news/check'),
+  /** Paginated triage list; `cursor` is the previous page's last uuid. */
+  mailList: (params: { status?: string; category?: string; cursor?: string; limit?: number } = {}) => {
+    const q = new URLSearchParams();
+    if (params.status) q.set('status', params.status);
+    if (params.category) q.set('category', params.category);
+    if (params.cursor) q.set('cursor', params.cursor);
+    if (params.limit) q.set('limit', String(params.limit));
+    const qs = q.toString();
+    return api.get<{ items: TriageEmail[] }>(`/api/v1/dashboard/email${qs ? `?${qs}` : ''}`);
+  },
+  mailDetail: (uuid: string) => api.get<TriageEmailDetail>(`/api/v1/dashboard/email/${encodeURIComponent(uuid)}`),
+  /** The "Scan more" button. Bounded and synchronous — no background job. */
+  mailScan: (max?: number) =>
+    api.post<{ scanned: number; newCount: number; byCategory: Record<string, number> }>(
+      '/api/v1/dashboard/email/scan', max ? { max } : {}),
+  /** Builds the right proposal (file_receipt_email / file_travel_or_school_email) from the email's stored category. */
+  mailPropose: (uuid: string, overrides?: Record<string, unknown>) =>
+    api.post<{ success: true; action: AthenaAction }>(
+      `/api/v1/dashboard/email/${encodeURIComponent(uuid)}/propose`, overrides ? { overrides } : {}),
+  mailProposeGroup: (emailTriageUuids: string[], overrides?: Record<string, unknown>) =>
+    api.post<{ success: true; action: AthenaAction }>('/api/v1/dashboard/email/group/propose', {
+      email_triage_uuids: emailTriageUuids, ...(overrides ? { overrides } : {}),
+    }),
+  /** Hides the email from the list without touching Gmail — proposes+confirms dismiss_email in one call. */
+  mailDismiss: (uuid: string) =>
+    api.post<{ success: true; action: AthenaAction }>(`/api/v1/dashboard/email/${encodeURIComponent(uuid)}/dismiss`),
 };
