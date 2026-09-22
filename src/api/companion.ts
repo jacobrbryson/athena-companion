@@ -291,6 +291,11 @@ export interface Nudge {
   status: 'pending' | 'delivered' | 'engaged' | 'dismissed' | 'expired';
   created_at: string;
   expires_at: string;
+  /** Emergency nudges only: where the calls are, for a map under the message. */
+  map?: {
+    incidents: { what: string; where: string; miles: number; serious: boolean; latitude: number; longitude: number }[];
+    places: { name: string; latitude: number; longitude: number; radiusMiles?: number }[];
+  };
 }
 
 export interface InitiativePref {

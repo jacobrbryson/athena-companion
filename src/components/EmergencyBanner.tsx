@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { dashboardApi, type DashboardAlert, type EmergencyAlert, type NearbyIncident } from '../api/dashboard';
+import { dashboardApi, type AlertPlace, type DashboardAlert, type EmergencyAlert, type NearbyIncident } from '../api/dashboard';
+import { MiniMap } from './MiniMap';
 
 /**
  * The alert across the top of every screen.
@@ -75,7 +76,15 @@ function pick(situation: EmergencyAlert | null, model: DashboardAlert | null): S
  * and a banner above it would scroll away within seconds: there it is a slim
  * bar held under the top bar for as long as the situation lasts.
  */
-export function EmergencyBanner({ onAsk, pinned = false }: { onAsk: (text: string) => void; pinned?: boolean }) {
+export function EmergencyBanner({
+  onAsk,
+  onPlaces,
+  pinned = false,
+}: {
+  onAsk: (text: string) => void;
+  onPlaces?: () => void;
+  pinned?: boolean;
+}) {
   const [topbar, setTopbar] = useState(0);
   useEffect(() => {
     if (!pinned) return;
@@ -143,6 +152,14 @@ export function EmergencyBanner({ onAsk, pinned = false }: { onAsk: (text: strin
   }
 
   const urgent = shown.level === 'urgent';
+  // One pin per call, numbered as the list below numbers them, and the rings
+  // of the places being watched so the distance means something at a glance.
+  const mapPins = shown.incidents.flatMap((i, n) =>
+    Number.isFinite(i.latitude) && Number.isFinite(i.longitude)
+      ? [{ latitude: i.latitude as number, longitude: i.longitude as number, n: n + 1, serious: i.serious, label: `${i.what} — ${i.where}` }]
+      : []
+  );
+  const mapPlaces: AlertPlace[] = (situation?.places || []).filter((p) => !p.live);
   const askText = urgent
     ? "What's going on with the emergencies near the house?"
     : "What's that emergency call near the house?";
@@ -191,10 +208,21 @@ export function EmergencyBanner({ onAsk, pinned = false }: { onAsk: (text: strin
         </div>
       </div>
 
+      {mapPins.length > 0 && (
+        <div className="mx-4 mt-3">
+          <MiniMap pins={mapPins} places={mapPlaces} height={pinned ? 150 : 190} />
+        </div>
+      )}
+
       {shown.incidents.length > 0 && (
         <ul className={`mx-4 mt-3 divide-y rounded-lg ${urgent ? 'divide-white/15 bg-black/20' : 'divide-black/10 bg-white/40'}`}>
           {shown.incidents.slice(0, 8).map((i) => (
             <li key={i.id} className="flex items-baseline gap-3 px-3 py-2 text-sm">
+              {mapPins.length > 0 && Number.isFinite(i.latitude) && (
+                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-white text-[11px] font-bold text-red-700">
+                  {shown.incidents.indexOf(i) + 1}
+                </span>
+              )}
               <span className="w-14 shrink-0 font-mono font-semibold">{i.miles} mi</span>
               <span className="min-w-0 flex-1">
                 <strong className="font-semibold">{i.what}</strong>
@@ -226,6 +254,11 @@ export function EmergencyBanner({ onAsk, pinned = false }: { onAsk: (text: strin
         >
           Got it
         </button>
+        {onPlaces && (
+          <button type="button" onClick={onPlaces} className="self-center text-xs underline opacity-80 hover:opacity-100">
+            Watched places
+          </button>
+        )}
         {feedDown && <span className="self-center text-xs opacity-80">Feed offline — this may be out of date.</span>}
       </div>
     </section>

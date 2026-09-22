@@ -14,6 +14,8 @@ import { DevicesPanel } from '../components/DevicesPanel';
 import { ActionsPanel } from '../components/ActionsPanel';
 import { InitiativePanel } from '../components/InitiativePanel';
 import { EmergencyBanner } from '../components/EmergencyBanner';
+import { PlacesPanel } from '../components/PlacesPanel';
+import { MiniMap } from '../components/MiniMap';
 import { useNudges } from '../athena/useNudges';
 import { ActionProposal } from '../components/ActionProposal';
 import { useActions } from '../athena/useActions';
@@ -46,7 +48,7 @@ const ARRIVAL_MAX_MS = 14000;
 const MAX_VOICE_HOLD_MS = 20000;
 const MAX_MESSAGE = 2000;
 
-type Panel = 'memory' | 'photo' | 'camera' | 'brain' | 'devices' | 'local' | 'integrations' | 'actions' | 'initiative' | null;
+type Panel = 'memory' | 'photo' | 'camera' | 'brain' | 'devices' | 'local' | 'integrations' | 'actions' | 'initiative' | 'places' | null;
 
 export function CompanionConsole() {
   const { user, profile, arrival, consumeArrival, signOut } = useAuth();
@@ -380,6 +382,7 @@ export function CompanionConsole() {
     { icon: '🏠', label: 'Local server', onClick: () => openPanel('local') },
     { icon: '⚡', label: 'Actions', onClick: () => openPanel('actions') },
     { icon: '💡', label: 'Initiative', onClick: () => openPanel('initiative') },
+    { icon: '📍', label: 'Watched places', onClick: () => openPanel('places') },
     { icon: '🔗', label: 'Connected apps', onClick: () => openPanel('integrations') },
     { icon: '🖥️', label: 'System', onClick: () => navigateDashboard('System') },
   ];
@@ -468,7 +471,7 @@ export function CompanionConsole() {
       </header>
 
       {/* Above both views: an emergency near home is never on a screen you are not looking at. */}
-      <EmergencyBanner onAsk={askAthena} pinned={view === 'chat'} />
+      <EmergencyBanner onAsk={askAthena} onPlaces={() => openPanel('places')} pinned={view === 'chat'} />
 
       {view === 'dashboard' && <Dashboard section={activeSection} firstName={firstName} onAsk={askAthena} onPanel={openPanel} onNavigate={navigateDashboard} />}
       <div className="companion-chat" hidden={view !== 'chat'}>
@@ -526,6 +529,22 @@ export function CompanionConsole() {
                   <p className="mt-1 text-sm leading-relaxed text-emerald-100">
                     {entry.nudge.text}
                   </p>
+                  {entry.nudge.map && (
+                    // An emergency alert carries where the calls are: a pin per
+                    // call, numbered as they are listed, and the watched rings.
+                    <MiniMap
+                      className="mt-2"
+                      height={160}
+                      pins={entry.nudge.map.incidents.map((i, n) => ({
+                        latitude: i.latitude,
+                        longitude: i.longitude,
+                        n: n + 1,
+                        serious: i.serious,
+                        label: `${i.what} — ${i.where}, ${i.miles} mi`,
+                      }))}
+                      places={entry.nudge.map.places}
+                    />
+                  )}
                   {!entry.nudge.answered && (
                     <button
                       onClick={() => nudges.dismiss(entry.nudge.uuid)}
@@ -730,6 +749,7 @@ export function CompanionConsole() {
       {panel === 'devices' && <DevicesPanel onClose={() => setPanel(null)} />}
       {panel === 'actions' && <ActionsPanel onClose={() => setPanel(null)} />}
       {panel === 'initiative' && <InitiativePanel onClose={() => setPanel(null)} />}
+      {panel === 'places' && <PlacesPanel onClose={() => setPanel(null)} />}
       {panel === 'local' && <LocalServerPanel onClose={() => setPanel(null)} />}
       {panel === 'integrations' && (
         <IntegrationsPanel

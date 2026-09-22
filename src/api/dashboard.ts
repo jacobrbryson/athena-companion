@@ -33,7 +33,12 @@ export type AlertLevel = 'none' | 'watch' | 'urgent';
 export interface DashboardAlert { level: Exclude<AlertLevel, 'none'>; headline: string; body: string; source: 'athena' | 'emergencies' }
 export interface DashboardPriority { order: PriorityEntry[]; source: 'athena' | 'default'; alert?: DashboardAlert | null; model?: string | null; generatedAt: string }
 /** One nearby emergency call, as the incident watcher stored it. */
-export interface NearbyIncident { id: string; what: string; category: string | null; where: string; miles: number; place: string; units: number; receivedAt: string | null; serious: boolean }
+export interface NearbyIncident { id: string; what: string; category: string | null; where: string; miles: number; place: string; units: number; receivedAt: string | null; serious: boolean; latitude?: number; longitude?: number }
+/** A place watched for emergencies nearby: home, a parent's house. */
+export interface WatchPlace { uuid: string; name: string; address: string | null; latitude: number; longitude: number; radiusMiles: number; enabled: boolean }
+/** A ring on the map: where a watched place is and how far it reaches. */
+export interface AlertPlace { name: string; latitude: number; longitude: number; radiusMiles: number; live?: boolean }
+export interface AddressMatch { label: string; latitude: number; longitude: number }
 /** The live emergency situation near this person's places — GET /dashboard/alert. */
 export interface EmergencyAlert {
   level: AlertLevel;
@@ -45,6 +50,7 @@ export interface EmergencyAlert {
   updatedAt: string | null;
   assessedBy: string | null;
   feed: { ok: boolean; lastOkAt: string | null; error: string | null };
+  places?: AlertPlace[];
 }
 export interface TwilioBilling { configured: boolean; checkedAt: string; balance?: { amount: string | null; currency: string | null }; smsMessagesSent?: number; smsCostThisMonth?: number }
 /**
@@ -126,6 +132,12 @@ export const dashboardApi = {
   },
   /** Never cached: this is the one read whose staleness could matter. */
   alert: () => api.get<EmergencyAlert>('/api/v1/dashboard/alert'),
+  watchPlaces: () => api.get<{ places: WatchPlace[] }>('/api/v1/dashboard/incidents/places'),
+  /** Add, or update by name (radius, on/off, a corrected position). */
+  saveWatchPlace: (place: { name: string; latitude: number; longitude: number; radiusMiles?: number; address?: string | null; enabled?: boolean }) =>
+    api.put<{ places: WatchPlace[] }>('/api/v1/dashboard/incidents/places', place),
+  removeWatchPlace: (uuid: string) => api.del<{ places: WatchPlace[] }>(`/api/v1/dashboard/incidents/places/${encodeURIComponent(uuid)}`),
+  lookupAddress: (q: string) => api.get<{ matches: AddressMatch[] }>(`/api/v1/dashboard/incidents/geocode?q=${encodeURIComponent(q)}`),
   rightNow: async () => {
     const value = await api.cachedGet<RightNow>('/api/v1/dashboard/right-now');
     if (!value || !Array.isArray(value.alternates)) throw new Error('Right-now API needs updating.');
