@@ -673,7 +673,24 @@ async function route(method: string, path: string, body?: any): Promise<any> {
     // fetch here, so it reports the pages it would have read.
     return { checked: newsSources.length, changed: 0, failed: 0, cooling: false };
   }
-  if (p === '/api/v1/dashboard/right-now') return mockRightNow();
+  // ?rightnow=habit shows the suggestion built from nothing but Strava and a goal.
+  if (p === '/api/v1/dashboard/right-now') {
+    if (new URLSearchParams(window.location.search).get('rightnow') !== 'habit') return mockRightNow();
+    return {
+      ...mockRightNow(),
+      headline: 'Get a ride in before piano',
+      lead: {
+        id: 'habit:cycling', kind: 'habit' as const, title: 'Cycling', activity: 'cycling',
+        why: 'You ride about twice a week and haven’t since last Tuesday. It’s dry until evening.',
+        weather: { outlook: 'fine' as const, now: 'Mostly Sunny', temperatureF: 71, precipitationChance: 10 },
+        rhythm: { activity: 'cycling', perWeek: 1.8, usualDay: null, daysSince: 8, thisWeek: 0, isUsualDayToday: false },
+      },
+      alternates: [{
+        id: 'goal:g1', kind: 'goal' as const, title: 'Learn spanish',
+        why: 'Twenty minutes of practice fits even if the ride runs long.', detail: 'Conversational by summer',
+      }],
+    };
+  }
   if (p === '/api/v1/dashboard/places') {
     if (method === 'POST') {
       const place = {

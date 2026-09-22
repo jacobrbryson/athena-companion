@@ -6,6 +6,7 @@ import { useDashboardData } from './useDashboardData';
 import { NewsSourcesPanel } from './NewsSourcesPanel';
 import { PlansPanel } from './PlansPanel';
 import { EmergencyBanner } from './EmergencyBanner';
+import { RightNowCard } from './RightNowCard';
 
 export type DashboardSection = 'Home' | 'Today' | 'Calendar' | 'Health' | 'Family' | 'Work' | 'Projects' | 'News' | 'System';
 // Explicit sprite windows preserve the borders on this irregular sheet. Today
@@ -825,11 +826,16 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
     <div className="dashboard-toolbar"><span className="dashboard-eyebrow">YOUR DAILY BRIEFING</span><time dateTime={new Date().toISOString()}>{new Date().toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}</time><button onClick={() => onAsk('')} className="ask-athena">ϟ <span>Ask Athena…</span> ↗</button></div>
     <section className="dashboard-greeting"><div><h1>{greeting}, {firstName}</h1><p>Here’s what’s on your radar today.</p></div></section>
     {data.summary.error && <p className="dashboard-notice" role="status">Connected data is unavailable. {data.summary.error}</p>}
-    {/* The emergency near home, in the slot above the cards. Right Now
-        (RightNowCard) lived here and is parked until it is useful; the console
-        leaves the banner out of its own header on this page so it shows once.
-        The compact drawer skips it — the console's banner is already above it. */}
+    {/* The emergency near home first, then the one thing on this page that
+        answers a question rather than reporting a source — both above the
+        cards because they are what people actually arrive with. The console
+        leaves the banner out of its own header on this page so it shows once;
+        the compact drawer skips it, the console's banner is already above it. */}
     {!compact && <EmergencyBanner onAsk={onAsk} onPlaces={onPlaces} inline />}
+    <RightNowCard
+      data={data.rightNow.data} loading={data.rightNow.loading} error={data.rightNow.error}
+      onAsk={onAsk} onManage={() => setPlansOpen(true)}
+    />
     <div className="dashboard-grid">{ranked.slice(0, PRIMARY_SLOTS).map(entry => cards[entry.id])}</div>
     <div className="dashboard-secondary">{ranked.slice(PRIMARY_SLOTS).map(entry => cards[entry.id])}</div>
     <section className="dashboard-bottom"><div><span className="dashboard-eyebrow">A MOMENT WITH ATHENA</span><h2>Whatever’s on your mind,<br />you don’t have to carry it alone.</h2><button className="dashboard-chat-cta" onClick={() => onAsk('')}>Let’s talk <span>↗</span></button></div><div className="dashboard-utilities"><button onClick={() => onPanel('memory')}>Explore memories <span>↗</span></button><button onClick={() => onPanel('photo')}>Share a moment <span>↗</span></button><button onClick={() => onPanel('integrations')}>Connected apps <span>↗</span></button><button onClick={() => setSourcesOpen(true)}>News sources <span>↗</span></button><button onClick={() => setPlansOpen(true)}>Places &amp; projects <span>↗</span></button></div></section>

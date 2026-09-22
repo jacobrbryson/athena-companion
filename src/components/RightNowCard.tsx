@@ -40,6 +40,29 @@ function evidence(option: Suggestion): string[] {
     }
     return bits;
   }
+  if (option.kind === 'habit') {
+    if (option.rhythm?.usualDay) bits.push(option.rhythm.isUsualDayToday ? `your ${option.rhythm.usualDay} habit` : `usually ${option.rhythm.usualDay}s`);
+    if (option.rhythm) bits.push(`about ${option.rhythm.perWeek}× a week`);
+    if (option.rhythm?.thisWeek === 0) bits.push('none yet this week');
+    else if (option.rhythm?.daysSince != null) bits.push(`${option.rhythm.daysSince} days since the last`);
+    if (option.weather?.now) bits.push(option.weather.temperatureF != null ? `${option.weather.now}, ${option.weather.temperatureF}°` : option.weather.now);
+    return bits;
+  }
+  if (option.kind === 'rest') {
+    if (option.recoveryScore != null) bits.push(`recovery ${option.recoveryScore}%`);
+    if (option.hoursAsleep != null) bits.push(`${option.hoursAsleep}h asleep`);
+    return bits;
+  }
+  if (option.kind === 'work') {
+    if (option.issueKey) bits.push(option.issueKey);
+    if (option.status) bits.push(option.status);
+    if (option.dueDate) bits.push(`due ${new Date(option.dueDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`);
+    return bits;
+  }
+  if (option.kind === 'goal') {
+    bits.push('a goal you mentioned');
+    return bits;
+  }
   if (option.area) bits.push(option.area);
   if (option.effortMinutes) bits.push(`about ${hours(option.effortMinutes)}`);
   if (option.status === 'in_progress') bits.push('already started');
@@ -47,6 +70,18 @@ function evidence(option: Suggestion): string[] {
   if (option.indoor === true) bits.push('indoors');
   if (option.dueDate) bits.push(`due ${new Date(option.dueDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`);
   return bits;
+}
+
+/** What "talk it through" asks, in the person's own terms for each kind. */
+function talkPrompt(option: Suggestion) {
+  switch (option.kind) {
+    case 'place': return `Talk me through whether to go to ${option.title} today.`;
+    case 'habit': return `Talk me through whether to fit in some ${option.activity || option.title.toLowerCase()} today.`;
+    case 'rest': return 'My recovery is low today. Help me plan an easy day.';
+    case 'work': return `Help me make progress on ${option.issueKey ? `${option.issueKey}: ` : ''}${option.title}.`;
+    case 'goal': return `Help me pick a next step on ${option.title.toLowerCase()} I could do today.`;
+    default: return `Talk me through whether to work on ${option.title} today.`;
+  }
 }
 
 function safeHref(url?: string | null) {
@@ -106,6 +141,7 @@ export function RightNowCard({ data, loading, error, onAsk, onManage }: {
     {/* Athena's reason, in her words. Shown as a sentence, never acted on. */}
     {lead.why && <p className="right-now-why">{lead.why}</p>}
 
+    {lead.kind === 'goal' && lead.detail && <p className="right-now-note">{lead.detail}</p>}
     <p className="right-now-subject">
       {href ? <a href={href} target="_blank" rel="noopener noreferrer">{lead.title}</a> : lead.title}
     </p>
@@ -132,7 +168,7 @@ export function RightNowCard({ data, loading, error, onAsk, onManage }: {
     </p>}
 
     <div className="right-now-actions">
-      <button className="right-now-primary" onClick={() => onAsk(`Talk me through whether to ${lead.kind === 'place' ? `go to ${lead.title}` : `work on ${lead.title}`} today.`)}>
+      <button className="right-now-primary" onClick={() => onAsk(talkPrompt(lead))}>
         Talk it through <span>↗</span>
       </button>
       <button className="right-now-secondary" onClick={onManage}>Places &amp; projects <span>↗</span></button>

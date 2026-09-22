@@ -92,14 +92,17 @@ export interface HomeProject {
 export interface ProjectCounts { todo: number; inProgress: number; blocked: number; done: number; open: number }
 /** What Athena is putting in front of them, and everything it was drawn from. */
 export interface Suggestion {
-  id: string; kind: 'place' | 'project'; title: string; why: string | null;
+  id: string; kind: 'place' | 'habit' | 'project' | 'goal' | 'work' | 'rest'; title: string; why: string | null;
   activity?: string; url?: string; distanceMi?: number | null; driveMinutes?: number | null;
   closesAt?: string | null; closesInMinutes?: number | null; todaysHours?: string[];
   usableMinutes?: number | null; weatherDependent?: boolean;
   weather?: { outlook: 'wet' | 'fine'; now: string | null; temperatureF: number | null; precipitationChance: number | null } | null;
   rhythm?: { activity: string; perWeek: number; usualDay: string | null; daysSince: number | null; thisWeek: number; isUsualDayToday: boolean } | null;
   area?: string | null; effortMinutes?: number | null; indoor?: boolean | null;
-  status?: ProjectStatus; priority?: string; fitsWindow?: boolean; dueDate?: string | null;
+  status?: ProjectStatus | string | null; priority?: string; fitsWindow?: boolean; dueDate?: string | null;
+  /** goal: what they said about it. work: the ticket. rest: the numbers behind it. */
+  detail?: string | null; issueKey?: string; project?: string | null;
+  recoveryScore?: number | null; hoursAsleep?: number | null;
 }
 export interface RightNow {
   headline: string | null;
