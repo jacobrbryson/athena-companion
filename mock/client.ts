@@ -283,7 +283,7 @@ type MockEmail = {
   subject: string | null; from_address: string | null; from_name: string | null;
   received_at: string | null; category: 'receipt' | 'travel' | 'school' | 'other';
   group_key: string | null; extracted: Record<string, unknown> | null;
-  status: 'new' | 'actioned' | 'dismissed'; created_at: string;
+  status: 'new' | 'actioned' | 'dismissed' | 'trashed'; created_at: string;
 };
 let mockEmails: MockEmail[] = [
   { uuid: 'email-1', gmail_message_id: 'g-101', thread_id: 't-101', subject: 'Your Kroger order #48213', from_address: 'noreply@kroger.com', from_name: 'Kroger', received_at: iso(DAY), category: 'receipt', group_key: 'kroger', extracted: { merchant: 'Kroger', category: 'groceries', amount: 84.32, currency: 'USD', purchased_at: dayStamp(1) }, status: 'new', created_at: iso(DAY) },
@@ -476,6 +476,7 @@ const ACTION_CATALOG = [
   { id: 'file_receipt_email', label: 'File a receipt', provider: 'gmail', consent_type: 'action_authority', reversible: true, standing: false },
   { id: 'file_travel_or_school_email', label: 'Add to calendar and file the email', provider: 'google_calendar', consent_type: 'action_authority', reversible: true, standing: false },
   { id: 'dismiss_email', label: 'Dismiss from the mail list', provider: null, consent_type: 'action_authority', reversible: false, standing: false },
+  { id: 'delete_email', label: 'Move to Trash', provider: 'gmail', consent_type: 'action_authority', reversible: true, standing: false },
 ];
 
 /**
@@ -549,6 +550,22 @@ function proposeEmailAction(rows: MockEmail[], overrides: Record<string, unknown
   const action: MockAction = {
     uuid: `act-email-${Date.now()}`, action_id: actionId, label: catalogEntry.label,
     summary, rationale: null, params, status: 'pending', approval: null,
+    reversible: catalogEntry.reversible, result_ref: null, error: null,
+    created_at: new Date().toISOString(), expires_at: new Date(Date.now() + 15 * 60_000).toISOString(), executed_at: null,
+  };
+  proposals.push(action);
+  return action;
+}
+
+/** Move-to-Trash proposal — the real delete_email action, distinct from dismiss (which never touches Gmail). */
+function proposeDeleteAction(rows: MockEmail[]): MockAction {
+  const catalogEntry = ACTION_CATALOG.find((a) => a.id === 'delete_email')!;
+  const action: MockAction = {
+    uuid: `act-email-delete-${Date.now()}`, action_id: 'delete_email', label: catalogEntry.label,
+    summary: rows.length === 1
+      ? "Move this email to Trash (recoverable there for 30 days)"
+      : `Move ${rows.length} emails to Trash (recoverable there for 30 days)`,
+    rationale: null, params: { email_triage_uuids: rows.map((r) => r.uuid) }, status: 'pending', approval: null,
     reversible: catalogEntry.reversible, result_ref: null, error: null,
     created_at: new Date().toISOString(), expires_at: new Date(Date.now() + 15 * 60_000).toISOString(), executed_at: null,
   };
@@ -831,6 +848,12 @@ async function route(method: string, path: string, body?: any): Promise<any> {
     if (!rows.length) fail(404, 'Those emails could not be found');
     return { success: true, action: proposeEmailAction(rows, body?.overrides || {}) };
   }
+  if (p === '/api/v1/dashboard/email/delete') {
+    const uuids: string[] = Array.isArray(body?.email_triage_uuids) ? body.email_triage_uuids : [];
+    const rows = mockEmails.filter((e) => uuids.includes(e.uuid));
+    if (!rows.length) fail(404, 'Those emails could not be found');
+    return { success: true, action: proposeDeleteAction(rows) };
+  }
   if (method === 'POST' && /^\/api\/v1\/dashboard\/email\/[^/]+\/propose$/.test(p)) {
     const uuid = decodeURIComponent(p.split('/')[5]);
     const row = mockEmails.find((e) => e.uuid === uuid);
@@ -1100,6 +1123,9 @@ async function route(method: string, path: string, body?: any): Promise<any> {
     } else if (action!.action_id === 'file_travel_or_school_email') {
       const id = action!.params?.email_triage_uuid as string | undefined;
       mockEmails = mockEmails.map((e) => (e.uuid === id ? { ...e, status: 'actioned' } : e));
+    } else if (action!.action_id === 'delete_email') {
+      const ids = (action!.params?.email_triage_uuids as string[]) || [];
+      mockEmails = mockEmails.map((e) => (ids.includes(e.uuid) ? { ...e, status: 'trashed' } : e));
     }
     return { success: true, action };
   }

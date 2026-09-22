@@ -27,7 +27,7 @@ export interface DashboardSummary {
   emailTriage: Source<{ newCount: number; receiptCount: number; travelCount: number; schoolCount: number; otherCount: number; preview: TriageEmail[] }>;
 }
 export type EmailCategory = 'receipt' | 'travel' | 'school' | 'other';
-export type EmailTriageStatus = 'new' | 'actioned' | 'dismissed';
+export type EmailTriageStatus = 'new' | 'actioned' | 'dismissed' | 'trashed';
 /** One receipt/travel/school-announcement email Athena has sorted out of the inbox.
  *  `extracted` is the LLM's structured read of it — receipt fields, or a candidate
  *  calendar event — null for 'other', which gets no extraction pass at all. */
@@ -231,4 +231,7 @@ export const dashboardApi = {
   /** Hides the email from the list without touching Gmail — proposes+confirms dismiss_email in one call. */
   mailDismiss: (uuid: string) =>
     api.post<{ success: true; action: AthenaAction }>(`/api/v1/dashboard/email/${encodeURIComponent(uuid)}/dismiss`),
+  /** Proposes moving one or more emails to Gmail's Trash — recoverable there for ~30 days. Still needs approval. */
+  mailDelete: (emailTriageUuids: string[]) =>
+    api.post<{ success: true; action: AthenaAction }>('/api/v1/dashboard/email/delete', { email_triage_uuids: emailTriageUuids }),
 };

@@ -97,6 +97,18 @@ export function EmailPanel({ uuid, onClose, onChanged }: { uuid: string; onClose
     finally { setBusy(false); }
   };
 
+  /** Proposes moving this email (or the whole group) to Gmail's Trash — still needs Approve, like propose(). */
+  const deleteEmail = async () => {
+    if (!detail) return;
+    setBusy(true); setError('');
+    try {
+      const uuids = asGroup ? [uuid, ...detail.siblings.map(s => s.uuid)] : [uuid];
+      const res = await dashboardApi.mailDelete(uuids);
+      setAction(res.action);
+    } catch (e) { setError((e as Error).message); }
+    finally { setBusy(false); }
+  };
+
   const confirm = async () => {
     if (!action) return;
     setConfirmBusy(true); setError('');
@@ -148,19 +160,29 @@ export function EmailPanel({ uuid, onClose, onChanged }: { uuid: string; onClose
           Also file {detail.siblings.length} similar email{detail.siblings.length === 1 ? '' : 's'} from {merchant || 'this sender'} the same way — each keeps its own amount and date.
         </label>}
 
-        <div className="mt-1 flex gap-2">
+        <div className="mt-1 flex flex-wrap gap-2">
           <button onClick={propose} disabled={busy} className="h-10 flex-1 rounded-full bg-emerald-500/80 text-sm font-semibold text-black disabled:opacity-40">
             {busy ? 'Working…' : asGroup ? `Propose for ${1 + detail.siblings.length} emails` : 'Propose'}
           </button>
           <button onClick={dismiss} disabled={busy} className="h-10 rounded-full border border-emerald-500/20 px-4 text-sm disabled:opacity-40">Dismiss</button>
+          <button onClick={deleteEmail} disabled={busy} className="h-10 rounded-full border border-red-500/30 px-4 text-sm text-red-200 disabled:opacity-40">
+            {asGroup ? `Delete ${1 + detail.siblings.length}` : 'Delete'}
+          </button>
         </div>
+        <p className="text-[11px] opacity-40">Delete moves it to Gmail's Trash — recoverable there for about 30 days.</p>
       </div>}
 
       {!action && detail.category === 'other' && <div className="mt-4">
         <p className="text-sm opacity-60">Athena didn't find a receipt, travel booking or school announcement here — nothing to propose.</p>
-        <button onClick={dismiss} disabled={busy} className="mt-3 h-10 rounded-full border border-emerald-500/20 px-4 text-sm disabled:opacity-40">
-          {busy ? 'Working…' : 'Dismiss from list'}
-        </button>
+        <div className="mt-3 flex gap-2">
+          <button onClick={dismiss} disabled={busy} className="h-10 rounded-full border border-emerald-500/20 px-4 text-sm disabled:opacity-40">
+            {busy ? 'Working…' : 'Dismiss from list'}
+          </button>
+          <button onClick={deleteEmail} disabled={busy} className="h-10 rounded-full border border-red-500/30 px-4 text-sm text-red-200 disabled:opacity-40">
+            Delete
+          </button>
+        </div>
+        <p className="mt-2 text-[11px] opacity-40">Delete moves it to Gmail's Trash — recoverable there for about 30 days.</p>
       </div>}
 
       {action && <div className="mt-4">
