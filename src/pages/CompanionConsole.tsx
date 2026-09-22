@@ -470,10 +470,14 @@ export function CompanionConsole() {
         </div>
       </header>
 
-      {/* Above both views: an emergency near home is never on a screen you are not looking at. */}
-      <EmergencyBanner onAsk={askAthena} onPlaces={() => openPanel('places')} pinned={view === 'chat'} />
+      {/* Above every view: an emergency near home is never on a screen you are
+          not looking at. The dashboard home draws it itself, in the slot above
+          its cards. */}
+      {!(view === 'dashboard' && activeSection === 'Home') && (
+        <EmergencyBanner onAsk={askAthena} onPlaces={() => openPanel('places')} pinned={view === 'chat'} />
+      )}
 
-      {view === 'dashboard' && <Dashboard section={activeSection} firstName={firstName} onAsk={askAthena} onPanel={openPanel} onNavigate={navigateDashboard} />}
+      {view === 'dashboard' && <Dashboard section={activeSection} firstName={firstName} onAsk={askAthena} onPanel={openPanel} onPlaces={() => openPanel('places')} onNavigate={navigateDashboard} />}
       <div className="companion-chat" hidden={view !== 'chat'}>
 
       {/* Athena — large and front-and-center */}

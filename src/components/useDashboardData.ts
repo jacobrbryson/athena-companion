@@ -56,7 +56,9 @@ export function useDashboardData() {
         // The suggestion is read from the same snapshot, for the same reason,
         // and fails the same way: a card that cannot be built leaves the day's
         // data standing rather than taking the page down with it.
-        void load(dashboardApi.rightNow, setRightNow);
+        // Parked: the Right Now card isn't on the page, so don't ask the
+        // server to build one. Restore this line with the card.
+        // void load(dashboardApi.rightNow, setRightNow);
       }
     } while (alive.current && queued.current);
     inFlight.current = false;

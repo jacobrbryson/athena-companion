@@ -72,6 +72,9 @@ function pick(situation: EmergencyAlert | null, model: DashboardAlert | null): S
 }
 
 /**
+ * `inline` is for the dashboard home, where the banner takes the Right Now
+ * card's slot in the page flow instead of sitting above the whole view.
+ *
  * `pinned` is for the chat view, where the page scrolls to the conversation
  * and a banner above it would scroll away within seconds: there it is a slim
  * bar held under the top bar for as long as the situation lasts.
@@ -80,11 +83,14 @@ export function EmergencyBanner({
   onAsk,
   onPlaces,
   pinned = false,
+  inline = false,
 }: {
   onAsk: (text: string) => void;
   onPlaces?: () => void;
   pinned?: boolean;
+  inline?: boolean;
 }) {
+  const gutter = inline ? 'mb-4' : 'mx-3 mt-2';
   const [topbar, setTopbar] = useState(0);
   useEffect(() => {
     if (!pinned) return;
@@ -143,7 +149,7 @@ export function EmergencyBanner({
   if (!shown) {
     if (!feedDown) return null;
     return (
-      <div role="status" className="mx-3 mt-2 rounded-lg border border-amber-400/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-100">
+      <div role="status" className={`${gutter} rounded-lg border border-amber-400/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-100`}>
         <strong className="font-semibold">Emergency watch is offline.</strong>{' '}
         I can't read the county 911 dispatch board right now
         {situation?.feed.lastOkAt ? ` (last read ${minutesAgo(situation.feed.lastOkAt)})` : ''}, so I can't warn you about anything nearby.
@@ -172,7 +178,7 @@ export function EmergencyBanner({
         type="button"
         onClick={() => setExpanded(true)}
         style={stick}
-        className={`mx-3 mt-2 flex w-[calc(100%-1.5rem)] items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-semibold shadow-lg ${
+        className={`${gutter} flex ${inline ? 'w-full' : 'w-[calc(100%-1.5rem)]'} items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-semibold shadow-lg ${
           urgent ? 'bg-red-600 text-white' : 'bg-amber-500 text-black'
         }`}
       >
@@ -189,7 +195,7 @@ export function EmergencyBanner({
       role="alert"
       aria-live="assertive"
       style={pinned ? { ...stick, maxHeight: '70vh', overflowY: 'auto' } : undefined}
-      className={`mx-3 mt-2 overflow-hidden rounded-xl border-2 shadow-2xl ${
+      className={`${gutter} overflow-hidden rounded-xl border-2 shadow-2xl ${
         urgent ? 'border-red-400 bg-red-700 text-white shadow-red-900/60' : 'border-amber-300 bg-amber-400 text-black'
       }`}
     >
