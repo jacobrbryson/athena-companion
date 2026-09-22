@@ -53,3 +53,39 @@ export function useAndroidPush() {
 
   return { available, state, error, enable, check };
 }
+
+/**
+ * Reading PulsePoint Respond's notifications on this phone.
+ *
+ * PulsePoint blocked automated readers from their feed, so their own app is
+ * how emergencies still reach Athena. Notification access is granted on
+ * Android's settings screen — there is no in-app prompt for it, by design —
+ * so this reports the state and opens that screen.
+ */
+export type PulsePointState = 'unavailable' | 'checking' | 'on' | 'off' | 'app-missing';
+
+export function usePulsePointAlerts() {
+  const available = isAndroidCompanion();
+  const [state, setState] = useState<PulsePointState>(available ? 'checking' : 'unavailable');
+
+  const check = useCallback(() => {
+    if (!available) return;
+    androidCall<{ installed: boolean; granted: boolean }>('pulsePointStatus')
+      .then((r) => setState(!r.installed ? 'app-missing' : r.granted ? 'on' : 'off'))
+      .catch(() => setState('off'));
+  }, [available]);
+
+  useEffect(() => {
+    check();
+    // They grant it in Android settings and come back to the app.
+    window.addEventListener('athena-native-resume', check);
+    return () => window.removeEventListener('athena-native-resume', check);
+  }, [check]);
+
+  const open = useCallback(async () => {
+    if (!available) return;
+    await androidCall('openNotificationAccess').catch(() => undefined);
+  }, [available]);
+
+  return { available, state, open, check };
+}

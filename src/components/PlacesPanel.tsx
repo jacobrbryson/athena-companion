@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Drawer, Label } from './Drawer';
 import { MiniMap } from './MiniMap';
 import { dashboardApi, type AddressMatch, type WatchPlace } from '../api/dashboard';
+import { usePulsePointAlerts } from '../athena/useAndroidPush';
 
 /**
  * The places Athena watches for emergencies: home, family members' houses,
@@ -22,6 +23,7 @@ const errorText = (e: unknown, fallback: string) => {
 
 export function PlacesPanel({ onClose }: { onClose: () => void }) {
   const [places, setPlaces] = useState<WatchPlace[] | null>(null);
+  const pulsePoint = usePulsePointAlerts();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
@@ -176,6 +178,39 @@ export function PlacesPanel({ onClose }: { onClose: () => void }) {
           height={200}
           className="mb-5"
         />
+      )}
+
+      {pulsePoint.available && pulsePoint.state !== 'checking' && (
+        <section className="mb-8 rounded border border-emerald-500/15 bg-white/[0.02] p-3">
+          <Label>911 calls on this phone</Label>
+          <p className="text-xs leading-relaxed opacity-70">
+            PulsePoint stopped letting me read the county dispatch board directly. Their own app,{' '}
+            <strong>PulsePoint Respond</strong>, still notifies you — and if you let me read those notifications, I'll
+            keep placing them against your rings and telling you about the close ones.
+          </p>
+          <p className="mt-2 font-mono text-[10px] opacity-45">
+            {pulsePoint.state === 'app-missing'
+              ? 'PulsePoint Respond is not installed on this phone'
+              : pulsePoint.state === 'on'
+                ? 'on · I can read PulsePoint alerts here'
+                : 'off · I cannot see PulsePoint alerts'}
+          </p>
+          {pulsePoint.state === 'off' && (
+            <button
+              type="button"
+              onClick={() => void pulsePoint.open()}
+              className="mt-2 rounded bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-black"
+            >
+              Let me read PulsePoint alerts
+            </button>
+          )}
+          {pulsePoint.state === 'off' && (
+            <p className="mt-1.5 text-[11px] opacity-50">
+              Android opens its own settings screen — find <strong>Athena</strong> in the list and switch it on. I only
+              ever read PulsePoint's notifications; everything else on your phone is ignored.
+            </p>
+          )}
+        </section>
       )}
 
       <section className="mb-8">
