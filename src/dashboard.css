@@ -17,7 +17,7 @@
 .companion-shell :is(button, input, textarea, select):disabled { cursor: not-allowed; }
 .companion-shell :is(.dashboard-icon, .athena-orb) { transition: filter .18s ease, scale .18s ease; }
 @media (hover: hover) {
-  .companion-shell :is(button, a, summary, [role="button"]):not(:disabled):not([aria-disabled="true"]):not([aria-label="Close"]):not(.dashboard-card-action):hover {
+  .companion-shell :is(button, a, summary, [role="button"]):not(:disabled):not([aria-disabled="true"]):not([aria-label="Close"]):not(.dashboard-card-action):not(.dashboard-card-head>button):hover {
     filter: brightness(1.2);
     box-shadow: inset 0 0 16px #39dcf818, 0 0 12px #39dcf81a;
   }
@@ -123,23 +123,28 @@ article.dashboard-card { display: flex; flex-direction: column; min-height: 302p
    and only ever a marker until it is asked for: the note floats over the card
    rather than pushing its rows down. */
 .card-why { display: inline-flex; flex-shrink: 0; }
+/* Both notes are portalled to <body> and pinned to their badge by Hint, so the
+   card's clipped overflow can't cut them off. Above the top bar and the phone
+   nav, below the menu. */
+.hint-float { position: fixed; z-index: 45; width: min(280px, calc(100vw - 24px)); font-family: 'Segoe UI', system-ui, sans-serif; }
+.hint-float::before { content: ''; position: absolute; left: calc(var(--caret-x, 50%) - 5px); width: 8px; height: 8px; background: #062733; border: solid #2f7f97; border-width: 1px 0 0 1px; transform: rotate(45deg); }
+.hint-float[data-side='below']::before { top: -5px; }
+.hint-float[data-side='above']::before { bottom: -5px; transform: rotate(225deg); }
 .hint-badge { display: grid; place-items: center; width: 19px; height: 19px; border: 1px solid #37c9e8; border-radius: 50%; background: #0a3346; color: #7fe2fb; font: 500 10px/1 ui-monospace,monospace; box-shadow: 0 0 9px #37c9e855; }
 .hint-badge.open { background: #10516b; color: #d8f7ff; }
-.card-why-note { position: absolute; top: calc(100% - 2px); left: 12px; right: 12px; z-index: 20; padding: 9px 11px; border: 1px solid #2f7f97; border-left: 2px solid #37c9e8; border-radius: 9px; background: #062733f2; box-shadow: 0 12px 28px #00000080; color: #c5e3f0; font-size: 11px; font-weight: 400; line-height: 1.55; text-align: left; white-space: normal; backdrop-filter: blur(8px); }
+.card-why-note { padding: 9px 11px; border: 1px solid #2f7f97; border-left: 2px solid #37c9e8; border-radius: 9px; background: #062733f2; box-shadow: 0 12px 28px #00000080; color: #c5e3f0; font-size: 11px; font-weight: 400; line-height: 1.55; text-align: left; white-space: normal; backdrop-filter: blur(8px); }
 .card-why-note .dashboard-eyebrow { display: block; color: #6fd8ef; margin-bottom: 3px; }
 
-/* The same marker, beside a metric label. Its note is anchored to the metric
-   grid rather than to the marker: the card clips its own overflow, and a note
-   hung off a tile in the right-hand column would be cut off at the card edge.
-   Anchoring to the grid also means every note opens in the same place, which
-   reads as one drawer rather than five popups. */
+/* The same marker, beside a metric label. */
 .hint { display: inline-flex; vertical-align: middle; margin-left: 5px; }
 .hint .hint-badge { width: 14px; height: 14px; font-size: 8px; box-shadow: none; border-color: #2c6a80; background: #07222f; color: #6fc4de; }
 .hint .hint-badge:hover,.hint .hint-badge.open { border-color: #37c9e8; background: #10516b; color: #d8f7ff; }
-.hint-note { position: absolute; left: 0; right: 0; top: 100%; z-index: 20; display: grid; gap: 5px; margin-top: 7px; padding: 9px 11px; border: 1px solid #2f7f97; border-left: 2px solid #37c9e8; border-radius: 9px; background: #062733f2; box-shadow: 0 12px 28px #00000080; color: #c5e3f0; font: 400 11px/1.55 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; letter-spacing: 0; text-transform: none; text-align: left; backdrop-filter: blur(8px); }
+.hint-note { display: grid; gap: 5px; padding: 9px 11px; border: 1px solid #2f7f97; border-left: 2px solid #37c9e8; border-radius: 9px; background: #062733f2; box-shadow: 0 12px 28px #00000080; color: #c5e3f0; font: 400 11px/1.55 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; letter-spacing: 0; text-transform: none; text-align: left; backdrop-filter: blur(8px); }
 .hint-note .dashboard-eyebrow { color: #6fd8ef; }
-.dashboard-card-head:has(.dashboard-card-heading:hover) .dashboard-card-chevron,
-.dashboard-card-head:has(.dashboard-card-chevron:hover) .dashboard-card-heading { background-color: #103146; }
+/* Hovering either half lights the whole head, star and right padding
+   included, so the highlight doesn't break up at the right-hand end. */
+.dashboard-card-head:has(.dashboard-card-heading:hover,.dashboard-card-chevron:hover) { background-color: #103146; box-shadow: inset 0 0 16px #39dcf818; }
+.companion-shell .dashboard-card .dashboard-card-head>button:is(.dashboard-card-heading,.dashboard-card-chevron):hover { background-color: transparent; }
 .card-lead { border-color: #3aa9c9; box-shadow: 0 8px 24px #0002,inset 0 1px 0 #d0f1ff08,0 0 22px #39dcf81f; }
 .dashboard-card-body { padding: 7px 20px 20px; flex: 1; }
 .dashboard-card-body h3 { font-size: 19px; font-weight: 450; line-height: 1.4; margin: 20px 0 12px; letter-spacing: -.02em; }
@@ -231,6 +236,9 @@ article.dashboard-card { display: flex; flex-direction: column; min-height: 302p
 .topbar-badge { position: absolute; top: -6px; right: -6px; min-width: 16px; height: 16px; padding: 0 4px; display: grid; place-items: center; border-radius: 9px; background: #ff6b57; color: #220702; font: 600 9px/1 ui-monospace,monospace; font-style: normal; box-shadow: 0 0 10px #ff6b5766; }
 .mobile-notifications { position: relative; }
 .mobile-notifications .topbar-badge { top: 0; right: 4px; }
+/* The sprite icons beside it carry a bordered tile in the artwork; the drawn
+   bell gets the same tile so the bottom nav reads as one row. */
+.mobile-notifications svg.dashboard-icon { width: 33px; height: 31px; margin: 1.5px; padding: 5px 6px; border: 1px solid #5392c5; border-radius: 7px; background: #072647; color: #8fbde6; }
 
 /* ---- One menu for the whole app, opened from the account row ---- */
 .athena-menu-backdrop { position: fixed; inset: 0; z-index: 55; background: #02090fa6; opacity: 0; pointer-events: none; transition: opacity .2s ease; }
@@ -267,10 +275,6 @@ article.dashboard-card { display: flex; flex-direction: column; min-height: 302p
   }
 }
 .dashboard-card-body .memory-eyebrow { display: block; }
-/* The phone rules hide eyebrows inside a card body, but a hint note opens
-   below the whole grid rather than under its own tile, so the heading is
-   the only thing saying which number it belongs to. */
-.hint-note .dashboard-eyebrow { display: block; }
 
 /* --- Section pages -------------------------------------------------------
    One nav entry, one page. The briefing's cards are a summary grid; a section

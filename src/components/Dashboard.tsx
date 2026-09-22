@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import type { CalendarEvent, Source, JiraIssue, RecoveryDay, DashboardSummary, TwilioBilling } from '../api/dashboard';
 import { dashboardApi } from '../api/dashboard';
 import type { Fact } from '../api/companion';
@@ -326,9 +327,8 @@ function HeartMetric({ label, value, display, unit, goal, better, trend, decimal
  *
  * A card has a handful of rows and every one of them is spoken for, so a goal,
  * a date or the span an arrow compares waits behind this rather than spending
- * one. The note floats over what follows instead of pushing it down; where it
- * is anchored is the caller's business, because the card clips its own
- * overflow and a note hung off the marker would be cut in half.
+ * one. The note floats over what follows instead of pushing it down, pinned to
+ * the marker from a portal, since the card clips its own overflow.
  */
 function Hint({ label, title, lines, glyph = '?', className = 'hint', noteClassName = 'hint-note' }: {
   label: string; title?: string; lines: (string | null | undefined | false)[];
@@ -336,23 +336,52 @@ function Hint({ label, title, lines, glyph = '?', className = 'hint', noteClassN
 }) {
   const [open, setOpen] = useState(false);
   const wrap = useRef<HTMLSpanElement>(null);
+  const badge = useRef<HTMLButtonElement>(null);
+  const note = useRef<HTMLSpanElement>(null);
   useEffect(() => {
     if (!open) return;
     const dismiss = (event: Event) => {
       if (event instanceof KeyboardEvent && event.key !== 'Escape') return;
-      if (event.type === 'pointerdown' && wrap.current?.contains(event.target as Node)) return;
+      if (event.type === 'pointerdown' && (wrap.current?.contains(event.target as Node) || note.current?.contains(event.target as Node))) return;
       setOpen(false);
     };
     document.addEventListener('pointerdown', dismiss);
     document.addEventListener('keydown', dismiss);
     return () => { document.removeEventListener('pointerdown', dismiss); document.removeEventListener('keydown', dismiss); };
   }, [open]);
+  // Pin the note to the badge in viewport coordinates: below it when there is
+  // room, above it when there is not, and never past a screen edge or under
+  // the phone's bottom nav.
+  useLayoutEffect(() => {
+    if (!open) return;
+    const place = () => {
+      const at = badge.current?.getBoundingClientRect();
+      const el = note.current;
+      if (!at || !el) return;
+      const gap = 8, edge = 12;
+      const nav = document.querySelector('.mobile-navigation');
+      const floor = nav && getComputedStyle(nav).display !== 'none' ? nav.getBoundingClientRect().top : window.innerHeight;
+      const { width, height } = el.getBoundingClientRect();
+      const left = Math.min(Math.max(at.left + at.width / 2 - width / 2, edge), window.innerWidth - width - edge);
+      const below = at.bottom + gap;
+      const above = below + height > floor - edge && at.top - gap - height >= edge;
+      el.style.left = `${left}px`;
+      el.style.top = `${above ? at.top - gap - height : below}px`;
+      el.style.setProperty('--caret-x', `${at.left + at.width / 2 - left}px`);
+      el.dataset.side = above ? 'above' : 'below';
+    };
+    place();
+    window.addEventListener('resize', place);
+    window.addEventListener('scroll', place, true);
+    return () => { window.removeEventListener('resize', place); window.removeEventListener('scroll', place, true); };
+  }, [open]);
   const said = lines.filter((line): line is string => typeof line === 'string' && line.length > 0);
   if (!said.length) return null;
   return <span className={className} ref={wrap}>
-    <button type="button" className={`hint-badge${open ? ' open' : ''}`} aria-expanded={open}
+    <button ref={badge} type="button" className={`hint-badge${open ? ' open' : ''}`} aria-expanded={open}
       aria-label={label} onClick={() => setOpen(value => !value)}>{glyph}</button>
-    {open && <span className={noteClassName} role="status">{title && <span className="dashboard-eyebrow">{title}</span>}{said.map((line, i) => <span key={i}>{line}</span>)}</span>}
+    {/* Portalled so the card's clipped overflow can't cut it off. */}
+    {open && createPortal(<span ref={note} className={`hint-float ${noteClassName}`} role="status">{title && <span className="dashboard-eyebrow">{title}</span>}{said.map((line, i) => <span key={i}>{line}</span>)}</span>, document.body)}
   </span>;
 }
 /** Athena's reason for ranking a card first, in the marker on the card head. */
