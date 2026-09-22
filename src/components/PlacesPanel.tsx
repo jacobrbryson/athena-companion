@@ -189,26 +189,31 @@ export function PlacesPanel({ onClose }: { onClose: () => void }) {
             keep placing them against your rings and telling you about the close ones.
           </p>
           <p className="mt-2 font-mono text-[10px] opacity-45">
-            {pulsePoint.state === 'app-missing'
-              ? 'PulsePoint Respond is not installed on this phone'
-              : pulsePoint.state === 'on'
-                ? 'on · I can read PulsePoint alerts here'
+            {pulsePoint.state === 'on'
+              ? 'on · I can read PulsePoint alerts here'
+              : pulsePoint.state === 'app-missing'
+                ? "off · I can't see PulsePoint Respond on this phone"
                 : 'off · I cannot see PulsePoint alerts'}
           </p>
-          {pulsePoint.state === 'off' && (
-            <button
-              type="button"
-              onClick={() => void pulsePoint.open()}
-              className="mt-2 rounded bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-black"
-            >
-              Let me read PulsePoint alerts
-            </button>
-          )}
-          {pulsePoint.state === 'off' && (
-            <p className="mt-1.5 text-[11px] opacity-50">
-              Android opens its own settings screen — find <strong>Athena</strong> in the list and switch it on. I only
-              ever read PulsePoint's notifications; everything else on your phone is ignored.
-            </p>
+          {/* The "is it installed?" answer is a hint, never a gate: Android
+              hides other apps from us unless they are declared in the manifest,
+              and an older build of Athena will always answer no. Offer the
+              switch regardless and let the person decide. */}
+          {pulsePoint.state !== 'on' && (
+            <>
+              <button
+                type="button"
+                onClick={() => void pulsePoint.open()}
+                className="mt-2 rounded bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-black"
+              >
+                Let me read PulsePoint alerts
+              </button>
+              <p className="mt-1.5 text-[11px] opacity-50">
+                Android opens its own settings screen — find <strong>Athena</strong> in the list and switch it on. I only
+                ever read PulsePoint's notifications; everything else on your phone is ignored.
+                {pulsePoint.state === 'app-missing' && ' If PulsePoint Respond is installed, this still works.'}
+              </p>
+            </>
           )}
         </section>
       )}
