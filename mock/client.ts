@@ -604,10 +604,15 @@ async function route(method: string, path: string, body?: any): Promise<any> {
       { id: 'm3', what: 'Hazardous Condition', category: 'Hazard', where: '250 Neill Farm Rd', miles: 1.4, place: 'home', units: 1, receivedAt: ago(15), serious: false, latitude: 35.6598, longitude: -80.9251 },
     ];
     const places = mockWatchPlaces().filter((p) => p.enabled).map((p) => ({ name: p.name, latitude: p.latitude, longitude: p.longitude, radiusMiles: p.radiusMiles }));
-    const feed = { ok: wanted !== 'offline', lastOkAt: ago(wanted === 'offline' ? 9 : 1), error: wanted === 'offline' ? 'PulsePoint answered 503.' : null };
-    if (wanted === 'urgent') return { level: 'urgent', headline: 'Structure fire and storm damage near home', body: 'A structure fire on Brer Fox Trail 0.9 miles away with 16 units on scene, plus a tree down at Shady Cove and Perth and a hazard on Neill Farm Road. Avoid Perth Rd.', incidents, key: 'mock-urgent', startedAt: ago(38), updatedAt: ago(1), assessedBy: 'mock', feed, places };
-    if (wanted === 'watch') return { level: 'watch', headline: 'Tree down near home', body: 'A tree is down at Shady Cove Rd and Perth Rd, 1.1 miles away.', incidents: incidents.slice(1, 2), key: 'mock-watch', startedAt: ago(22), updatedAt: ago(1), assessedBy: 'mock', feed, places };
-    return { level: 'none', headline: null, body: null, incidents: [], key: null, startedAt: null, updatedAt: null, assessedBy: null, feed, places };
+    const feed = { ok: wanted !== 'offline', blocked: wanted === 'offline', lastOkAt: ago(wanted === 'offline' ? 9 : 1), error: wanted === 'offline' ? 'PulsePoint is blocking automated readers (AWS WAF challenge).' : null };
+    // 'offline' = the 911 board blocked while the weather service still works.
+    const sources = { calls: feed, weather: { ok: true, blocked: false, lastOkAt: ago(2), error: null } };
+    const weatherAlerts = wanted === 'urgent' || wanted === 'offline'
+      ? [{ id: 'nws1', event: 'Severe Thunderstorm Warning', severity: 'Severe', urgency: 'Immediate', headline: 'Severe Thunderstorm Warning issued', instruction: 'Move to an interior room on the lowest floor.', area: 'Iredell, NC', expires: new Date(Date.now() + 40 * 60000).toISOString(), place: 'Home', serious: true }]
+      : [];
+    if (wanted === 'urgent') return { level: 'urgent', headline: 'Structure fire and storm damage near home', body: 'A structure fire on Brer Fox Trail 0.9 miles away with 16 units on scene, plus a tree down at Shady Cove and Perth and a hazard on Neill Farm Road. Avoid Perth Rd.', incidents, key: 'mock-urgent', startedAt: ago(38), updatedAt: ago(1), assessedBy: 'mock', feed, sources, places, weather: weatherAlerts };
+    if (wanted === 'watch') return { level: 'watch', headline: 'Tree down near home', body: 'A tree is down at Shady Cove Rd and Perth Rd, 1.1 miles away.', incidents: incidents.slice(1, 2), key: 'mock-watch', startedAt: ago(22), updatedAt: ago(1), assessedBy: 'mock', feed, sources, places, weather: weatherAlerts };
+    return { level: 'none', headline: null, body: null, incidents: [], key: null, startedAt: null, updatedAt: null, assessedBy: null, feed, sources, places, weather: weatherAlerts };
   }
   if (p === '/api/v1/dashboard/incidents/places') {
     if (method === 'PUT') {

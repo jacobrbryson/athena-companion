@@ -39,6 +39,21 @@ export interface WatchPlace { uuid: string; name: string; address: string | null
 /** A ring on the map: where a watched place is and how far it reaches. */
 export interface AlertPlace { name: string; latitude: number; longitude: number; radiusMiles: number; live?: boolean }
 export interface AddressMatch { label: string; latitude: number; longitude: number }
+/** A National Weather Service alert covering a watched place. */
+export interface WeatherAlert {
+  id: string;
+  event: string;
+  severity: string;
+  urgency: string;
+  headline: string;
+  instruction: string | null;
+  area: string;
+  expires: string | null;
+  place: string;
+  serious: boolean;
+}
+/** Whether each source behind the alert can currently be read. */
+export interface AlertSourceStatus { ok: boolean; blocked: boolean; lastOkAt: string | null; error: string | null }
 /** The live emergency situation near this person's places — GET /dashboard/alert. */
 export interface EmergencyAlert {
   level: AlertLevel;
@@ -49,8 +64,10 @@ export interface EmergencyAlert {
   startedAt: string | null;
   updatedAt: string | null;
   assessedBy: string | null;
-  feed: { ok: boolean; lastOkAt: string | null; error: string | null };
+  feed: { ok: boolean; blocked?: boolean; lastOkAt: string | null; error: string | null };
   places?: AlertPlace[];
+  weather?: WeatherAlert[];
+  sources?: { calls: AlertSourceStatus; weather: AlertSourceStatus };
 }
 export interface TwilioBilling { configured: boolean; checkedAt: string; balance?: { amount: string | null; currency: string | null }; smsMessagesSent?: number; smsCostThisMonth?: number }
 /**

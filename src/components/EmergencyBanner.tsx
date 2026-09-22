@@ -1,5 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { dashboardApi, type AlertPlace, type DashboardAlert, type EmergencyAlert, type NearbyIncident } from '../api/dashboard';
+import {
+  dashboardApi,
+  type AlertPlace,
+  type DashboardAlert,
+  type EmergencyAlert,
+  type NearbyIncident,
+  type WeatherAlert,
+} from '../api/dashboard';
 import { MiniMap } from './MiniMap';
 
 /**
@@ -45,6 +52,7 @@ interface Shown {
   headline: string;
   body: string;
   incidents: NearbyIncident[];
+  weather: WeatherAlert[];
   key: string;
   startedAt: string | null;
 }
@@ -58,12 +66,21 @@ function pick(situation: EmergencyAlert | null, model: DashboardAlert | null): S
           headline: situation.headline,
           body: situation.body || '',
           incidents: situation.incidents || [],
+          weather: situation.weather || [],
           key: situation.key || situation.headline,
           startedAt: situation.startedAt,
         }
       : null;
   const fromModel: Shown | null = model
-    ? { level: model.level, headline: model.headline, body: model.body, incidents: [], key: `model:${model.headline}`, startedAt: null }
+    ? {
+        level: model.level,
+        headline: model.headline,
+        body: model.body,
+        incidents: [],
+        weather: [],
+        key: `model:${model.headline}`,
+        startedAt: null,
+      }
     : null;
   if (!fromSituation) return fromModel;
   if (!fromModel) return fromSituation;
@@ -144,15 +161,26 @@ export function EmergencyBanner({
     }
   }, [shown, acknowledged]);
 
-  const feedDown = situation && !situation.feed.ok;
+  const callsSource = situation?.sources?.calls;
+  const weatherSource = situation?.sources?.weather;
+  const callsDown = situation ? !(callsSource ? callsSource.ok : situation.feed.ok) : false;
+  const weatherDown = !!weatherSource && !weatherSource.ok;
+  const feedDown = callsDown || weatherDown;
+  // Which half is blind matters: "911 calls blocked, weather still watched" is
+  // a different thing to be told than "nothing is being watched at all".
+  const offline = callsDown
+    ? callsSource?.blocked
+      ? "PulsePoint is blocking automated readers, so I can't see 911 calls near you."
+      : "I can't read the county 911 dispatch board right now."
+    : "I can't read the weather service right now.";
+  const stillWatched = callsDown && !weatherDown ? ' Weather alerts are still being watched.' : '';
 
   if (!shown) {
     if (!feedDown) return null;
     return (
       <div role="status" className={`${gutter} rounded-lg border border-amber-400/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-100`}>
-        <strong className="font-semibold">Emergency watch is offline.</strong>{' '}
-        I can't read the county 911 dispatch board right now
-        {situation?.feed.lastOkAt ? ` (last read ${minutesAgo(situation.feed.lastOkAt)})` : ''}, so I can't warn you about anything nearby.
+        <strong className="font-semibold">Emergency watch is partly offline.</strong> {offline}
+        {stillWatched}
       </div>
     );
   }
@@ -245,6 +273,26 @@ export function EmergencyBanner({
         </ul>
       )}
 
+      {/* Weather alerts have no single point to pin, so they are listed rather
+          than mapped — in the weather service's own words. */}
+      {shown.weather.length > 0 && (
+        <ul className={`mx-4 mt-3 space-y-1.5 rounded-lg px-3 py-2 text-sm ${urgent ? 'bg-black/20' : 'bg-white/40'}`}>
+          {shown.weather.slice(0, 4).map((w) => (
+            <li key={w.id}>
+              <strong className="font-semibold">{w.event}</strong>
+              {w.serious && (
+                <span className="ml-1 rounded bg-white/90 px-1 text-[10px] font-bold uppercase text-red-700">now</span>
+              )}
+              <span className="block opacity-85">
+                {w.area}
+                {w.instruction ? ` · ${w.instruction}` : ''}
+              </span>
+            </li>
+          ))}
+          {shown.weather.length > 4 && <li className="opacity-80">…and {shown.weather.length - 4} more</li>}
+        </ul>
+      )}
+
       <div className="flex flex-wrap gap-2 px-4 pb-4 pt-3">
         <button
           type="button"
@@ -265,7 +313,12 @@ export function EmergencyBanner({
             Watched places
           </button>
         )}
-        {feedDown && <span className="self-center text-xs opacity-80">Feed offline — this may be out of date.</span>}
+        {feedDown && (
+          <span className="self-center text-xs opacity-80">
+            {offline}
+            {stillWatched}
+          </span>
+        )}
       </div>
     </section>
   );
