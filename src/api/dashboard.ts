@@ -28,7 +28,24 @@ export interface DashboardSummary {
 /** One card, and Athena's one-line reason for putting it where she did. */
 export interface PriorityEntry { id: string; why: string | null }
 /** `source` is 'default' when no model ranked this — the UI stays quiet then. */
-export interface DashboardPriority { order: PriorityEntry[]; source: 'athena' | 'default'; model?: string | null; generatedAt: string }
+export type AlertLevel = 'none' | 'watch' | 'urgent';
+/** What Athena, reading the whole dashboard at open, decided belongs across the top of the screen. */
+export interface DashboardAlert { level: Exclude<AlertLevel, 'none'>; headline: string; body: string; source: 'athena' | 'emergencies' }
+export interface DashboardPriority { order: PriorityEntry[]; source: 'athena' | 'default'; alert?: DashboardAlert | null; model?: string | null; generatedAt: string }
+/** One nearby emergency call, as the incident watcher stored it. */
+export interface NearbyIncident { id: string; what: string; category: string | null; where: string; miles: number; place: string; units: number; receivedAt: string | null; serious: boolean }
+/** The live emergency situation near this person's places — GET /dashboard/alert. */
+export interface EmergencyAlert {
+  level: AlertLevel;
+  headline: string | null;
+  body: string | null;
+  incidents: NearbyIncident[];
+  key: string | null;
+  startedAt: string | null;
+  updatedAt: string | null;
+  assessedBy: string | null;
+  feed: { ok: boolean; lastOkAt: string | null; error: string | null };
+}
 export interface TwilioBilling { configured: boolean; checkedAt: string; balance?: { amount: string | null; currency: string | null }; smsMessagesSent?: number; smsCostThisMonth?: number }
 /**
  * A page Athena watches, and the rhythm she has settled on for it. The rhythm
@@ -107,6 +124,8 @@ export const dashboardApi = {
     if (!Array.isArray(value?.order)) throw new Error('Priority API needs updating.');
     return value;
   },
+  /** Never cached: this is the one read whose staleness could matter. */
+  alert: () => api.get<EmergencyAlert>('/api/v1/dashboard/alert'),
   rightNow: async () => {
     const value = await api.cachedGet<RightNow>('/api/v1/dashboard/right-now');
     if (!value || !Array.isArray(value.alternates)) throw new Error('Right-now API needs updating.');

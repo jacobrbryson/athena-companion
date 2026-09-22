@@ -52,3 +52,21 @@ export function buildGreeting(isFirstVisit: boolean, fullName: string | null | u
   }
   return sample(name ? [`Welcome back, ${name}.`, `Hey, ${name}.`, `There you are, ${name}.`] : ['Welcome back.', 'There you are.']);
 }
+
+/**
+ * The greeting when something is happening near home. Replaces the usual
+ * "welcome back" outright rather than following it: the owner's words were
+ * that an emergency nearby "should be all Athena wants to talk about", and a
+ * pleasantry first would bury it under the one line people skim.
+ */
+export function emergencyGreeting(
+  fullName: string | null | undefined,
+  alert: { level: 'watch' | 'urgent'; headline: string; body: string | null }
+): string {
+  const name = firstName(fullName);
+  const body = alert.body ? ` ${alert.body}` : '';
+  if (alert.level === 'urgent') {
+    return `${name ? `${name} — b` : 'B'}efore anything else: ${alert.headline}.${body}`;
+  }
+  return `${name ? `${name}, h` : 'H'}eads up: ${alert.headline}.${body}`;
+}

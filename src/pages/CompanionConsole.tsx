@@ -13,6 +13,7 @@ import { BrainPanel, BrainPill, useBrainStatus } from '../components/BrainStatus
 import { DevicesPanel } from '../components/DevicesPanel';
 import { ActionsPanel } from '../components/ActionsPanel';
 import { InitiativePanel } from '../components/InitiativePanel';
+import { EmergencyBanner } from '../components/EmergencyBanner';
 import { useNudges } from '../athena/useNudges';
 import { ActionProposal } from '../components/ActionProposal';
 import { useActions } from '../athena/useActions';
@@ -22,7 +23,8 @@ import {
   readIntegrationCallback,
   type IntegrationCallback,
 } from '../components/IntegrationsPanel';
-import { ARRIVAL_MESSAGES, buildGreeting } from '../athena/sequences';
+import { ARRIVAL_MESSAGES, buildGreeting, emergencyGreeting } from '../athena/sequences';
+import { dashboardApi, type EmergencyAlert } from '../api/dashboard';
 import type { MemoryEvent, Scene } from '../api/companion';
 import { Dashboard, DashboardIcon, dashboardSections, type DashboardSection } from '../components/Dashboard';
 import { AthenaAvatar } from '../components/AthenaAvatar';
@@ -191,12 +193,25 @@ export function CompanionConsole() {
     [chat]
   );
 
+  // Read during the arrival sequence, so that if something is happening near
+  // home her first words on sign-in are about it rather than "welcome back".
+  const arrivalAlertRef = useRef<EmergencyAlert | null>(null);
+  useEffect(() => {
+    if (!arrivalRef.current) return;
+    dashboardApi.alert().then((a) => { arrivalAlertRef.current = a; }).catch(() => undefined);
+  }, []);
+
   const finishArrival = useCallback(() => {
     if (finishedRef.current) return;
     finishedRef.current = true;
     setArriving(false);
-    bridgeRef.current?.playGesture('Wave');
     const a = arrivalRef.current;
+    const emergency = arrivalAlertRef.current;
+    if (a && emergency && emergency.level !== 'none' && emergency.headline) {
+      sayAthena(emergencyGreeting(user?.full_name, { level: emergency.level, headline: emergency.headline, body: emergency.body }));
+      return;
+    }
+    bridgeRef.current?.playGesture('Wave');
     if (a) sayAthena(buildGreeting(a.isFirstVisit, user?.full_name, a.daysAway));
   }, [sayAthena, user]);
 
@@ -451,6 +466,9 @@ export function CompanionConsole() {
           </button>
         </div>
       </header>
+
+      {/* Above both views: an emergency near home is never on a screen you are not looking at. */}
+      <EmergencyBanner onAsk={askAthena} pinned={view === 'chat'} />
 
       {view === 'dashboard' && <Dashboard section={activeSection} firstName={firstName} onAsk={askAthena} onPanel={openPanel} onNavigate={navigateDashboard} />}
       <div className="companion-chat" hidden={view !== 'chat'}>

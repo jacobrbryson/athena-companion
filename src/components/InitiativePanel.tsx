@@ -9,6 +9,7 @@ import {
   type TestNotificationResult,
 } from '../api/companion';
 import { useWebPush } from '../athena/useWebPush';
+import { useAndroidPush } from '../athena/useAndroidPush';
 import { LegalLinks } from './LegalLinks';
 import { SMS_SENDER } from '../legal';
 
@@ -45,6 +46,7 @@ export function InitiativePanel({ onClose }: { onClose: () => void }) {
   const [smsConsent, setSmsConsent] = useState(false);
   const [locationPref, setLocationPref] = useState<LocationPref | null>(null);
   const webPush = useWebPush();
+  const androidPush = useAndroidPush();
 
   async function sendTest() {
     setBusy('test');
@@ -382,7 +384,45 @@ export function InitiativePanel({ onClose }: { onClose: () => void }) {
                 here while the phone works perfectly, and one control for two
                 independent grants would render that as a mystery.
               */}
-              {pref.push_enabled && (
+              {pref.push_enabled && androidPush.available && (
+                <div className="rounded border border-emerald-500/10 bg-white/[0.02] p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm opacity-80">This phone</p>
+                      <p className="mt-1 font-mono text-[10px] opacity-45">
+                        {androidPush.state === 'checking'
+                          ? 'checking…'
+                          : androidPush.state === 'on'
+                            ? 'on · alerts arrive even when the app is closed'
+                            : androidPush.state === 'denied'
+                              ? 'blocked — open Android Settings → Apps → Athena → Notifications and allow them'
+                              : 'off · you will not get alerts on this phone'}
+                      </p>
+                    </div>
+                    {(androidPush.state === 'off' || androidPush.state === 'denied') && (
+                      <button
+                        type="button"
+                        disabled={busy === 'android'}
+                        onClick={() => {
+                          setBusy('android');
+                          void androidPush
+                            .enable()
+                            // The phone registers with the server right after the
+                            // grant; give it a moment, then show it in the list.
+                            .then((ok) => { if (ok) window.setTimeout(refresh, 4000); })
+                            .finally(() => setBusy(null));
+                        }}
+                        className="shrink-0 rounded bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-black disabled:opacity-40"
+                      >
+                        Allow phone notifications
+                      </button>
+                    )}
+                  </div>
+                  {androidPush.error && <p className="mt-1.5 text-xs text-amber-300/80">{androidPush.error}</p>}
+                </div>
+              )}
+
+              {pref.push_enabled && !androidPush.available && (
                 <div className="rounded border border-emerald-500/10 bg-white/[0.02] p-3">
                   <div className="flex items-start justify-between gap-3">
                     <div>

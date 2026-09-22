@@ -564,6 +564,20 @@ async function route(method: string, path: string, body?: any): Promise<any> {
   if (p === '/api/v1/profile') return { uuid: 'mock-profile', full_name: 'Sam Rivera' };
   if (p === '/api/v1/dashboard') return dashboardSummary();
   if (p === '/api/v1/dashboard/priority') return dashboardPriority();
+  // Emergency banner: quiet by default; ?alert=urgent, =watch or =offline to see it.
+  if (p === '/api/v1/dashboard/alert') {
+    const wanted = new URLSearchParams(window.location.search).get('alert');
+    const ago = (m: number) => new Date(Date.now() - m * 60000).toISOString();
+    const incidents = [
+      { id: 'm1', what: 'Structure Fire', category: 'Fire', where: '101 Brer Fox Trl', miles: 0.9, place: 'home', units: 16, receivedAt: ago(38), serious: true },
+      { id: 'm2', what: 'Tree Down', category: 'Hazard', where: 'Shady Cove Rd & Perth Rd', miles: 1.1, place: 'home', units: 3, receivedAt: ago(22), serious: false },
+      { id: 'm3', what: 'Hazardous Condition', category: 'Hazard', where: '250 Neill Farm Rd', miles: 1.4, place: 'home', units: 1, receivedAt: ago(15), serious: false },
+    ];
+    const feed = { ok: wanted !== 'offline', lastOkAt: ago(wanted === 'offline' ? 9 : 1), error: wanted === 'offline' ? 'PulsePoint answered 503.' : null };
+    if (wanted === 'urgent') return { level: 'urgent', headline: 'Structure fire and storm damage near home', body: 'A structure fire on Brer Fox Trail 0.9 miles away with 16 units on scene, plus a tree down at Shady Cove and Perth and a hazard on Neill Farm Road. Avoid Perth Rd.', incidents, key: 'mock-urgent', startedAt: ago(38), updatedAt: ago(1), assessedBy: 'mock', feed };
+    if (wanted === 'watch') return { level: 'watch', headline: 'Tree down near home', body: 'A tree is down at Shady Cove Rd and Perth Rd, 1.1 miles away.', incidents: incidents.slice(1, 2), key: 'mock-watch', startedAt: ago(22), updatedAt: ago(1), assessedBy: 'mock', feed };
+    return { level: 'none', headline: null, body: null, incidents: [], key: null, startedAt: null, updatedAt: null, assessedBy: null, feed };
+  }
   if (p === '/api/v1/dashboard/news/sources') {
     if (method === 'PUT') {
       const wanted: { url: string; label?: string | null; scope?: 'world' | 'personal' }[] =
