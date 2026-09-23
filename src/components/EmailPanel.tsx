@@ -138,6 +138,10 @@ export function EmailPanel({ uuid, onClose, onChanged }: { uuid: string; onClose
       <h3 className="mt-1 text-base font-semibold leading-snug">{detail.subject || '(no subject)'}</h3>
       <p className="mt-1 text-xs opacity-50">{detail.received_at ? new Date(detail.received_at).toLocaleString() : 'Date unknown'}</p>
 
+      {detail.bodyError && <p className="mt-3 text-xs text-amber-200">Couldn't load the full message: {detail.bodyError}</p>}
+      {detail.body && <pre className="mt-3 max-h-64 overflow-y-auto whitespace-pre-wrap break-words rounded-lg border border-emerald-800/50 bg-black/40 p-3 font-sans text-xs leading-relaxed text-emerald-50/90">{detail.body}</pre>}
+      {!detail.body && !detail.bodyError && <p className="mt-3 text-xs opacity-40">This email has no readable text body.</p>}
+
       {!action && detail.category !== 'other' && <div className="mt-4 flex flex-col gap-3">
         {detail.category === 'receipt' ? <>
           <label className={labelCls}>Merchant<input className={field} value={merchant} onChange={e => setMerchant(e.target.value)} /></label>

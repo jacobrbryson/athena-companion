@@ -28,13 +28,16 @@ import { MiniMap } from './MiniMap';
 
 const POLL_MS = 60_000;
 const ACK_KEY = 'athena.emergency.ack';
+const OFFLINE_ACK_KEY = 'athena.emergency.offline.ack';
 
-function readAck(): string | null {
-  try { return localStorage.getItem(ACK_KEY); } catch { return null; }
+function readStored(key: string): string | null {
+  try { return localStorage.getItem(key); } catch { return null; }
 }
-function writeAck(key: string) {
-  try { localStorage.setItem(ACK_KEY, key); } catch { /* private window: the banner just reopens */ }
+function writeStored(key: string, value: string) {
+  try { localStorage.setItem(key, value); } catch { /* private window: the banner just reopens */ }
 }
+const readAck = () => readStored(ACK_KEY);
+const writeAck = (key: string) => writeStored(ACK_KEY, key);
 
 function minutesAgo(iso: string | null): string | null {
   if (!iso) return null;
@@ -123,6 +126,7 @@ export function EmergencyBanner({
   const [situation, setSituation] = useState<EmergencyAlert | null>(null);
   const [modelAlert, setModelAlert] = useState<DashboardAlert | null>(null);
   const [ack, setAck] = useState<string | null>(() => readAck());
+  const [offlineAck, setOfflineAck] = useState<string | null>(() => readStored(OFFLINE_ACK_KEY));
   const [expanded, setExpanded] = useState(false);
   const buzzed = useRef<string | null>(null);
 
@@ -174,13 +178,26 @@ export function EmergencyBanner({
       : "I can't read the county 911 dispatch board right now."
     : "I can't read the weather service right now.";
   const stillWatched = callsDown && !weatherDown ? ' Weather alerts are still being watched.' : '';
+  // Identifies THIS outage, not just "a source is down": it changes when a
+  // source recovers (lastOkAt moves) or the down/blocked mix changes, so
+  // dismissing today's block does not silence a fresh one later.
+  const offlineKey = `${callsSource?.ok ?? situation?.feed.ok}:${callsSource?.blocked ?? false}:${callsSource?.lastOkAt ?? ''}:${weatherSource?.ok ?? true}:${weatherSource?.lastOkAt ?? ''}`;
 
   if (!shown) {
-    if (!feedDown) return null;
+    if (!feedDown || offlineAck === offlineKey) return null;
     return (
-      <div role="status" className={`${gutter} rounded-lg border border-amber-400/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-100`}>
-        <strong className="font-semibold">Emergency watch is partly offline.</strong> {offline}
-        {stillWatched}
+      <div role="status" className={`${gutter} flex items-start gap-2 rounded-lg border border-amber-400/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-100`}>
+        <p className="min-w-0 flex-1">
+          <strong className="font-semibold">Emergency watch is partly offline.</strong> {offline}
+          {stillWatched}
+        </p>
+        <button
+          type="button"
+          onClick={() => { writeStored(OFFLINE_ACK_KEY, offlineKey); setOfflineAck(offlineKey); }}
+          className="shrink-0 rounded border border-amber-400/40 px-2 py-1 text-xs font-semibold opacity-80 hover:opacity-100"
+        >
+          Got it
+        </button>
       </div>
     );
   }

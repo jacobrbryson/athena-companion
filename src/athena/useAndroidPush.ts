@@ -87,5 +87,17 @@ export function usePulsePointAlerts() {
     await androidCall('openNotificationAccess').catch(() => undefined);
   }, [available]);
 
-  return { available, state, open, check };
+  /**
+   * Reading PulsePoint's notification does not stop Android from sounding and
+   * showing it first — only PulsePoint's own channel setting can, and only the
+   * person can flip that (no app can silence another app's notifications).
+   * This opens that exact settings screen. There is no "is it already silent"
+   * to read back, so the button just stays offered.
+   */
+  const openPulsePointSettings = useCallback(async () => {
+    if (!available) return;
+    await androidCall('openPulsePointSettings').catch(() => undefined);
+  }, [available]);
+
+  return { available, state, open, openPulsePointSettings, check };
 }

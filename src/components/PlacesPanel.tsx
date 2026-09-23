@@ -215,6 +215,23 @@ export function PlacesPanel({ onClose }: { onClose: () => void }) {
               </p>
             </>
           )}
+          {pulsePoint.state === 'on' && (
+            <>
+              <button
+                type="button"
+                onClick={() => void pulsePoint.openPulsePointSettings()}
+                className="mt-2 rounded border border-emerald-500/40 px-3 py-1.5 text-xs font-semibold text-emerald-300"
+              >
+                Make PulsePoint's own alerts silent
+              </button>
+              <p className="mt-1.5 text-[11px] opacity-50">
+                I read every one of PulsePoint's notifications and dismiss them right away — you shouldn't see them in
+                your tray. This opens PulsePoint's own notification settings so you can turn its sound and pop-up off
+                too, since only PulsePoint (or you) can do that. Choose <strong>Silent</strong>, not{' '}
+                <strong>Off</strong> — Off would stop me seeing them as well.
+              </p>
+            </>
+          )}
         </section>
       )}
 

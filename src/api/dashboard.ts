@@ -41,7 +41,12 @@ export interface TriageEmail {
   status: EmailTriageStatus; created_at: string;
 }
 /** Other 'new' emails sharing this one's group_key — the group-review prompt reads this. */
-export interface TriageEmailDetail extends TriageEmail { siblings: TriageEmail[] }
+export interface TriageEmailDetail extends TriageEmail {
+  siblings: TriageEmail[];
+  /** Read live from Gmail on open, not stored — plain text only, never the raw HTML. */
+  body: string | null;
+  bodyError?: string | null;
+}
 /** One card, and Athena's one-line reason for putting it where she did. */
 export interface PriorityEntry { id: string; why: string | null }
 /** `source` is 'default' when no model ranked this — the UI stays quiet then. */
