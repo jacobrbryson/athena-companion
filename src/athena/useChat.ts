@@ -25,6 +25,8 @@ export interface Message {
   is_human: boolean;
   text: string;
   created_at?: string | number;
+  /** She is singing `text`, not speaking it. Live socket replies only. */
+  sung?: boolean;
 }
 
 /** Where Athena is talking from, sent with every message (see message.js). */
