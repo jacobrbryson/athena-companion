@@ -24,20 +24,15 @@ import { MiniMap } from './MiniMap';
  * structure fire and trees down within two miles and "had NO CLUE". So "Got
  * it" collapses the banner to a slim red bar instead of hiding it, and a NEW
  * development (a different set of calls) opens it fully again.
+ *
+ * "Got it" is stored in the database (POST /dashboard/alert/ack), not in this
+ * browser, so it holds across devices until the alert's key changes.
+ *
+ * Nothing is drawn when there is no alert — no "feed offline" notice (owner,
+ * 2026-09-26).
  */
 
 const POLL_MS = 60_000;
-const ACK_KEY = 'athena.emergency.ack';
-const OFFLINE_ACK_KEY = 'athena.emergency.offline.ack';
-
-function readStored(key: string): string | null {
-  try { return localStorage.getItem(key); } catch { return null; }
-}
-function writeStored(key: string, value: string) {
-  try { localStorage.setItem(key, value); } catch { /* private window: the banner just reopens */ }
-}
-const readAck = () => readStored(ACK_KEY);
-const writeAck = (key: string) => writeStored(ACK_KEY, key);
 
 function minutesAgo(iso: string | null): string | null {
   if (!iso) return null;
@@ -125,8 +120,9 @@ export function EmergencyBanner({
   const stick = pinned ? { position: 'sticky' as const, top: topbar, zIndex: 30 } : undefined;
   const [situation, setSituation] = useState<EmergencyAlert | null>(null);
   const [modelAlert, setModelAlert] = useState<DashboardAlert | null>(null);
-  const [ack, setAck] = useState<string | null>(() => readAck());
-  const [offlineAck, setOfflineAck] = useState<string | null>(() => readStored(OFFLINE_ACK_KEY));
+  // Set locally the moment they tap, so the banner collapses without waiting
+  // for the round trip; the server's value takes over on the next poll.
+  const [localAck, setLocalAck] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
   const buzzed = useRef<string | null>(null);
 
@@ -149,7 +145,7 @@ export function EmergencyBanner({
   }, [refresh]);
 
   const shown = useMemo(() => pick(situation, modelAlert), [situation, modelAlert]);
-  const acknowledged = !!shown && ack === shown.key;
+  const acknowledged = !!shown && (localAck === shown.key || situation?.acknowledgedKey === shown.key);
 
   // A new urgent development buzzes the phone once and retitles the tab, so it
   // is noticed even from another app or a background tab.
@@ -165,42 +161,7 @@ export function EmergencyBanner({
     }
   }, [shown, acknowledged]);
 
-  const callsSource = situation?.sources?.calls;
-  const weatherSource = situation?.sources?.weather;
-  const callsDown = situation ? !(callsSource ? callsSource.ok : situation.feed.ok) : false;
-  const weatherDown = !!weatherSource && !weatherSource.ok;
-  const feedDown = callsDown || weatherDown;
-  // Which half is blind matters: "911 calls blocked, weather still watched" is
-  // a different thing to be told than "nothing is being watched at all".
-  const offline = callsDown
-    ? callsSource?.blocked
-      ? "PulsePoint is blocking automated readers, so I can't see 911 calls near you."
-      : "I can't read the county 911 dispatch board right now."
-    : "I can't read the weather service right now.";
-  const stillWatched = callsDown && !weatherDown ? ' Weather alerts are still being watched.' : '';
-  // Identifies THIS outage, not just "a source is down": it changes when a
-  // source recovers (lastOkAt moves) or the down/blocked mix changes, so
-  // dismissing today's block does not silence a fresh one later.
-  const offlineKey = `${callsSource?.ok ?? situation?.feed.ok}:${callsSource?.blocked ?? false}:${callsSource?.lastOkAt ?? ''}:${weatherSource?.ok ?? true}:${weatherSource?.lastOkAt ?? ''}`;
-
-  if (!shown) {
-    if (!feedDown || offlineAck === offlineKey) return null;
-    return (
-      <div role="status" className={`${gutter} flex items-start gap-2 rounded-lg border border-amber-400/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-100`}>
-        <p className="min-w-0 flex-1">
-          <strong className="font-semibold">Emergency watch is partly offline.</strong> {offline}
-          {stillWatched}
-        </p>
-        <button
-          type="button"
-          onClick={() => { writeStored(OFFLINE_ACK_KEY, offlineKey); setOfflineAck(offlineKey); }}
-          className="shrink-0 rounded border border-amber-400/40 px-2 py-1 text-xs font-semibold opacity-80 hover:opacity-100"
-        >
-          Got it
-        </button>
-      </div>
-    );
-  }
+  if (!shown) return null;
 
   const urgent = shown.level === 'urgent';
   // One pin per call, numbered as the list below numbers them, and the rings
@@ -320,7 +281,11 @@ export function EmergencyBanner({
         </button>
         <button
           type="button"
-          onClick={() => { writeAck(shown.key); setAck(shown.key); setExpanded(false); }}
+          onClick={() => {
+            setLocalAck(shown.key);
+            setExpanded(false);
+            dashboardApi.ackAlert(shown.key).catch(() => undefined);
+          }}
           className={`rounded-lg border px-4 py-2 text-sm font-semibold ${urgent ? 'border-white/60' : 'border-black/40'}`}
         >
           Got it
@@ -329,12 +294,6 @@ export function EmergencyBanner({
           <button type="button" onClick={onPlaces} className="self-center text-xs underline opacity-80 hover:opacity-100">
             Watched places
           </button>
-        )}
-        {feedDown && (
-          <span className="self-center text-xs opacity-80">
-            {offline}
-            {stillWatched}
-          </span>
         )}
       </div>
     </section>

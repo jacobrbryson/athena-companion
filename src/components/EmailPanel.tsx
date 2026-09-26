@@ -116,6 +116,9 @@ export function EmailPanel({ uuid, onClose, onChanged }: { uuid: string; onClose
       const res = await actionsApi.confirm(action.uuid);
       setAction(res.action);
       onChanged();
+      // Deleted is gone — nothing left in this drawer worth looking at, unlike
+      // filing/calendar actions where the "done" card is still worth reading.
+      if (res.action.action_id === 'delete_email') onClose();
     } catch (e) { setError((e as Error).message); }
     finally { setConfirmBusy(false); }
   };

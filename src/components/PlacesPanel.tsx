@@ -162,8 +162,8 @@ export function PlacesPanel({ onClose }: { onClose: () => void }) {
   return (
     <Drawer eyebrow="emergencies nearby" title="Watched places" onClose={onClose}>
       <p className="mb-4 text-sm opacity-70">
-        I watch the county 911 dispatch board around each of these. Anything within the ring — a fire, a crash, trees or
-        wires down — reaches you in the app, on your phone and by text.
+        I watch around each of these for 911 calls (from PulsePoint alerts on your phone) and weather warnings. Anything
+        within the ring — a fire, a crash, trees or wires down — reaches you in the app, on your phone and by text.
       </p>
 
       {error && (
@@ -184,9 +184,8 @@ export function PlacesPanel({ onClose }: { onClose: () => void }) {
         <section className="mb-8 rounded border border-emerald-500/15 bg-white/[0.02] p-3">
           <Label>911 calls on this phone</Label>
           <p className="text-xs leading-relaxed opacity-70">
-            PulsePoint stopped letting me read the county dispatch board directly. Their own app,{' '}
-            <strong>PulsePoint Respond</strong>, still notifies you — and if you let me read those notifications, I'll
-            keep placing them against your rings and telling you about the close ones.
+            <strong>PulsePoint Respond</strong> notifies you about 911 calls — if you let me read those notifications,
+            I'll place them against your rings and tell you about the close ones.
           </p>
           <p className="mt-2 font-mono text-[10px] opacity-45">
             {pulsePoint.state === 'on'

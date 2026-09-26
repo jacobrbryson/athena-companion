@@ -9,7 +9,7 @@ import { LegalLinks } from '../components/LegalLinks';
 /**
  * The Companion gate — the Guardians access point, but the credential is a
  * Google account. Same terminal masthead, scanlines and glitch; the Google
- * button is rendered by Google Identity Services into a quiet frame.
+ * button is rendered by Google Identity Services, unframed.
  */
 
 const VERIFY_MIN_MS = 1700;
@@ -114,12 +114,8 @@ export function SignIn() {
         </div>
 
         <p className="mb-6 text-xs uppercase tracking-[0.3em] opacity-50">Identify yourself</p>
-        <div className="flex justify-center">
-          <div
-            className={`rounded-sm border border-current/30 p-3 transition-opacity ${gsiReady ? 'opacity-100' : 'opacity-0'}`}
-          >
-            <div ref={buttonRef} />
-          </div>
+        <div className={`flex justify-center transition-opacity ${gsiReady ? 'opacity-100' : 'opacity-0'}`}>
+          <div ref={buttonRef} />
         </div>
         {!gsiReady && !error && (
           <p className="mt-4 text-xs tracking-widest opacity-40">
