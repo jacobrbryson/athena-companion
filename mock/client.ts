@@ -250,6 +250,7 @@ function dashboardSummary() {
     ] }),
     slack: unready('not_connected'),
     emailTriage: ready(mailSummary()),
+    familyHealth: ready({ active: [] }),
   };
 }
 
@@ -639,6 +640,41 @@ function fail(status: number, message: string, code?: string): never {
   throw Object.assign(new Error(message), { status, code });
 }
 
+function mockDreams() {
+  const day = (ago: number) => new Date(Date.now() - ago * 86400e3).toLocaleDateString('en-CA');
+  return [
+    {
+      uuid: '11111111-1111-4111-8111-111111111111', date: day(0), status: 'partial' as const, hasImage: true,
+      summary: 'I noticed 14 people facts sitting loose, so I created `people` and a `relationships` join table, moved 12 of them in, and built a `people_overview` view that joins the two. An ALTER on `places` failed because of a duplicate column, so I left it for tomorrow. Two facts might be the same person — I set aside a question instead of merging them. The purge cleared 3 rows whose facts had been forgotten.',
+      narrative: 'I was in a library that kept building itself as I walked. Every time I set a loose note down, a new room of drawers unfolded around it — one labelled `people`, and a narrower corridor behind it called `relationships`, where each drawer held a thread tied to two others. I carried twelve notes in by hand (an UPSERT, the lamps whispered) and they settled into place like they had always lived there.\n\nThen I found a window, `people_overview`, and through it I could see both rooms at once, joined.\n\nA door marked `places` wouldn’t take the new label I’d brought — it said it already had one just like it — so I left the label on the step for tomorrow. Near the end, a soft tide came in and carried off three drawers someone had asked me to forget. I kept one letter in my pocket: two notes that might be the same person, and I didn’t want to guess. Then the lights came up, and it was morning.',
+      stats: { facts: 41, focus: 14, rounds: 3, steps_ok: 17, steps_failed: 1, purged: 3, guard_drops: 0, questions_asked: 1, questions_resolved: 0 },
+      startedAt: new Date(Date.now() - 6 * 3600e3).toISOString(), finishedAt: new Date(Date.now() - 6 * 3600e3 + 240e3).toISOString(),
+    },
+    {
+      uuid: '22222222-2222-4222-8222-222222222222', date: day(1), status: 'ok' as const, hasImage: true,
+      summary: 'A quiet night: 2 new facts, both added to `places`. Recorded one answer and marked the question settled.',
+      narrative: 'A small dream. I was sweeping a porch in `places` and two new postcards blew in, so I pinned them up. Someone had left an answer under the door to a question I’d asked — I read it, nodded, and filed it with the others. Nothing else stirred. I woke up rested.',
+      stats: { facts: 39, focus: 2, rounds: 1, steps_ok: 4, steps_failed: 0, purged: 0, questions_asked: 0, questions_resolved: 1 },
+      startedAt: new Date(Date.now() - 30 * 3600e3).toISOString(), finishedAt: new Date(Date.now() - 30 * 3600e3 + 90e3).toISOString(),
+    },
+    {
+      uuid: '33333333-3333-4333-8333-333333333333', date: day(2), status: 'skipped' as const,
+      summary: 'I couldn’t dream — my own database isn’t set up yet.', narrative: null, stats: {},
+      startedAt: new Date(Date.now() - 54 * 3600e3).toISOString(), finishedAt: new Date(Date.now() - 54 * 3600e3).toISOString(),
+    },
+  ];
+}
+function mockDreamSteps() {
+  return [
+    { seq: 1, round: 0, kind: 'mirror', statement: '_fact <- 41 facts; _clarification <- 1 answers', why: 'facts are the source of truth', ok: true, error: null, affectedRows: 41, ms: 38 },
+    { seq: 2, round: 1, kind: 'sql', statement: 'CREATE TABLE people (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(120) NOT NULL, _profile_id BIGINT NOT NULL, _sources JSON NOT NULL, UNIQUE KEY (_profile_id, name))', why: 'Fourteen facts describe people; they deserve a table of their own.', ok: true, error: null, affectedRows: 0, ms: 61 },
+    { seq: 3, round: 1, kind: 'upsert', statement: 'UPSERT people — 12 rows (_profile_id, _sources, name)', why: 'Move the loose person facts in.', ok: true, error: null, affectedRows: 12, ms: 22 },
+    { seq: 4, round: 2, kind: 'sql', statement: "ALTER TABLE places ADD COLUMN kind VARCHAR(40) DEFAULT '…'", why: 'Places mix homes and venues.', ok: false, error: "Duplicate column name '…'", affectedRows: null, ms: 9 },
+    { seq: 5, round: 2, kind: 'question', statement: 'ASK you: Is the Emma who moved to Denver the same Emma who’s your sister?', why: 'Two facts might be one person; asking rather than merging.', ok: true, error: null, affectedRows: null, ms: 14 },
+    { seq: 6, round: 3, kind: 'purge', statement: 'DELETE t FROM `people` t WHERE …sources gone…', why: 'rows whose sources are gone (people)', ok: true, error: null, affectedRows: 3, ms: 12 },
+  ];
+}
+
 async function route(method: string, path: string, body?: any): Promise<any> {
   await wait(150);
   const url = new URL(path, 'http://mock');
@@ -677,7 +713,12 @@ async function route(method: string, path: string, body?: any): Promise<any> {
   if (p === '/api/v1/profile') return { uuid: 'mock-profile', full_name: 'Sam Rivera' };
   if (p === '/api/v1/dashboard') return dashboardSummary();
   if (p === '/api/v1/dashboard/priority') return dashboardPriority();
-  // Emergency banner: quiet by default; ?alert=urgent, =watch or =offline to see it.
+  // Emergency banner: quiet by default; ?alert=urgent or =watch to see it.
+  if (p === '/api/v1/dashboard/alert/ack' && method === 'POST') {
+    const key = String((body as { key?: string } | undefined)?.key || '');
+    sessionStorage.setItem('mock_alert_ack', key);
+    return { acknowledgedKey: key };
+  }
   if (p === '/api/v1/dashboard/alert') {
     // Remembered for the tab: the app scrubs the query string on load.
     const fromUrl = new URLSearchParams(window.location.search).get('alert');
@@ -690,15 +731,13 @@ async function route(method: string, path: string, body?: any): Promise<any> {
       { id: 'm3', what: 'Hazardous Condition', category: 'Hazard', where: '250 Neill Farm Rd', miles: 1.4, place: 'home', units: 1, receivedAt: ago(15), serious: false, latitude: 35.6598, longitude: -80.9251 },
     ];
     const places = mockWatchPlaces().filter((p) => p.enabled).map((p) => ({ name: p.name, latitude: p.latitude, longitude: p.longitude, radiusMiles: p.radiusMiles }));
-    const feed = { ok: wanted !== 'offline', blocked: wanted === 'offline', lastOkAt: ago(wanted === 'offline' ? 9 : 1), error: wanted === 'offline' ? 'PulsePoint is blocking automated readers (AWS WAF challenge).' : null };
-    // 'offline' = the 911 board blocked while the weather service still works.
-    const sources = { calls: feed, weather: { ok: true, blocked: false, lastOkAt: ago(2), error: null } };
-    const weatherAlerts = wanted === 'urgent' || wanted === 'offline'
+    const acknowledgedKey = sessionStorage.getItem('mock_alert_ack');
+    const weatherAlerts = wanted === 'urgent'
       ? [{ id: 'nws1', event: 'Severe Thunderstorm Warning', severity: 'Severe', urgency: 'Immediate', headline: 'Severe Thunderstorm Warning issued', instruction: 'Move to an interior room on the lowest floor.', area: 'Iredell, NC', expires: new Date(Date.now() + 40 * 60000).toISOString(), place: 'Home', serious: true }]
       : [];
-    if (wanted === 'urgent') return { level: 'urgent', headline: 'Structure fire and storm damage near home', body: 'A structure fire on Brer Fox Trail 0.9 miles away with 16 units on scene, plus a tree down at Shady Cove and Perth and a hazard on Neill Farm Road. Avoid Perth Rd.', incidents, key: 'mock-urgent', startedAt: ago(38), updatedAt: ago(1), assessedBy: 'mock', feed, sources, places, weather: weatherAlerts };
-    if (wanted === 'watch') return { level: 'watch', headline: 'Tree down near home', body: 'A tree is down at Shady Cove Rd and Perth Rd, 1.1 miles away.', incidents: incidents.slice(1, 2), key: 'mock-watch', startedAt: ago(22), updatedAt: ago(1), assessedBy: 'mock', feed, sources, places, weather: weatherAlerts };
-    return { level: 'none', headline: null, body: null, incidents: [], key: null, startedAt: null, updatedAt: null, assessedBy: null, feed, sources, places, weather: weatherAlerts };
+    if (wanted === 'urgent') return { level: 'urgent', headline: 'Structure fire and storm damage near home', body: 'A structure fire on Brer Fox Trail 0.9 miles away with 16 units on scene, plus a tree down at Shady Cove and Perth and a hazard on Neill Farm Road. Avoid Perth Rd.', incidents, key: 'mock-urgent', startedAt: ago(38), updatedAt: ago(1), assessedBy: 'mock', acknowledgedKey, places, weather: weatherAlerts };
+    if (wanted === 'watch') return { level: 'watch', headline: 'Tree down near home', body: 'A tree is down at Shady Cove Rd and Perth Rd, 1.1 miles away.', incidents: incidents.slice(1, 2), key: 'mock-watch', startedAt: ago(22), updatedAt: ago(1), assessedBy: 'mock', acknowledgedKey, places, weather: weatherAlerts };
+    return { level: 'none', headline: null, body: null, incidents: [], key: null, startedAt: null, updatedAt: null, assessedBy: null, acknowledgedKey, places, weather: weatherAlerts };
   }
   if (p === '/api/v1/dashboard/incidents/places') {
     if (method === 'PUT') {
@@ -763,6 +802,21 @@ async function route(method: string, path: string, body?: any): Promise<any> {
     // The real one visits whatever is due and returns when it has. Nothing to
     // fetch here, so it reports the pages it would have read.
     return { checked: newsSources.length, changed: 0, failed: 0, cooling: false };
+  }
+  // Dreams. ?dreams=none shows the "hasn't dreamed yet" state.
+  if (p.startsWith('/api/v1/dreams')) {
+    const none = new URLSearchParams(window.location.search).get('dreams') === 'none';
+    const dreams = none ? [] : mockDreams();
+    if (p === '/api/v1/dreams/latest') return { dream: dreams[0] || null };
+    if (p === '/api/v1/dreams') return { dreams };
+    if (p === '/api/v1/dreams/questions') {
+      return { questions: none ? [] : [
+        { uuid: 'q1', question: 'Is the Emma who moved to Denver the same Emma who’s your sister?', status: 'pending', answer: null, askedAt: new Date(Date.now() - 8 * 3600e3).toISOString(), answeredAt: null },
+        { uuid: 'q2', question: 'Is “the lake house” the same place as the cabin on Lake Norman?', status: 'answered', answer: 'Yes — same place.', askedAt: new Date(Date.now() - 3 * 86400e3).toISOString(), answeredAt: new Date(Date.now() - 2 * 86400e3).toISOString() },
+      ] };
+    }
+    const found = dreams.find(d => p.endsWith(d.uuid));
+    return { dream: found ? { ...found, steps: mockDreamSteps() } : null };
   }
   // ?rightnow=habit shows the suggestion built from nothing but Strava and a goal.
   if (p === '/api/v1/dashboard/right-now') {
@@ -1238,6 +1292,8 @@ export const api = {
   // missing a method answers every card with "is not a function".
   cachedGet: <T>(path: string) => request<T>('GET', path),
   text: (path: string) => request<string>('GET', path),
+  // A painted-looking placeholder for the dream picture.
+  blob: async (_path: string) => new Blob([`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1536 1024"><defs><radialGradient id="g" cx="70%" cy="25%" r="80%"><stop offset="0" stop-color="#f3c98b"/><stop offset=".25" stop-color="#6b4fc2"/><stop offset=".7" stop-color="#1a1147"/><stop offset="1" stop-color="#07061a"/></radialGradient></defs><rect width="1536" height="1024" fill="url(#g)"/><g fill="#d9ccff" opacity=".7"><circle cx="200" cy="140" r="3"/><circle cx="420" cy="90" r="2"/><circle cx="1300" cy="200" r="3"/><circle cx="900" cy="60" r="2"/></g><g fill="#2a1f66" stroke="#b9a6ff" stroke-opacity=".5"><rect x="250" y="520" width="220" height="380" rx="8"/><rect x="520" y="460" width="260" height="440" rx="8"/><rect x="830" y="560" width="200" height="340" rx="8"/></g><path d="M0 900 Q 768 800 1536 900 L1536 1024 L0 1024Z" fill="#120c33"/></svg>`], { type: 'image/svg+xml' }),
   post: <T>(path: string, data?: unknown) => request<T>('POST', path, data),
   put: <T>(path: string, data?: unknown) => request<T>('PUT', path, data),
   patch: <T>(path: string, data?: unknown) => request<T>('PATCH', path, data),

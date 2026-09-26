@@ -25,6 +25,13 @@ export interface DashboardSummary {
   jira: Source<{ issues: JiraIssue[]; partial: boolean }>;
   slack: Source<{ workspace: string; messages: { text: string; channel: string; url: string; timestamp: string }[] }>;
   emailTriage: Source<{ newCount: number; receiptCount: number; travelCount: number; schoolCount: number; otherCount: number; preview: TriageEmail[] }>;
+  familyHealth: Source<{ active: FamilyHealthStatus[] }>;
+}
+export type HealthSeverity = 'mild' | 'moderate' | 'severe';
+/** One family member currently reported under the weather. */
+export interface FamilyHealthStatus {
+  uuid: string; personName: string; symptom: string; severity: HealthSeverity;
+  status: 'active' | 'resolved'; startedAt: string; resolvedAt: string | null; notes: string | null; daysActive: number;
 }
 export type EmailCategory = 'receipt' | 'travel' | 'school' | 'other';
 export type EmailTriageStatus = 'new' | 'actioned' | 'dismissed' | 'trashed';
@@ -74,8 +81,6 @@ export interface WeatherAlert {
   place: string;
   serious: boolean;
 }
-/** Whether each source behind the alert can currently be read. */
-export interface AlertSourceStatus { ok: boolean; blocked: boolean; lastOkAt: string | null; error: string | null }
 /** The live emergency situation near this person's places — GET /dashboard/alert. */
 export interface EmergencyAlert {
   level: AlertLevel;
@@ -86,10 +91,10 @@ export interface EmergencyAlert {
   startedAt: string | null;
   updatedAt: string | null;
   assessedBy: string | null;
-  feed: { ok: boolean; blocked?: boolean; lastOkAt: string | null; error: string | null };
   places?: AlertPlace[];
   weather?: WeatherAlert[];
-  sources?: { calls: AlertSourceStatus; weather: AlertSourceStatus };
+  /** The banner key this person last said "Got it" to — held in the database. */
+  acknowledgedKey?: string | null;
 }
 export interface TwilioBilling { configured: boolean; checkedAt: string; balance?: { amount: string | null; currency: string | null }; smsMessagesSent?: number; smsCostThisMonth?: number }
 /**
@@ -156,6 +161,43 @@ export interface RightNow {
   model?: string | null;
   generatedAt: string;
 }
+/** One night of Athena reorganizing her memories — see core_api services/dreams. */
+export interface DreamStats {
+  facts?: number; focus?: number; rounds?: number; steps_ok?: number; steps_failed?: number;
+  purged?: number; guard_drops?: number; questions_asked?: number; questions_resolved?: number;
+}
+export interface Dream {
+  uuid: string;
+  date: string;
+  status: 'running' | 'ok' | 'partial' | 'failed' | 'skipped';
+  /** Her plain account of the night. */
+  summary: string | null;
+  /** The same night told as a dream. Null when no model could narrate it. */
+  narrative: string | null;
+  /** A picture painted from the narrative; fetch with dreamsApi.image(uuid). */
+  hasImage?: boolean;
+  stats: DreamStats;
+  startedAt: string;
+  finishedAt: string | null;
+}
+export interface DreamStep {
+  seq: number; round: number; kind: string;
+  /** Redacted server-side: string literals are '…', upserts are a row count. */
+  statement: string | null;
+  why: string | null; ok: boolean; error: string | null;
+  affectedRows: number | null; ms: number | null;
+}
+export interface DreamQuestion {
+  uuid: string; question: string; status: 'pending' | 'answered' | 'dismissed' | 'expired';
+  answer: string | null; askedAt: string; answeredAt: string | null;
+}
+export const dreamsApi = {
+  latest: () => api.get<{ dream: Dream | null }>('/api/v1/dreams/latest'),
+  list: () => api.get<{ dreams: Dream[] }>('/api/v1/dreams'),
+  night: (uuid: string) => api.get<{ dream: (Dream & { steps: DreamStep[] }) | null }>(`/api/v1/dreams/${encodeURIComponent(uuid)}`),
+  questions: () => api.get<{ questions: DreamQuestion[] }>('/api/v1/dreams/questions'),
+  image: (uuid: string) => api.blob(`/api/v1/dreams/${encodeURIComponent(uuid)}/image`),
+};
 export const dashboardApi = {
   summary: async () => {
     const value = await api.cachedGet<DashboardSummary>('/api/v1/dashboard');
@@ -174,6 +216,8 @@ export const dashboardApi = {
   },
   /** Never cached: this is the one read whose staleness could matter. */
   alert: () => api.get<EmergencyAlert>('/api/v1/dashboard/alert'),
+  /** "Got it": remembered server-side until a new development changes the key. */
+  ackAlert: (key: string) => api.post<{ acknowledgedKey: string }>('/api/v1/dashboard/alert/ack', { key }),
   watchPlaces: () => api.get<{ places: WatchPlace[] }>('/api/v1/dashboard/incidents/places'),
   /** Add, or update by name (radius, on/off, a corrected position). */
   saveWatchPlace: (place: { name: string; latitude: number; longitude: number; radiusMiles?: number; address?: string | null; enabled?: boolean }) =>
@@ -239,4 +283,9 @@ export const dashboardApi = {
   /** Proposes moving one or more emails to Gmail's Trash — recoverable there for ~30 days. Still needs approval. */
   mailDelete: (emailTriageUuids: string[]) =>
     api.post<{ success: true; action: AthenaAction }>('/api/v1/dashboard/email/delete', { email_triage_uuids: emailTriageUuids }),
+  /** Report (or update) a family member's symptom. Athena picks this up in chat and, if initiative is on, may raise it herself. */
+  reportFamilyHealth: (payload: { personName: string; symptom: string; severity?: HealthSeverity; notes?: string }) =>
+    api.post<{ status: FamilyHealthStatus }>('/api/v1/dashboard/health/family', payload),
+  resolveFamilyHealth: (uuid: string) =>
+    api.patch<{ status: FamilyHealthStatus }>(`/api/v1/dashboard/health/family/${encodeURIComponent(uuid)}/resolve`, {}),
 };

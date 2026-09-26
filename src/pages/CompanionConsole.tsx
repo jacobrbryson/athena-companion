@@ -375,6 +375,8 @@ export function CompanionConsole() {
   }
   const menuItems: { icon: string; label: string; onClick: () => void; right?: string }[] = [
     { icon: '🧠', label: 'Memories', onClick: () => openPanel('memory') },
+    // The phone has no left nav; this is its way to the Dreams page.
+    { icon: '🌙', label: 'Dreams', onClick: () => navigateDashboard('Dreams') },
     { icon: '📷', label: 'Show a photo', onClick: () => openPanel('photo') },
     { icon: '👁️', label: 'Let her see', onClick: () => openPanel('camera') },
     { icon: '⚙️', label: 'Brain', onClick: () => openPanel('brain') },
@@ -464,7 +466,7 @@ export function CompanionConsole() {
             aria-label={waitingCount ? `Notifications — ${waitingCount} waiting for you` : 'Notifications'}
             title={waitingCount ? `${waitingCount} waiting for you` : 'Nothing waiting for you'}
           >
-            <DashboardIcon name="Notifications" />
+            <DashboardIcon name="Notifications" bare />
             {waitingCount > 0 && <span className="topbar-badge">{waitingCount > 9 ? '9+' : waitingCount}</span>}
           </button>
         </div>

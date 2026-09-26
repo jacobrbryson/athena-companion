@@ -1,6 +1,6 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import type { CalendarEvent, Source, JiraIssue, RecoveryDay, DashboardSummary, TwilioBilling, TriageEmail } from '../api/dashboard';
+import type { CalendarEvent, Source, JiraIssue, RecoveryDay, DashboardSummary, TwilioBilling, TriageEmail, FamilyHealthStatus, HealthSeverity } from '../api/dashboard';
 import { dashboardApi } from '../api/dashboard';
 import type { Fact } from '../api/companion';
 import { useDashboardData } from './useDashboardData';
@@ -9,33 +9,23 @@ import { PlansPanel } from './PlansPanel';
 import { EmergencyBanner } from './EmergencyBanner';
 import { RightNowCard } from './RightNowCard';
 import { EmailPanel, CATEGORY_LABEL } from './EmailPanel';
+import { DreamCard, DreamsPage } from './Dreams';
+import { DashboardIcon } from './icons';
 
-export type DashboardSection = 'Home' | 'Today' | 'Calendar' | 'Health' | 'Family' | 'Mail' | 'Work' | 'Projects' | 'News' | 'System';
-// Explicit sprite windows preserve the borders on this irregular sheet. Today
-// uses the supplied calendar tile so it has the same framed treatment as the
-// other navigation links; the page itself remains distinct from Calendar.
-const icons: Record<string, number> = { Home: 24, Today: 130, Calendar: 130, Health: 235, Family: 339, Work: 444, Projects: 551, News: 658, 'Quick Actions': 761, Search: 862, Chat: 970, More: 1075, Settings: 1183 };
-// Icons the supplied sheet has no window for, drawn to sit in the same box.
-const drawn: Record<string, ReactNode> = {
-  Notifications: <><path d="M12 3.6a5.4 5.4 0 0 0-5.4 5.4c0 4.2-1.5 5.6-1.5 5.6h13.8s-1.5-1.4-1.5-5.6A5.4 5.4 0 0 0 12 3.6Z" /><path d="M10.4 18a1.8 1.8 0 0 0 3.2 0" /></>,
-  Mail: <><rect x="3.6" y="6" width="16.8" height="12" rx="1.4" /><path d="m4.2 6.8 7.8 6 7.8-6" /></>,
-};
-export function DashboardIcon({ name }: { name: string }) {
-  const art = drawn[name];
-  if (art) {
-    return <svg aria-hidden="true" className="dashboard-icon dashboard-icon-drawn" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">{art}</svg>;
-  }
-  return <span aria-hidden="true" className="dashboard-icon" style={{ backgroundPosition: `${-(icons[name] ?? icons.Home) * .4}px -16px` }} />;
-}
+export type DashboardSection = 'Home' | 'Today' | 'Calendar' | 'Health' | 'Family' | 'Mail' | 'Work' | 'Projects' | 'News' | 'Dreams' | 'System';
+// Icons live in ./icons — one registry, so a drawn icon looks the same in
+// the nav, on its card and in the phone's bottom bar.
+export { DashboardIcon } from './icons';
 // Left-hand navigation. "Home" is presented to people as Dashboard; it also
 // replaces the old Quick Actions entry, which now lives on as the Notifications
 // card and its bell in the top bar. Today remains an internal page for now but
 // is not a left-navigation entry.
-export const dashboardSections: DashboardSection[] = ['Home', 'Calendar', 'Health', 'Family', 'Mail', 'Work', 'Projects', 'News', 'System'];
-// The card set and the order the dashboard falls back to when Athena has not
-// ranked it. Ids are shared with services/dashboardPriority.js in core_api —
-// changing one means changing both.
-const DEFAULT_CARD_ORDER = ['calendar', 'health', 'family', 'mail', 'work', 'news', 'projects', 'notifications'];
+export const dashboardSections: DashboardSection[] = ['Home', 'Calendar', 'Health', 'Family', 'Mail', 'Work', 'Projects', 'News', 'Dreams', 'System'];
+// The card set, in the one order the dashboard uses. Fixed by the owner
+// (2026-09-26): Health & Performance first, and Athena no longer re-sorts it.
+// Ids are shared with services/dashboardPriority.js in core_api — changing
+// one means changing both.
+const DEFAULT_CARD_ORDER = ['health', 'calendar', 'family', 'mail', 'work', 'news', 'projects', 'notifications'];
 // The first row holds three cards; whatever ranks below them drops to the second.
 const PRIMARY_SLOTS = 3;
 /**
@@ -95,10 +85,10 @@ function Issues({ issues }: { issues: JiraIssue[] }) {
 // Home, where the job is breadth rather than depth.
 
 /** One number worth reading at a glance, with the note that gives it meaning. */
-function Stat({ label, value, note, tone }: { label: string; value: ReactNode; note?: ReactNode; tone?: 'good' | 'ok' | 'low' | 'idle' }) {
+export function Stat({ label, value, note, tone }: { label: string; value: ReactNode; note?: ReactNode; tone?: 'good' | 'ok' | 'low' | 'idle' }) {
   return <div className={`stat-tile${tone ? ` stat-${tone}` : ''}`}><span>{label}</span><strong>{value}</strong>{note && <small>{note}</small>}</div>;
 }
-function Panel({ title, note, children, wide }: { title: string; note?: ReactNode; children: ReactNode; wide?: boolean }) {
+export function Panel({ title, note, children, wide }: { title: string; note?: ReactNode; children: ReactNode; wide?: boolean }) {
   return <section className={`section-panel${wide ? ' section-panel-wide' : ''}`}><header><h2>{title}</h2>{note && <span>{note}</span>}</header>{children}</section>;
 }
 /**
@@ -149,7 +139,7 @@ function Trend({ rows, max, min = 0, goal, unit, format, neutral }: { rows: { da
 }
 
 /** What every section page needs from the console around it. */
-interface SectionContext {
+export interface SectionContext {
   onAsk: (text: string) => void;
   onPanel: (panel: 'integrations' | 'memory' | 'actions' | 'photo' | 'devices') => void;
   onHome: () => void;
@@ -166,7 +156,7 @@ interface SectionContext {
  * whole subtree each time, and the news-sources panel would lose what was
  * being typed into it.
  */
-function SectionPage({ eyebrow, title, blurb, stats, children, ask, ctx }: {
+export function SectionPage({ eyebrow, title, blurb, stats, children, ask, ctx }: {
   eyebrow: string; title: string; blurb: string; stats?: ReactNode; children: ReactNode; ask: string; ctx: SectionContext;
 }) {
   return <main className="dashboard-content dashboard-section">
@@ -387,10 +377,6 @@ function Hint({ label, title, lines, glyph = '?', className = 'hint', noteClassN
     {open && createPortal(<span ref={note} className={`hint-float ${noteClassName}`} role="status">{title && <span className="dashboard-eyebrow">{title}</span>}{said.map((line, i) => <span key={i}>{line}</span>)}</span>, document.body)}
   </span>;
 }
-/** Athena's reason for ranking a card first, in the marker on the card head. */
-const CardWhy = ({ why }: { why: string }) =>
-  <Hint label="Why Athena put this card first" title="ATHENA PUT THIS FIRST" lines={[why]}
-    glyph={'★'} className="card-why" noteClassName="card-why-note" />;
 
 /** The recovery dial. The arc is the score, not decoration: it sweeps from the
     top and is coloured by the same thresholds the Recovery stat tile uses. */
@@ -449,6 +435,13 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
   const [mailError, setMailError] = useState('');
   const [mailScanning, setMailScanning] = useState(false);
   const [mailScanNote, setMailScanNote] = useState('');
+  const [healthName, setHealthName] = useState('');
+  const [healthSymptom, setHealthSymptom] = useState('');
+  const [healthSeverity, setHealthSeverity] = useState<HealthSeverity>('mild');
+  const [healthNotes, setHealthNotes] = useState('');
+  const [healthSaving, setHealthSaving] = useState(false);
+  const [healthError, setHealthError] = useState('');
+  const [healthResolving, setHealthResolving] = useState<string | null>(null);
 
   // Only fetched while the Mail page is actually open — 2,000 emails do not
   // belong in the dashboard summary blob the way a week of calendar does.
@@ -476,6 +469,33 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
       setMailError((e as Error).message);
     } finally {
       setMailScanning(false);
+    }
+  };
+  const submitHealthReport = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!healthName.trim() || !healthSymptom.trim()) return;
+    setHealthSaving(true);
+    setHealthError('');
+    try {
+      await dashboardApi.reportFamilyHealth({ personName: healthName.trim(), symptom: healthSymptom.trim(), severity: healthSeverity, notes: healthNotes.trim() || undefined });
+      setHealthName(''); setHealthSymptom(''); setHealthSeverity('mild'); setHealthNotes('');
+      void data.refresh();
+    } catch (e) {
+      setHealthError((e as Error).message || 'Could not save that.');
+    } finally {
+      setHealthSaving(false);
+    }
+  };
+  const resolveHealthStatus = async (uuid: string) => {
+    setHealthResolving(uuid);
+    setHealthError('');
+    try {
+      await dashboardApi.resolveFamilyHealth(uuid);
+      void data.refresh();
+    } catch (e) {
+      setHealthError((e as Error).message || 'Could not update that.');
+    } finally {
+      setHealthResolving(null);
     }
   };
   const facts = data.facts.data || [];
@@ -519,6 +539,7 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
   const todayEvents = events.filter(e => eventDay(e, timeZone) === today);
   const nextEvent = events.find(e => !e.allDay && new Date(e.start).getTime() > Date.now()) || todayEvents[0];
   const chores = summary?.familyChores.data?.chores || [];
+  const sickFamily = summary?.familyHealth.data?.active || [];
   const choresDone = chores.filter(c => c.completed).length;
   const activities = summary?.activity.data?.activities || [];
   const hoursMinutes = (hours: number) => `${Math.floor(hours)}h ${Math.round((hours % 1) * 60)}m`;
@@ -586,6 +607,35 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
       {!preview.length && <p className="dashboard-empty">Nothing new to sort — try Scan more from the Mail page.</p>}
       <ul className="dashboard-data-list">{preview.slice(0, limit).map(emailPreviewLine)}</ul></>;
   }
+  function healthStatusLine(h: FamilyHealthStatus) {
+    return <li key={h.uuid}>
+      <strong>{h.personName} · {h.symptom}</strong>
+      <small>{h.severity} · day {h.daysActive}{h.notes ? ` · ${h.notes}` : ''}</small>
+    </li>;
+  }
+  function familyHealthPanel() {
+    return <>
+      {sickFamily.length > 0 && <ul className="dashboard-data-list family-health-list">{sickFamily.map(h => <li key={h.uuid}>
+        <strong>{h.personName} · {h.symptom}</strong>
+        <small>{h.severity} · day {h.daysActive}{h.notes ? ` · ${h.notes}` : ''}</small>
+        <button className="dashboard-chat-cta" disabled={healthResolving === h.uuid} onClick={() => void resolveHealthStatus(h.uuid)}>{healthResolving === h.uuid ? 'Updating…' : 'Feeling better?'}</button>
+      </li>)}</ul>}
+      {!sickFamily.length && <p className="dashboard-empty">Nobody's reported under the weather right now.</p>}
+      <form className="dashboard-form" onSubmit={submitHealthReport}>
+        <p className="source-note">Log a symptom — Athena will know, and can nudge the household about precautions.</p>
+        <input placeholder="Who (e.g. Thomas)" value={healthName} onChange={e => setHealthName(e.target.value)} maxLength={120} required />
+        <input placeholder="What you noticed (e.g. a slight cough)" value={healthSymptom} onChange={e => setHealthSymptom(e.target.value)} maxLength={200} required />
+        <select value={healthSeverity} onChange={e => setHealthSeverity(e.target.value as HealthSeverity)}>
+          <option value="mild">Mild</option>
+          <option value="moderate">Moderate</option>
+          <option value="severe">Severe</option>
+        </select>
+        <input placeholder="Notes (optional)" value={healthNotes} onChange={e => setHealthNotes(e.target.value)} maxLength={500} />
+        {healthError && <p className="dashboard-notice" role="status">{healthError}</p>}
+        <button className="dashboard-chat-cta" type="submit" disabled={healthSaving || !healthName.trim() || !healthSymptom.trim()}>{healthSaving ? 'Saving…' : 'Log it'} <span>↗</span></button>
+      </form>
+    </>;
+  }
   function newsBody(limit: number) {
     const failing = newsSources.filter(s => s.lastError);
     return <>{data.news.loading && <p className="source-note">Loading what I’ve read…</p>}{data.news.error && <p className="source-note" role="status">News couldn’t load. Retry or check source setup.</p>}{data.news.data && !newsSources.length && <p className="dashboard-empty">Paste a news page and I’ll start reading it for you.</p>}{failing.map(s => <p key={s.uuid} className="source-note">Couldn’t read {s.host} last time. {s.lastError}</p>)}<ul className="dashboard-data-list">{news.slice(0, limit).map((n, i) => <li key={`${n.url}-${i}`}><ExternalLink url={n.url}><strong>{n.title}</strong><small>{n.source} · {dateLabel(n.firstSeen)}</small></ExternalLink></li>)}</ul>{data.news.data && newsSources.length > 0 && !news.length && <p className="dashboard-empty">Nothing new on these pages yet — I’ll keep looking.</p>}</>;
@@ -595,29 +645,12 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
     const keys = CARD_SOURCES[id];
     return !!keys && !!summary && keys.every(key => summary[key]?.status === 'not_connected');
   };
-  // Athena's ordering, made safe to render from: every card exactly once, in
-  // her order where she gave one and the declared order where she did not.
-  const ranked = (() => {
-    const seen = new Set<string>();
-    const out: { id: string; why: string | null }[] = [];
-    for (const entry of data.priority?.source === 'athena' ? data.priority.order : []) {
-      if (!DEFAULT_CARD_ORDER.includes(entry.id) || seen.has(entry.id)) continue;
-      seen.add(entry.id);
-      out.push({ id: entry.id, why: entry.why });
-    }
-    for (const id of DEFAULT_CARD_ORDER) if (!seen.has(id)) out.push({ id, why: null });
-    return out.filter(entry => !unlinked(entry.id));
-  })();
+  // The fixed order, minus cards built entirely from unlinked connectors.
+  const ranked = DEFAULT_CARD_ORDER.filter(id => !unlinked(id)).map(id => ({ id }));
   function card(id: string, name: string, title: string, body: ReactNode, action: string, click: () => void, count?: number) {
-    const rank = ranked.findIndex(entry => entry.id === id);
-    const why = ranked[rank]?.why || null;
-    const lead = rank === 0 && !!why;
-    return <article className={`dashboard-card card-${id}${lead ? ' card-lead' : ''}`} id={`dashboard-${name.toLowerCase()}`} key={id}>
+    return <article className={`dashboard-card card-${id}`} id={`dashboard-${name.toLowerCase()}`} key={id}>
       <div className="dashboard-card-head">
-        <button className="dashboard-card-heading" onClick={click} title={why || undefined}><DashboardIcon name={name} /><h2>{title}</h2>{count !== undefined && <span className="card-count">{count}</span>}</button>
-        {/* Only the card she put first says why. Seven explanations is not a
-            ranking, it is a second dashboard on top of the one being read. */}
-        {lead && why && <CardWhy why={why} />}
+        <button className="dashboard-card-heading" onClick={click}><DashboardIcon name={name} /><h2>{title}</h2>{count !== undefined && <span className="card-count">{count}</span>}</button>
         <button className="dashboard-card-chevron" onClick={click} aria-label={`Open ${title}`}>›</button>
       </div>
       <div className="dashboard-card-body">{body}</div>
@@ -630,7 +663,7 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
     // is more use than dropping someone straight into the settings panel.
     calendar: card('calendar', 'Calendar', 'Calendar', calendarBody(3), 'View schedule', go('Calendar'), summary?.calendar.data?.events.length),
     health: card('health', 'Health', 'Health & Performance', healthBody(), 'View health', go('Health')),
-    family: card('family', 'Family', 'Family', <><p className="source-note">From your memories</p>{data.facts.error ? <p className="dashboard-empty">Memories couldn’t load.</p> : data.facts.loading ? <p className="dashboard-empty">Loading memories…</p> : family.length ? <Facts facts={family.slice(0, 3)} /> : <p className="dashboard-empty">No family memories saved yet.</p>}<SourceBlock source={summary?.familyChores} label="Family Chores · today" name="Family Chores"><ul className="dashboard-data-list">{chores.slice(0, 3).map((c, i) => <li key={i}><strong>{c.completed ? '✓' : '○'} {c.title}</strong><small>{c.completed ? 'Completed' : c.status || 'Open'}</small></li>)}</ul>{!chores.length && <p className="dashboard-empty">No chores returned for today.</p>}</SourceBlock></>, 'View family', go('Family')),
+    family: card('family', 'Family', 'Family', <>{sickFamily.length > 0 && <><p className="source-note">Family health watch</p><ul className="dashboard-data-list">{sickFamily.slice(0, 3).map(healthStatusLine)}</ul></>}<p className="source-note">From your memories</p>{data.facts.error ? <p className="dashboard-empty">Memories couldn’t load.</p> : data.facts.loading ? <p className="dashboard-empty">Loading memories…</p> : family.length ? <Facts facts={family.slice(0, 3)} /> : <p className="dashboard-empty">No family memories saved yet.</p>}<SourceBlock source={summary?.familyChores} label="Family Chores · today" name="Family Chores"><ul className="dashboard-data-list">{chores.slice(0, 3).map((c, i) => <li key={i}><strong>{c.completed ? '✓' : '○'} {c.title}</strong><small>{c.completed ? 'Completed' : c.status || 'Open'}</small></li>)}</ul>{!chores.length && <p className="dashboard-empty">No chores returned for today.</p>}</SourceBlock></>, 'View family', go('Family'), sickFamily.length || undefined),
     mail: card('mail', 'Mail', 'Mail', mailBody(3), 'Review inbox', go('Mail'), summary?.emailTriage.data?.newCount),
     work: card('work', 'Work', 'Work', workBody(1), 'View work', go('Work')),
     news: card('news', 'News', 'News & Updates', newsBody(3), 'View news', go('News'), news.length || undefined),
@@ -764,8 +797,12 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
         <Stat label="People remembered" value={family.length} note="from your memories" />
         <Stat label="Chores today" value={chores.length ? `${choresDone}/${chores.length}` : '—'} note={chores.length ? `${chores.length - choresDone} still open` : 'Nothing for today'} tone={chores.length && choresDone === chores.length ? 'good' : undefined} />
         <Stat label="Household" value={<span className="stat-small">{summary?.familyChores.data?.name || '—'}</span>} note="Family Chores account" />
+        <Stat label="Under the weather" value={sickFamily.length || '—'} note={sickFamily.length ? 'reported to Athena' : 'Nobody right now'} tone={sickFamily.length ? 'ok' : 'idle'} />
       </>}
     >
+      <Panel title="Family health watch" note="Athena stays aware of this in chat" wide>
+        {familyHealthPanel()}
+      </Panel>
       <Panel title="Chores today" note={summary?.familyChores.data?.name} wide>
         {!ready(summary?.familyChores) ? <Unavailable source={summary?.familyChores} name="Family Chores" onPanel={() => onPanel('integrations')} />
           : !chores.length ? <p className="dashboard-empty">No chores returned for today.</p>
@@ -939,6 +976,7 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
     if (section === 'Work') return WorkPage();
     if (section === 'Projects') return ProjectsPage();
     if (section === 'News') return NewsPage();
+    if (section === 'Dreams') return <DreamsPage ctx={ctx} />;
     if (section === 'System') return <SystemPage ctx={ctx} />;
   }
 
@@ -958,6 +996,9 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
     />
     <div className="dashboard-grid">{ranked.slice(0, PRIMARY_SLOTS).map(entry => cards[entry.id])}</div>
     <div className="dashboard-secondary">{ranked.slice(PRIMARY_SLOTS).map(entry => cards[entry.id])}</div>
+    {/* Below the cards, not among them: the card order is fixed (Health
+        first) and this isn't a source — it's her night, told as a dream. */}
+    {!compact && <DreamCard onOpen={go('Dreams')} onAsk={onAsk} />}
     <section className="dashboard-bottom"><div><span className="dashboard-eyebrow">A MOMENT WITH ATHENA</span><h2>Whatever’s on your mind,<br />you don’t have to carry it alone.</h2><button className="dashboard-chat-cta" onClick={() => onAsk('')}>Let’s talk <span>↗</span></button></div><div className="dashboard-utilities"><button onClick={() => onPanel('memory')}>Explore memories <span>↗</span></button><button onClick={() => onPanel('photo')}>Share a moment <span>↗</span></button><button onClick={() => onPanel('integrations')}>Connected apps <span>↗</span></button><button onClick={() => setSourcesOpen(true)}>News sources <span>↗</span></button><button onClick={() => setPlansOpen(true)}>Places &amp; projects <span>↗</span></button></div></section>
     <footer className="dashboard-footer"><span><i /> YOUR SPACE. YOUR PACE.</span><span>LIVE · UPDATES ARRIVE ON THEIR OWN</span></footer>
     {compact && <button className="dashboard-chat-cta" onClick={onExpand}>Open full dashboard ↗</button>}

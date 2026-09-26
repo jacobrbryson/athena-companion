@@ -50,7 +50,7 @@ function refreshSession(): Promise<boolean> {
   return refreshInFlight;
 }
 
-async function request<T>(path: string, init: RequestInit = {}, as: 'json' | 'text' = 'json'): Promise<T> {
+async function request<T>(path: string, init: RequestInit = {}, as: 'json' | 'text' | 'blob' = 'json'): Promise<T> {
   const mutating = !!init.method && init.method !== 'GET';
   if (mutating) invalidateReads();
   try {
@@ -59,6 +59,7 @@ async function request<T>(path: string, init: RequestInit = {}, as: 'json' | 'te
     const isJson = res.headers.get('content-type')?.includes('application/json');
     let body: unknown;
     if (as === 'text' && res.ok) body = await res.text();
+    else if (as === 'blob' && res.ok) body = await res.blob();
     else if (isJson) body = await res.json().catch(() => undefined);
 
     if (!res.ok) {
@@ -116,6 +117,8 @@ export const api = {
   cachedGet: <T>(path: string, ttlMs = 15000) => readCache.get(path, ttlMs, () => request<T>(path, { method: 'GET' })),
   get: <T>(path: string) => request<T>(path, { method: 'GET' }),
   text: (path: string) => request<string>(path, { method: 'GET' }, 'text'),
+  // Binary reads (a dream's picture) — an <img src> can't carry the client header.
+  blob: (path: string) => request<Blob>(path, { method: 'GET' }, 'blob'),
   post: <T>(path: string, data?: unknown) =>
     request<T>(path, { method: 'POST', body: data !== undefined ? JSON.stringify(data) : undefined }),
   put: <T>(path: string, data?: unknown) =>
