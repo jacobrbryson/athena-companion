@@ -373,6 +373,26 @@ const newsItems = () => [
   { title: 'A quieter way to think about training load', url: 'https://example.com/b', summary: null, published: iso(DAY), firstSeen: iso(6 * 3600_000), slot: 4, sourceUuid: 'src-1', source: 'Example Daily' },
   { title: 'Local trail network adds twelve miles', url: 'https://news.example.org/c', summary: null, published: iso(DAY * 1.5), firstSeen: iso(DAY * 1.4), slot: 2, sourceUuid: 'src-2', source: 'news.example.org' },
 ].filter(item => newsSources.some(source => source.uuid === item.sourceUuid));
+// The System page's three provider reads. `?gcp=none` shows the page before the
+// billing export has delivered anything.
+const spendDays = (costs: number[]) => costs.map((cost, i) => ({ date: iso(DAY * (costs.length - 1 - i)).slice(0, 10), cost }));
+function mockSystemBilling(p: string, gcpNone: boolean) {
+  const checkedAt = new Date().toISOString();
+  if (p.endsWith('/twilio-billing')) return { configured: true, checkedAt, balance: { amount: '18.42', currency: 'USD' }, smsMessagesSent: 37, smsCostThisMonth: 0.31 };
+  if (p.endsWith('/openai-billing')) return {
+    configured: true, checkedAt, currency: 'USD', monthStart: checkedAt.slice(0, 8) + '01', costThisMonth: 14.86, costToday: 0.42,
+    lineItems: [{ name: 'gpt-5.5, output', cost: 8.9 }, { name: 'gpt-5.5, input', cost: 3.1 }, { name: 'gpt-image-2 image, output', cost: 2.36 }, { name: 'text-embedding-3-small', cost: 0.5 }],
+    daily: spendDays([0.8, 1.2, 0.3, 0.9, 2.1, 0.6, 0.42]),
+  };
+  if (gcpNone) return { configured: false, reason: 'no_export', checkedAt, project: 'athena-476423', dataset: 'athena-476423.billing_export' };
+  return {
+    configured: true, checkedAt, project: 'athena-476423', dataset: 'athena-476423.billing_export', invoiceMonth: '202609', currency: 'USD',
+    lastExportAt: iso(3 * 3600_000), costThisMonth: 41.37, grossThisMonth: 46.12, creditsThisMonth: -4.75,
+    services: [{ name: 'Cloud SQL', cost: 22.4, gross: 22.4 }, { name: 'Cloud Run', cost: 12.1, gross: 16.85 }, { name: 'Artifact Registry', cost: 4.2, gross: 4.2 }, { name: 'Cloud Build', cost: 2.67, gross: 2.67 }],
+    topSkus: [{ service: 'Cloud SQL', name: 'Cloud SQL for MySQL: Zonal - vCPU', cost: 14.2, gross: 14.2 }, { service: 'Cloud Run', name: 'CPU Allocation Time', cost: 8.3, gross: 11.9 }, { service: 'Cloud SQL', name: 'Cloud SQL for MySQL: Zonal - RAM', cost: 8.2, gross: 8.2 }],
+    daily: spendDays([1.4, 1.5, 1.6, 1.3, 1.9, 1.5, 0.9]),
+  };
+}
 const dashboardNews = () => ({
   sources: newsSources,
   items: newsItems(),
@@ -948,6 +968,7 @@ async function route(method: string, path: string, body?: any): Promise<any> {
     return { items };
   }
   if (p === '/api/v1/dashboard/news') return dashboardNews();
+  if (p.startsWith('/api/v1/system/')) return mockSystemBilling(p, new URLSearchParams(window.location.search).get('gcp') === 'none');
   if (p === '/api/v1/session') return { session: { uuid: 'mock-session', mode: 'companion' } };
   if (p === '/api/v1/message' && method === 'GET') return [...messages];
   if (p === '/api/v1/message' && method === 'POST') {

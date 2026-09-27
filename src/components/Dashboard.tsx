@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import type { CalendarEvent, Source, JiraIssue, RecoveryDay, DashboardSummary, TwilioBilling, TriageEmail, FamilyHealthStatus, HealthSeverity } from '../api/dashboard';
+import type { CalendarEvent, Source, JiraIssue, RecoveryDay, DashboardSummary, GcpBilling, TriageEmail, FamilyHealthStatus, HealthSeverity } from '../api/dashboard';
 import { dashboardApi } from '../api/dashboard';
 import type { Fact } from '../api/companion';
 import { useDashboardData } from './useDashboardData';
@@ -171,32 +171,84 @@ export function SectionPage({ eyebrow, title, blurb, stats, children, ask, ctx }
   </main>;
 }
 
-function SystemPage({ ctx }: { ctx: SectionContext }) {
-  const [billing, setBilling] = useState<TwilioBilling | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+/** One provider read for the System page. Each loads on its own, so one failing never blanks the others. */
+function useSystemRead<T>(load: () => Promise<T>) {
+  const [state, setState] = useState<{ data: T | null; loading: boolean; error: string | null }>({ data: null, loading: true, error: null });
   useEffect(() => {
     let alive = true;
-    setLoading(true);
-    setError(null);
-    void dashboardApi.systemTwilio().then(value => {
-      if (alive) { setBilling(value); setLoading(false); }
+    void load().then(data => {
+      if (alive) setState({ data, loading: false, error: null });
     }).catch(err => {
-      if (alive) { setBilling(null); setError((err as Error).message || 'Unavailable'); setLoading(false); }
+      if (alive) setState({ data: null, loading: false, error: (err as Error).message || 'Unavailable' });
     });
     return () => { alive = false; };
-  }, []);
-  const unavailable = error || (billing && !billing.configured ? 'Twilio is not configured on this Athena system.' : null);
+  }, [load]);
+  return state;
+}
+
+const money = (currency: string | null | undefined, value: number | null | undefined) =>
+  value == null || !currency ? '—' : `${currency} ${value.toFixed(2)}`;
+
+/** The last seven days of spend, oldest first, with empty days filled in as zero. */
+function lastWeek(daily: { date: string; cost: number }[] | undefined, today = new Date()) {
+  const byDate = new Map((daily || []).map(d => [d.date, d.cost]));
+  return Array.from({ length: 7 }, (_, i) => {
+    const date = new Date(today.getTime() - (6 - i) * 86400000).toISOString().slice(0, 10);
+    return { date, value: byDate.get(date) ?? 0 };
+  });
+}
+
+function CostTrend({ daily, currency }: { daily?: { date: string; cost: number }[]; currency: string }) {
+  const rows = lastWeek(daily);
+  const max = Math.max(...rows.map(r => r.value ?? 0));
+  if (max <= 0) return <p className="dashboard-empty">No spend recorded in the last 7 days.</p>;
+  return <Trend rows={rows} max={max} unit={currency} format={v => v.toFixed(2)} neutral />;
+}
+
+const GCP_SETUP: Record<NonNullable<GcpBilling['reason']>, string> = {
+  no_project: 'No GCP project is configured on this Athena system.',
+  no_dataset: 'The billing export dataset does not exist yet.',
+  no_export: 'Cloud Billing export is not switched on yet, or has not delivered its first rows.',
+};
+
+function SystemPage({ ctx }: { ctx: SectionContext }) {
+  const twilio = useSystemRead(dashboardApi.systemTwilio);
+  const openai = useSystemRead(dashboardApi.systemOpenAI);
+  const gcp = useSystemRead(dashboardApi.systemGcp);
+  const billing = twilio.data, loading = twilio.loading;
+  const unavailable = twilio.error || (billing && !billing.configured ? 'Twilio is not configured on this Athena system.' : null);
   const balance = billing?.balance?.amount && billing.balance.currency ? `${billing.balance.currency} ${billing.balance.amount}` : '—';
+  const ai = openai.data?.configured ? openai.data : null;
+  const cloud = gcp.data?.configured ? gcp.data : null;
   return <SectionPage ctx={ctx}
-    eyebrow="ATHENA SYSTEM" title="System" blurb="A small, live view of the Twilio service Athena uses to reach you."
+    eyebrow="ATHENA SYSTEM" title="System" blurb="A small, live view of what the services Athena runs on are costing."
     ask="What should I know about the Athena system right now?"
     stats={<>
       <Stat label="Twilio balance" value={loading ? '…' : balance} note={billing?.balance?.currency ? 'Current account balance' : 'No balance returned'} tone={billing?.balance?.amount ? 'good' : 'idle'} />
-      <Stat label="SMS messages sent" value={loading ? '…' : billing?.smsMessagesSent ?? '—'} note="This month" />
-      <Stat label="SMS cost" value={loading ? '…' : billing?.smsCostThisMonth != null && billing?.balance?.currency ? `${billing.balance.currency} ${billing.smsCostThisMonth.toFixed(2)}` : '—'} note="This month" />
+      <Stat label="OpenAI spend" value={openai.loading ? '…' : money(ai?.currency, ai?.costThisMonth)} note={ai ? `This month · ${money(ai.currency, ai.costToday)} today` : 'Not available'} tone={ai ? undefined : 'idle'} />
+      <Stat label="GCP cost" value={gcp.loading ? '…' : money(cloud?.currency, cloud?.costThisMonth)} note={cloud ? 'This month, after credits' : 'Billing export not ready'} tone={cloud ? undefined : 'idle'} />
+      <Stat label="SMS cost" value={loading ? '…' : billing?.smsCostThisMonth != null && billing?.balance?.currency ? `${billing.balance.currency} ${billing.smsCostThisMonth.toFixed(2)}` : '—'} note={`This month · ${billing?.smsMessagesSent ?? '—'} sent`} />
     </>}
   >
+    <Panel title="OpenAI" note="organization costs · month to date" wide>
+      {openai.loading ? <p className="dashboard-empty">Reading OpenAI costs…</p>
+        : !ai ? <div className="section-unavailable"><p className="dashboard-empty">{openai.error || 'OpenAI billing is not configured on this Athena system.'}</p><p className="source-detail">The system owner needs an OpenAI admin key in OPENAI_API_ADMIN_KEY. OpenAI does not publish a prepaid credit balance through its API, so this shows spend.</p></div>
+        : <>
+          <div className="system-summary-grid"><div><span>This month</span><strong>{money(ai.currency, ai.costThisMonth)}</strong></div><div><span>Today (UTC)</span><strong>{money(ai.currency, ai.costToday)}</strong></div></div>
+          <div className="day-group"><h3>Last 7 days</h3><CostTrend daily={ai.daily} currency={ai.currency || 'USD'} /></div>
+          <div className="day-group"><h3>By model and usage</h3>{ai.lineItems?.length ? <ul className="dashboard-data-list">{ai.lineItems.slice(0, 10).map(item => <li key={item.name}><strong>{money(ai.currency, item.cost)}</strong><small>{item.name}</small></li>)}</ul> : <p className="dashboard-empty">No spend yet this month.</p>}</div>
+        </>}
+    </Panel>
+    <Panel title="Google Cloud" note={cloud ? `${cloud.project} · ${cloud.lastExportAt ? `export as of ${dateLabel(cloud.lastExportAt)}` : 'billing export'}` : 'billing export'} wide>
+      {gcp.loading ? <p className="dashboard-empty">Reading the billing export…</p>
+        : !cloud ? <div className="section-unavailable"><p className="dashboard-empty">{gcp.error || (gcp.data?.reason ? GCP_SETUP[gcp.data.reason] : 'GCP billing is unavailable.')}</p><p className="source-detail">In the Cloud console: Billing → Billing export → Standard usage cost → export to {gcp.data?.dataset || 'the billing_export dataset'}. The first rows arrive within a few hours; earlier history is not included.</p></div>
+        : <>
+          <div className="system-summary-grid"><div><span>This month · after credits</span><strong>{money(cloud.currency, cloud.costThisMonth)}</strong></div><div><span>Before credits · credits</span><strong>{money(cloud.currency, cloud.grossThisMonth)} · {money(cloud.currency, cloud.creditsThisMonth)}</strong></div></div>
+          <div className="day-group"><h3>Last 7 days</h3><CostTrend daily={cloud.daily} currency={cloud.currency || 'USD'} /></div>
+          <div className="day-group"><h3>By service</h3>{cloud.services?.length ? <ul className="dashboard-data-list">{cloud.services.map(s => <li key={s.name}><strong>{money(cloud.currency, s.cost)} · {s.name}</strong>{s.gross !== s.cost && <small>{money(cloud.currency, s.gross)} before credits</small>}</li>)}</ul> : <p className="dashboard-empty">No charges yet this month.</p>}</div>
+          {!!cloud.topSkus?.length && <div className="day-group"><h3>Top line items</h3><ul className="dashboard-data-list">{cloud.topSkus.map(s => <li key={`${s.service}-${s.name}`}><strong>{money(cloud.currency, s.cost)} · {s.name}</strong><small>{s.service}</small></li>)}</ul></div>}
+        </>}
+    </Panel>
     <Panel title="Twilio" note="live account read" wide>
       {unavailable ? <div className="section-unavailable"><p className="dashboard-empty">{unavailable}</p><p className="source-detail">The system owner can check the Twilio credentials and account permissions.</p></div> : <div className="system-summary-grid"><div><span>Balance</span><strong>{balance}</strong></div><div><span>SMS messages sent · this month</span><strong>{loading ? '…' : billing?.smsMessagesSent ?? '—'}</strong></div><div><span>SMS cost · this month</span><strong>{loading ? '…' : billing?.smsCostThisMonth != null && billing?.balance?.currency ? `${billing.balance.currency} ${billing.smsCostThisMonth.toFixed(2)}` : '—'}</strong></div></div>}
     </Panel>

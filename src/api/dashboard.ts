@@ -96,6 +96,14 @@ export interface EmergencyAlert {
   /** The banner key this person last said "Got it" to — held in the database. */
   acknowledgedKey?: string | null;
 }
+/** Month-to-date OpenAI spend (Costs API). OpenAI publishes no prepaid balance, so there is none here. */
+export interface OpenAIBilling { configured: boolean; checkedAt: string; currency?: string; monthStart?: string; costThisMonth?: number; costToday?: number; lineItems?: { name: string; cost: number }[]; daily?: { date: string; cost: number }[] }
+/** Month-to-date GCP cost for the Athena project, read from the Cloud Billing export in BigQuery. `cost` is net of credits. */
+export interface GcpBilling {
+  configured: boolean; checkedAt: string; reason?: 'no_project' | 'no_dataset' | 'no_export'; project?: string | null; dataset?: string;
+  invoiceMonth?: string; currency?: string; lastExportAt?: string | null; costThisMonth?: number; grossThisMonth?: number; creditsThisMonth?: number;
+  services?: { name: string; cost: number; gross: number }[]; topSkus?: { service: string; name: string; cost: number; gross: number }[]; daily?: { date: string; cost: number }[];
+}
 export interface TwilioBilling { configured: boolean; checkedAt: string; balance?: { amount: string | null; currency: string | null }; smsMessagesSent?: number; smsCostThisMonth?: number }
 /**
  * A page Athena watches, and the rhythm she has settled on for it. The rhythm
@@ -246,6 +254,8 @@ export const dashboardApi = {
     api.post<{ projects: HomeProject[]; created: number; skipped: { line: number | null; reason: string }[]; columns: string[]; unmapped: string[] }>(
       '/api/v1/dashboard/projects/import', { text, dryRun }),
   systemTwilio: () => api.get<TwilioBilling>('/api/v1/system/twilio-billing'),
+  systemOpenAI: () => api.get<OpenAIBilling>('/api/v1/system/openai-billing'),
+  systemGcp: () => api.get<GcpBilling>('/api/v1/system/gcp-billing'),
   sources: () => api.get<{ sources: NewsSource[]; maxSources: number }>('/api/v1/dashboard/news/sources'),
   saveSources: (sources: (string | { url: string; label?: string | null; scope?: 'world' | 'personal' })[]) =>
     api.put<{ sources: NewsSource[] }>('/api/v1/dashboard/news/sources', { sources }),
