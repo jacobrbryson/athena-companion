@@ -3,6 +3,8 @@ import { SESSION_EXPIRED_EVENT, type ApiError } from '../api/client';
 import { fetchMe, fetchProfile, fetchAccess, googleSignIn, signOut as apiSignOut, type CompanionUser, type Profile } from '../api/auth';
 import { unlinkAndroidPhone } from '../native/registration';
 import { invalidateReads } from '../api/readCache';
+import { integrationsApi, GOOGLE_GROUP } from '../api/companion';
+import { isAndroidCompanion } from '../native/android';
 
 /**
  * `unreachable` is deliberately distinct from `locked`: a failed access check
@@ -59,6 +61,48 @@ function computeArrival(email: string | null): Arrival {
 
 const statusOf = (err: unknown) => (err as ApiError | undefined)?.status;
 
+/**
+ * Sign-in hands off to Google's consent screen for Gmail, Calendar and
+ * Contacts, which reloads the app. The arrival signal would die with the page,
+ * so it rides across in sessionStorage and is taken exactly once on return.
+ */
+const PENDING_ARRIVAL_KEY = 'companion_pending_arrival';
+
+function stashArrival(arrival: Arrival) {
+  try { sessionStorage.setItem(PENDING_ARRIVAL_KEY, JSON.stringify(arrival)); } catch { /* the greeting is a nicety */ }
+}
+
+function takeStashedArrival(): Arrival | null {
+  try {
+    const raw = sessionStorage.getItem(PENDING_ARRIVAL_KEY);
+    sessionStorage.removeItem(PENDING_ARRIVAL_KEY);
+    return raw ? (JSON.parse(raw) as Arrival) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Ask Google for the connected-app scopes as part of signing in, so the links
+ * are renewed every time. Resolves true once the browser is on its way; false
+ * means stay here — Android (its native sign-in can't carry this; the
+ * Connected apps panel can), or the server couldn't start the flow, which must
+ * never cost the person the sign-in they just completed.
+ */
+async function handOffToGoogleConsent(): Promise<boolean> {
+  if (isAndroidCompanion()) return false;
+  try {
+    const { authorize_url } = await integrationsApi.connect(
+      GOOGLE_GROUP,
+      `${window.location.origin}/?from=signin`
+    );
+    window.location.assign(authorize_url);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<AuthStatus>('loading');
   const [user, setUser] = useState<CompanionUser | null>(null);
@@ -104,6 +148,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         await loadProfile();
         if (cancelled) return;
         setUser(res.user);
+        const stashed = takeStashedArrival();
+        if (stashed) setArrival(stashed);
         failuresRef.current = 0;
         setStatus('authenticated');
       } catch (err) {
@@ -195,7 +241,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (access.allowed !== true) { setStatus('locked'); return; }
       await loadProfile();
       setUser(res.user);
-      setArrival(computeArrival(res.user.email));
+      const arrived = computeArrival(res.user.email);
+      // Stay on the verifying screen while the browser leaves for Google.
+      stashArrival(arrived);
+      if (await handOffToGoogleConsent()) return;
+      takeStashedArrival();
+      setArrival(arrived);
       failuresRef.current = 0;
       setStatus('authenticated');
     },

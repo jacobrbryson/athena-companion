@@ -167,9 +167,14 @@ export interface IntegrationProvider {
   scopes: string[];
   /** A family consent that must exist before this one can be linked. */
   requires_consent: string | null;
+  /** Providers sharing one upstream grant ("google"), shown and linked together. */
+  group: string | null;
   connected: boolean;
   link: IntegrationLink | null;
 }
+
+/** Gmail, Google Calendar and Google Contacts — one consent screen. */
+export const GOOGLE_GROUP = 'google';
 
 export const integrationsApi = {
   list: () =>

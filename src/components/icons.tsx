@@ -24,6 +24,7 @@ type Tone = 'blue' | 'violet';
 
 const DRAWN: Record<string, { tone: Tone; art: ReactNode }> = {
   Notifications: { tone: 'blue', art: <><path d="M12 3.6a5.4 5.4 0 0 0-5.4 5.4c0 4.2-1.5 5.6-1.5 5.6h13.8s-1.5-1.4-1.5-5.6A5.4 5.4 0 0 0 12 3.6Z" /><path d="M10.4 18a1.8 1.8 0 0 0 3.2 0" /></> },
+  Community: { tone: 'blue', art: <><path d="M3.6 11.4 12 4.8l8.4 6.6" /><path d="M5.8 9.8v9.4h12.4V9.8" /><circle cx="9.4" cy="13" r="1.5" /><circle cx="14.6" cy="13" r="1.5" /><path d="M7.2 19.2c0-1.9 1-3 2.2-3s2.2 1.1 2.2 3M12.4 19.2c0-1.9 1-3 2.2-3s2.2 1.1 2.2 3" /></> },
   Mail: { tone: 'blue', art: <><rect x="3.6" y="6" width="16.8" height="12" rx="1.4" /><path d="m4.2 6.8 7.8 6 7.8-6" /></> },
   Dreams: { tone: 'violet', art: <><path className="icon-fill" d="M15.6 4.4a7.6 7.6 0 1 0 4 10.6 6.2 6.2 0 0 1-4-10.6Z" /><path d="M18.4 4.2v2.4M17.2 5.4h2.4" /><path d="M20.6 9.4v1.2M20 10h1.2" /></> },
 };

@@ -12,9 +12,13 @@ import type { RightNow, Suggestion } from '../api/dashboard';
  * distance, the habit, the forecast. A confident sentence with nothing under
  * it would be worse than the seven cards it sits above.
  *
- * When there is nothing to suggest it says why in one line and gets out of the
- * way. "The park is closed for storm damage" is a useful card; a spinner
- * pretending to think is not.
+ * It only appears when the moment is actually important (owner, 2026-09-27):
+ * you're in something on the calendar, something starts within minutes, or
+ * the suggestion is tied to right now — a red recovery, a place open now, the
+ * day your habit usually happens, something due today. A goal worth thinking
+ * about on a quiet afternoon is not that, and the card stays out of the way
+ * rather than filling the top of the page with the mundane. It draws nothing
+ * while loading for the same reason: a placeholder that then vanishes is noise.
  */
 
 const hours = (minutes?: number | null) => {
@@ -91,6 +95,30 @@ function safeHref(url?: string | null) {
   } catch { return undefined; }
 }
 
+/** Minutes before an event when its approach is worth the top of the page. */
+const IMMINENT_MINUTES = 15;
+
+function withinDays(iso: string | null | undefined, days: number) {
+  const at = Date.parse(iso || '');
+  if (!Number.isFinite(at)) return false;
+  const end = new Date();
+  end.setHours(23, 59, 59, 999);
+  end.setDate(end.getDate() + days);
+  return at <= end.getTime();
+}
+
+/** Whether this suggestion is tied to right now, rather than any quiet hour. */
+function timely(option: Suggestion): boolean {
+  switch (option.kind) {
+    case 'rest':
+    case 'place': return true;
+    case 'habit': return !!option.rhythm?.isUsualDayToday;
+    case 'work': return withinDays(option.dueDate, 0);
+    case 'project': return option.priority === 'high' || withinDays(option.dueDate, 0);
+    default: return false;
+  }
+}
+
 export function RightNowCard({ data, loading, error, onAsk, onManage }: {
   data: RightNow | null;
   loading: boolean;
@@ -98,12 +126,14 @@ export function RightNowCard({ data, loading, error, onAsk, onManage }: {
   onAsk: (prompt: string) => void;
   onManage: () => void;
 }) {
-  if (loading && !data) {
-    return <section className="right-now right-now-quiet"><p className="right-now-eyebrow">RIGHT NOW</p><p className="right-now-quiet-line">Looking at your day…</p></section>;
-  }
   // A failure here is never worth a red banner above someone's whole day. The
   // cards below are all still true.
-  if (error || !data) return null;
+  if (loading || error || !data) return null;
+
+  const imminent = data.window.nextEvent && data.window.nextEvent.inMinutes != null
+    && data.window.nextEvent.inMinutes <= IMMINENT_MINUTES ? data.window.nextEvent : null;
+  const lead = data.lead && timely(data.lead) ? data.lead : null;
+  if (!data.window.busyWith && !imminent && !lead) return null;
 
   const free = hours(data.window.freeMinutes);
   const until = data.window.nextEvent?.title;
@@ -117,17 +147,13 @@ export function RightNowCard({ data, loading, error, onAsk, onManage }: {
         ? `${free} free`
         : 'Nothing else on the calendar today';
 
-  if (!data.lead) {
+  if (!lead) {
     return <section className="right-now right-now-quiet">
       <p className="right-now-eyebrow">RIGHT NOW</p>
-      <p className="right-now-quiet-line">{data.reason || 'Nothing to suggest just now.'}</p>
-      <div className="right-now-actions">
-        <button className="right-now-secondary" onClick={onManage}>Places &amp; projects <span>↗</span></button>
-      </div>
+      <p className="right-now-quiet-line">{data.window.busyWith ? `You're in ${data.window.busyWith}.` : `${imminent!.title} starts in ${Math.max(0, imminent!.inMinutes ?? 0)} min.`}</p>
     </section>;
   }
 
-  const lead = data.lead;
   const href = safeHref(lead.url);
   const facts = evidence(lead);
 

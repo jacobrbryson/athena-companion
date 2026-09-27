@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import type { CalendarEvent, Source, JiraIssue, RecoveryDay, DashboardSummary, GcpBilling, TriageEmail, FamilyHealthStatus, HealthSeverity } from '../api/dashboard';
+import type { CalendarEvent, Source, JiraIssue, RecoveryDay, DashboardSummary, GcpBilling, TriageEmail, FamilyHealthStatus, HealthSeverity, NearbyIncident, WeatherAlert } from '../api/dashboard';
 import { dashboardApi } from '../api/dashboard';
 import type { Fact } from '../api/companion';
 import { useDashboardData } from './useDashboardData';
@@ -12,20 +12,22 @@ import { EmailPanel, CATEGORY_LABEL } from './EmailPanel';
 import { DreamCard, DreamsPage } from './Dreams';
 import { DashboardIcon } from './icons';
 
-export type DashboardSection = 'Home' | 'Today' | 'Calendar' | 'Health' | 'Family' | 'Mail' | 'Work' | 'Projects' | 'News' | 'Dreams' | 'System';
+export type DashboardSection = 'Home' | 'Today' | 'Calendar' | 'Health' | 'Family' | 'Community' | 'Mail' | 'Work' | 'Projects' | 'News' | 'Dreams' | 'System';
 // Icons live in ./icons — one registry, so a drawn icon looks the same in
 // the nav, on its card and in the phone's bottom bar.
 export { DashboardIcon } from './icons';
 // Left-hand navigation. "Home" is presented to people as Dashboard; it also
-// replaces the old Quick Actions entry, which now lives on as the Notifications
-// card and its bell in the top bar. Today remains an internal page for now but
-// is not a left-navigation entry.
-export const dashboardSections: DashboardSection[] = ['Home', 'Calendar', 'Health', 'Family', 'Mail', 'Work', 'Projects', 'News', 'Dreams', 'System'];
+// replaces the old Quick Actions entry, which now lives on as the bell in the
+// top bar (the Notifications card was removed by the owner, 2026-09-27).
+// Today remains an internal page for now but is not a left-navigation entry.
+export const dashboardSections: DashboardSection[] = ['Home', 'Calendar', 'Health', 'Family', 'Community', 'Mail', 'Work', 'Projects', 'News', 'Dreams', 'System'];
 // The card set, in the one order the dashboard uses. Fixed by the owner
 // (2026-09-26): Health & Performance first, and Athena no longer re-sorts it.
-// Ids are shared with services/dashboardPriority.js in core_api — changing
-// one means changing both.
-const DEFAULT_CARD_ORDER = ['health', 'calendar', 'family', 'mail', 'work', 'news', 'projects', 'notifications'];
+// The first row is the owner's hierarchy (2026-09-27): take care of yourself,
+// so you can take care of your family, so your family can take care of the
+// community. Ids are shared with services/dashboardPriority.js in core_api —
+// changing one means changing both.
+const DEFAULT_CARD_ORDER = ['health', 'family', 'community', 'calendar', 'mail', 'work', 'news', 'projects'];
 // The first row holds three cards; whatever ranks below them drops to the second.
 const PRIMARY_SLOTS = 3;
 /**
@@ -33,8 +35,8 @@ const PRIMARY_SLOTS = 3;
  * else. When none of them is linked the card has no subject, so it leaves the
  * briefing rather than sitting there advertising three apps.
  *
- * Family, Projects and Notifications are deliberately absent: they still have
- * memories, saved goals and approvals to show when every connector is dark.
+ * Family, Community and Projects are deliberately absent: they still have
+ * memories, watched places and saved goals to show when every connector is dark.
  */
 const CARD_SOURCES: Partial<Record<string, (keyof DashboardSummary)[]>> = {
   calendar: ['calendar'],
@@ -71,6 +73,22 @@ function dateLabel(value?: string | null, options: Intl.DateTimeFormatOptions = 
   if (!value) return 'Date unavailable';
   const date = new Date(value);
   return Number.isFinite(date.getTime()) ? date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', ...options }) : 'Date unavailable';
+}
+/** How long ago, in the few words a card has room for. */
+function agoLabel(value?: string | null) {
+  const at = Date.parse(value || '');
+  if (!Number.isFinite(at)) return null;
+  const minutes = Math.max(0, Math.round((Date.now() - at) / 60000));
+  if (minutes < 1) return 'just now';
+  if (minutes < 60) return `${minutes} min ago`;
+  if (minutes < 1440) return `${Math.floor(minutes / 60)}h ago`;
+  return dateLabel(value);
+}
+function incidentLine(c: NearbyIncident) {
+  return <li key={c.id}><strong>{c.serious ? '● ' : ''}{c.what}</strong><small>{[c.where, `${c.miles} mi from ${c.place}`, agoLabel(c.receivedAt)].filter(Boolean).join(' · ')}</small></li>;
+}
+function weatherLine(w: WeatherAlert) {
+  return <li key={w.id}><strong>{w.event}</strong><small>{[w.place, w.expires ? `until ${new Date(w.expires).toLocaleString(undefined, { weekday: 'short', hour: 'numeric', minute: '2-digit' })}` : null].filter(Boolean).join(' · ')}</small></li>;
 }
 function Facts({ facts }: { facts: Fact[] }) {
   return <ul className="dashboard-memory-list">{facts.map(fact => <li key={fact.uuid}><span className="memory-avatar">{fact.key.slice(0, 1).toUpperCase()}</span><div><strong>{fact.key}</strong><p>{fact.value || 'Saved in memory'}</p></div></li>)}</ul>;
@@ -553,6 +571,12 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
   const facts = data.facts.data || [];
   const family = facts.filter(f => /^(person|family|pet)$/i.test(f.category));
   const projects = facts.filter(f => /^(goal|project)$/i.test(f.category));
+  // Community: what is happening around the places this person watches (the
+  // incident watcher's stored situation — calls and NWS alerts, whether or not
+  // they rose to a banner), and the places they have told Athena about.
+  const communityPlaces = facts.filter(f => /^place$/i.test(f.category));
+  const nearbyCalls = data.nearby.data?.incidents || [];
+  const nearbyWeather = data.nearby.data?.weather || [];
   const issues = summary?.jira.data?.issues || [];
   // Already ordered by when Athena read them, which is the only timestamp that
   // is always there and always honest — half of `published` is missing and some
@@ -716,11 +740,18 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
     calendar: card('calendar', 'Calendar', 'Calendar', calendarBody(3), 'View schedule', go('Calendar'), summary?.calendar.data?.events.length),
     health: card('health', 'Health', 'Health & Performance', healthBody(), 'View health', go('Health')),
     family: card('family', 'Family', 'Family', <>{sickFamily.length > 0 && <><p className="source-note">Family health watch</p><ul className="dashboard-data-list">{sickFamily.slice(0, 3).map(healthStatusLine)}</ul></>}<p className="source-note">From your memories</p>{data.facts.error ? <p className="dashboard-empty">Memories couldn’t load.</p> : data.facts.loading ? <p className="dashboard-empty">Loading memories…</p> : family.length ? <Facts facts={family.slice(0, 3)} /> : <p className="dashboard-empty">No family memories saved yet.</p>}<SourceBlock source={summary?.familyChores} label="Family Chores · today" name="Family Chores"><ul className="dashboard-data-list">{chores.slice(0, 3).map((c, i) => <li key={i}><strong>{c.completed ? '✓' : '○'} {c.title}</strong><small>{c.completed ? 'Completed' : c.status || 'Open'}</small></li>)}</ul>{!chores.length && <p className="dashboard-empty">No chores returned for today.</p>}</SourceBlock></>, 'View family', go('Family'), sickFamily.length || undefined),
+    community: card('community', 'Community', 'Community', <>
+      <p className="source-note">Around your watched places</p>
+      {data.nearby.loading ? <p className="dashboard-empty">Checking nearby…</p>
+        : data.nearby.error ? <p className="dashboard-empty">Nearby activity couldn’t load.</p>
+          : nearbyCalls.length || nearbyWeather.length ? <ul className="dashboard-data-list">{nearbyWeather.slice(0, 1).map(weatherLine)}{nearbyCalls.slice(0, nearbyWeather.length ? 2 : 3).map(incidentLine)}</ul>
+            : <p className="dashboard-empty">Quiet near your places.</p>}
+      {communityPlaces.length > 0 && <><p className="source-note">Places you’ve mentioned</p><Facts facts={communityPlaces.slice(0, 2)} /></>}
+    </>, 'View community', go('Community'), nearbyCalls.length + nearbyWeather.length || undefined),
     mail: card('mail', 'Mail', 'Mail', mailBody(3), 'Review inbox', go('Mail'), summary?.emailTriage.data?.newCount),
     work: card('work', 'Work', 'Work', workBody(1), 'View work', go('Work')),
     news: card('news', 'News', 'News & Updates', newsBody(3), 'View news', go('News'), news.length || undefined),
     projects: card('projects', 'Projects', 'Projects', <><SourceBlock source={summary?.jira} label="Jira projects · your assigned issues" name="Jira">{issues.length ? <ul className="dashboard-data-list">{[...new Set(issues.map(i => i.project))].slice(0, 3).map(project => <li key={project}><strong>{project}</strong><small>{issues.filter(i => i.project === project).length} assigned issues in this snapshot</small></li>)}</ul> : <p className="dashboard-empty">No assigned issues in this snapshot.</p>}</SourceBlock><p className="source-note">Saved goals</p>{projects.length ? <Facts facts={projects.slice(0, 2)} /> : <p className="dashboard-empty">{data.facts.error ? 'Memories unavailable.' : 'No saved goals yet.'}</p>}</>, 'View projects', go('Projects')),
-    notifications: card('notifications', 'Notifications', 'Notifications', <>{data.actions.loading ? <p className="dashboard-empty">Checking approvals…</p> : data.actions.error ? <p className="dashboard-empty">Approvals couldn’t load.</p> : pending.length ? <ul className="dashboard-data-list">{pending.slice(0, 3).map(a => <li key={a.uuid}><strong>{a.label}</strong><small>{a.summary}</small></li>)}</ul> : <p className="dashboard-empty">Nothing waiting for your approval.</p>}<p className="source-note">You decide what happens next.</p></>, 'Review actions', () => onPanel('actions'), data.actions.data ? pending.length : undefined),
   };
 
   // --- The section pages ---------------------------------------------------
@@ -868,6 +899,38 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
           : data.facts.loading ? <p className="dashboard-empty">Loading memories…</p>
             : family.length ? <><Facts facts={family} /><button className="dashboard-chat-cta" onClick={() => onPanel('memory')}>Explore memories <span>↗</span></button></>
               : <><p className="dashboard-empty">No family memories saved yet. Tell Athena about them and she will keep them.</p><button className="dashboard-chat-cta" onClick={() => onAsk('Let me tell you about my family.')}>Tell her <span>↗</span></button></>}
+      </Panel>
+    </SectionPage>;
+  }
+
+  function CommunityPage() {
+    const serious = nearbyCalls.filter(c => c.serious).length;
+    const updated = agoLabel(data.nearby.data?.updatedAt);
+    return <SectionPage ctx={ctx}
+      eyebrow="THE PLACE AROUND YOU" title="Community"
+      blurb="What’s happening near the places you watch, and the places that matter to you."
+      ask="What’s going on around my community that I should know about?"
+      stats={<>
+        <Stat label="Calls nearby" value={data.nearby.data ? nearbyCalls.length : '—'} note="near your watched places" tone={nearbyCalls.length ? 'ok' : 'idle'} />
+        <Stat label="Serious" value={data.nearby.data ? serious : '—'} note={serious ? 'worth a look' : 'Nothing serious'} tone={serious ? 'low' : 'idle'} />
+        <Stat label="Weather alerts" value={data.nearby.data ? nearbyWeather.length : '—'} note="National Weather Service" tone={nearbyWeather.length ? 'ok' : 'idle'} />
+        <Stat label="Places remembered" value={communityPlaces.length} note="from your memories" />
+      </>}
+    >
+      <Panel title="Near your places" note={updated ? `updated ${updated}` : undefined} wide>
+        {data.nearby.loading ? <p className="dashboard-empty">Checking nearby…</p>
+          : data.nearby.error ? <p className="dashboard-empty">Nearby activity couldn’t load.</p>
+            : <>
+              {nearbyWeather.length > 0 && <ul className="dashboard-data-list">{nearbyWeather.map(weatherLine)}</ul>}
+              {nearbyCalls.length ? <ul className="dashboard-data-list">{nearbyCalls.map(incidentLine)}</ul> : <p className="dashboard-empty">Quiet near your places.</p>}
+            </>}
+        {onPlaces && <button className="dashboard-chat-cta" onClick={onPlaces}>Watched places <span>↗</span></button>}
+      </Panel>
+      <Panel title="Places you’ve mentioned" note="from your memories" wide>
+        {data.facts.error ? <p className="dashboard-empty">Memories couldn’t load.</p>
+          : data.facts.loading ? <p className="dashboard-empty">Loading memories…</p>
+            : communityPlaces.length ? <Facts facts={communityPlaces} />
+              : <><p className="dashboard-empty">No places saved yet — your church, the kids’ school, the park you go to.</p><button className="dashboard-chat-cta" onClick={() => onAsk('Let me tell you about the places in my community.')}>Tell her <span>↗</span></button></>}
       </Panel>
     </SectionPage>;
   }
@@ -1024,6 +1087,7 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
     if (section === 'Calendar') return CalendarPage();
     if (section === 'Health') return HealthPage();
     if (section === 'Family') return FamilyPage();
+    if (section === 'Community') return CommunityPage();
     if (section === 'Mail') return MailPage();
     if (section === 'Work') return WorkPage();
     if (section === 'Projects') return ProjectsPage();

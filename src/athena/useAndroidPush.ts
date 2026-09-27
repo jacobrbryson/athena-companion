@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { androidCall, isAndroidCompanion } from '../native/android';
+import type { AlertTestResult } from '../api/dashboard';
 
 /**
  * Phone notifications, inside the Android app.
@@ -64,16 +65,35 @@ export function useAndroidPush() {
  */
 export type PulsePointState = 'unavailable' | 'checking' | 'on' | 'off' | 'app-missing';
 
+type PulsePointStatus = { installed: boolean; granted: boolean; location?: boolean; locationForeground?: boolean };
+
+/** What the phone's "Test PulsePoint alert" reports: its own state plus the server's steps. */
+export type PhoneTestResult = {
+  paired: boolean;
+  listening: boolean;
+  installed: boolean;
+  location: boolean;
+  status?: number;
+  server?: AlertTestResult | null;
+};
+
 export function usePulsePointAlerts() {
   const available = isAndroidCompanion();
   const [state, setState] = useState<PulsePointState>(available ? 'checking' : 'unavailable');
+  /** Location "all the time" — what the listener needs to check calls against where you are. */
+  const [location, setLocation] = useState(false);
+
+  const apply = useCallback((r: PulsePointStatus) => {
+    setState(!r.installed ? 'app-missing' : r.granted ? 'on' : 'off');
+    setLocation(r.location === true);
+  }, []);
 
   const check = useCallback(() => {
     if (!available) return;
-    androidCall<{ installed: boolean; granted: boolean }>('pulsePointStatus')
-      .then((r) => setState(!r.installed ? 'app-missing' : r.granted ? 'on' : 'off'))
+    androidCall<PulsePointStatus>('pulsePointStatus')
+      .then(apply)
       .catch(() => setState('off'));
-  }, [available]);
+  }, [available, apply]);
 
   useEffect(() => {
     check();
@@ -99,5 +119,26 @@ export function usePulsePointAlerts() {
     await androidCall('openPulsePointSettings').catch(() => undefined);
   }, [available]);
 
-  return { available, state, open, openPulsePointSettings, check };
+  /**
+   * Android 13+ greys out notification access for apps not installed from a
+   * store ("Restricted setting"). The way through is the app's own info
+   * screen: ⋮ → Allow restricted settings, then try again.
+   */
+  const openAppInfo = useCallback(async () => {
+    if (!available) return;
+    await androidCall('openAppInfo').catch(() => undefined);
+  }, [available]);
+
+  /** Location permission, foreground then "all the time". Resolves with the new state. */
+  const enableLocation = useCallback(async () => {
+    if (!available) return;
+    const r = await androidCall<PulsePointStatus>('enableLocation').catch(() => null);
+    if (r) apply(r);
+    else check();
+  }, [available, apply, check]);
+
+  /** The real phone -> Athena request, marked as a test. */
+  const test = useCallback(() => androidCall<PhoneTestResult>('testPulsePoint'), []);
+
+  return { available, state, location, open, openPulsePointSettings, openAppInfo, enableLocation, test, check };
 }

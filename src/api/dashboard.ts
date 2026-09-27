@@ -64,6 +64,15 @@ export interface DashboardPriority { order: PriorityEntry[]; source: 'athena' | 
 /** One nearby emergency call, as the incident watcher stored it. */
 export interface NearbyIncident { id: string; what: string; category: string | null; where: string; miles: number; place: string; units: number; receivedAt: string | null; serious: boolean; latitude?: number; longitude?: number }
 /** A place watched for emergencies nearby: home, a parent's house. */
+/** What watch.testAlert reports: each step, and whether the push reached anything. */
+export interface AlertTestResult {
+  ok: boolean;
+  kind: 'pulsepoint' | 'weather';
+  via?: 'server' | 'phone';
+  text?: string;
+  steps: { step: string; ok: boolean; detail: string | null }[];
+}
+
 export interface WatchPlace { uuid: string; name: string; address: string | null; latitude: number; longitude: number; radiusMiles: number; enabled: boolean }
 /** A ring on the map: where a watched place is and how far it reaches. */
 export interface AlertPlace { name: string; latitude: number; longitude: number; radiusMiles: number; live?: boolean }
@@ -227,6 +236,8 @@ export const dashboardApi = {
   /** "Got it": remembered server-side until a new development changes the key. */
   ackAlert: (key: string) => api.post<{ acknowledgedKey: string }>('/api/v1/dashboard/alert/ack', { key }),
   watchPlaces: () => api.get<{ places: WatchPlace[] }>('/api/v1/dashboard/incidents/places'),
+  /** A made-up PulsePoint call / weather warning at their own place, pushed. Writes nothing. */
+  testAlert: (kind: 'pulsepoint' | 'weather') => api.post<AlertTestResult>('/api/v1/dashboard/incidents/test', { kind }),
   /** Add, or update by name (radius, on/off, a corrected position). */
   saveWatchPlace: (place: { name: string; latitude: number; longitude: number; radiusMiles?: number; address?: string | null; enabled?: boolean }) =>
     api.put<{ places: WatchPlace[] }>('/api/v1/dashboard/incidents/places', place),

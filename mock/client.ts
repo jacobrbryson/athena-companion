@@ -111,10 +111,35 @@ const manifest = {
  */
 const integrations = [
   {
+    provider: 'gmail',
+    label: 'Gmail',
+    scopes: ['gmail.readonly', 'gmail.modify'],
+    requires_consent: null,
+    group: 'google',
+    connected: true,
+    link: {
+      uuid: 'i0', provider: 'gmail', kind: 'oauth2',
+      external_account_id: 'sam@example.com', display_name: 'sam@example.com',
+      scopes: ['gmail.readonly'], expires_at: null, status: 'active' as const,
+      expired: false, last_refreshed_at: iso(3600_000), last_used_at: iso(1800_000),
+      created_at: iso(DAY * 12),
+    },
+  },
+  {
+    provider: 'google_contacts',
+    label: 'Google Contacts',
+    scopes: ['contacts.readonly'],
+    requires_consent: null,
+    group: 'google',
+    connected: false,
+    link: null,
+  },
+  {
     provider: 'google_calendar',
     label: 'Google Calendar',
     scopes: ['calendar.readonly'],
     requires_consent: null,
+    group: 'google',
     connected: true,
     link: {
       uuid: 'i1', provider: 'google_calendar', kind: 'oauth2',

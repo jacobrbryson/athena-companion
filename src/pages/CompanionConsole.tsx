@@ -23,6 +23,7 @@ import { LocalServerPanel } from '../components/LocalServerPanel';
 import {
   IntegrationsPanel,
   readIntegrationCallback,
+  isQuietSigninCallback,
   type IntegrationCallback,
 } from '../components/IntegrationsPanel';
 import { ARRIVAL_MESSAGES, buildGreeting, emergencyGreeting } from '../athena/sequences';
@@ -104,7 +105,11 @@ export function CompanionConsole() {
   // Returning from a provider's consent screen. Read once, on the first
   // render, because it scrubs the query string as a side effect.
   const [integrationCallback, setIntegrationCallback] = useState<IntegrationCallback | null>(
-    () => readIntegrationCallback()
+    () => {
+      const callback = readIntegrationCallback();
+      // Sign-in's Google approval that went fully through needs no panel.
+      return isQuietSigninCallback(callback) ? null : callback;
+    }
   );
   // Land straight on the result rather than making the person find the panel.
   const [panel, setPanel] = useState<Panel>(integrationCallback ? 'integrations' : null);
