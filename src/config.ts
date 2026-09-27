@@ -8,10 +8,14 @@ import { connection } from './localConnection';
 export const PROXY_BASE: string = (import.meta.env.VITE_PROXY_BASE ?? '').replace(/\/$/, '');
 
 // Where the Unity WebGL build lives (same-origin /unity by default; see vite.config.ts).
-export const UNITY_ASSET_BASE: string = (import.meta.env.VITE_UNITY_ASSET_BASE ?? '/unity').replace(
-  /\/$/,
-  ''
-);
+// Only an absolute path or an http(s) URL is accepted: building from Git Bash
+// silently rewrites `VITE_UNITY_ASSET_BASE=/unity` into `C:/Program Files/Git/unity`,
+// which shipped in every Android APK from 09-22 to 09-26 and made the avatar
+// fail with "Unable to summon Athena".
+const rawUnityBase = import.meta.env.VITE_UNITY_ASSET_BASE ?? '/unity';
+export const UNITY_ASSET_BASE: string = (
+  /^(\/(?!\/)|https?:\/\/)/.test(rawUnityBase) ? rawUnityBase : '/unity'
+).replace(/\/$/, '');
 
 // Google OAuth web client ID — a public identifier (the marketing app ships the same one).
 export const GOOGLE_CLIENT_ID: string =
