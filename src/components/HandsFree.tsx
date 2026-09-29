@@ -67,8 +67,8 @@ export function HandsFree() {
     <section className="mb-8">
       <Label>hands-free</Label>
       <p className="mb-3 text-sm opacity-70">
-        Say “Athena”, wait for the chime, then talk — screen off, phone in a pocket. She answers out loud, and you can
-        follow up once without saying her name.
+        Just talk — “Athena, what time is it?” — screen off, phone in a pocket. She answers out loud, and you can
+        follow up once without saying her name. Left on, it comes back whenever you open the app.
       </p>
       <button
         onClick={() => void toggle()}
