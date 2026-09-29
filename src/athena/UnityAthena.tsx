@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { UNITY_ASSET_BASE, wsUrl } from '../config';
-import { api } from '../api/client';
+import { UNITY_ASSET_BASE } from '../config';
 
 /**
  * Unity WebGL Athena player — the Guardians app's embed (itself a port of
@@ -52,25 +51,13 @@ export function UnityAthena({ sessionId, isThinking, onReady }: Props) {
   // --- Unity -> app: connect Unity's own WebSocket once it signals ready. ---
   useEffect(() => {
     const onUnityWsReady = async () => {
-      const session = sessionRef.current;
       const instance = instanceRef.current;
-      if (!session || !instance) return;
-
-      // Unity opens its own socket (drives the avatar's thinking/wave). Give
-      // it a short-lived ticket so it authenticates as the Companion user,
-      // rather than relying on whichever session cookie the browser sends.
-      let ticket = '';
-      try {
-        ticket = (await api.get<{ ticket?: string }>('/auth/companion/ws-ticket'))?.ticket || '';
-      } catch {
-        ticket = '';
-      }
-      const params = new URLSearchParams({ sessionId: session });
-      if (ticket) params.set('token', ticket);
-      const url = wsUrl(`/ws?${params.toString()}`);
-      const payload = JSON.stringify({ wsUrl: url, sessionId: session, token: '' });
-      instance.SendMessage('AthenaSocketBridge', 'ConfigureWebSocket', payload);
-      instance.SendMessage('AthenaSocketBridge', 'ConnectWebSocket');
+      if (!instance) return;
+      // Unity used to open a second socket of its own, which meant a second
+      // sign-in ticket in a URL. All it did with it was wave on connect and
+      // follow thinking — and the page already drives thinking (SetThinking
+      // below). So no socket: tell Unity it is "connected" and it waves.
+      instance.SendMessage('AthenaSocketBridge', 'OnWebSocketConnected');
     };
     const handler = () => void onUnityWsReady();
     window.addEventListener('athena-unity-ready-for-websocket', handler);
