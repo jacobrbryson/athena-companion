@@ -143,6 +143,18 @@ export const devicesApi = {
   revoke: (uuid: string) => api.del(`/api/v1/devices/${uuid}`),
 };
 
+// ---------------------------------------------------------- android app ---
+
+export type AndroidRelease =
+  | { available: false }
+  | { available: true; versionCode: number; versionName: string; size: number | null; builtAt: string | null; notes: string | null };
+
+export const androidApi = {
+  release: () => api.get<AndroidRelease>('/api/v1/android/release'),
+  /** A 15-minute signed download link — what the QR code carries. */
+  link: () => api.post<{ url: string; expiresAt: string; versionCode: number; versionName: string }>('/api/v1/android/release/link', {}),
+};
+
 // ---------------------------------------------------- integrations (OAuth) ---
 
 /** The stored link, as the server exposes it — never any token material. */

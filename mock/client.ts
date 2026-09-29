@@ -1097,6 +1097,12 @@ async function route(method: string, path: string, body?: any): Promise<any> {
   if (p === '/api/v1/devices' && method === 'GET') return devices;
   if (p === '/api/v1/devices/pairing-code') return { code: 'K7QP-3XMV', device_uuid: 'd-new', expires_in: 600 };
   if (method === 'DELETE' && p.startsWith('/api/v1/devices/')) return { success: true };
+  if (p === '/api/v1/android/release') {
+    return { available: true, versionCode: 262721530, versionName: '2026.09.29.1530', size: 128470920, builtAt: '2026-09-29T15:30:00Z', notes: null };
+  }
+  if (p === '/api/v1/android/release/link') {
+    return { url: 'https://storage.googleapis.com/athena-android-releases/android/Athena-2026.09.29.1530.apk?X-Goog-Signature=mock', expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(), versionCode: 262721530, versionName: '2026.09.29.1530' };
+  }
 
   if (p === '/api/v1/initiative' && method === 'GET') {
     return {

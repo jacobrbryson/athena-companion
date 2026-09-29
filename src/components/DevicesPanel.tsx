@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Drawer, Label, ago } from './Drawer';
 import { devicesApi, type PairedDevice } from '../api/companion';
+import { AndroidInstall } from './AndroidInstall';
 
 /**
  * Pair Athena's phone / car app with this account. The device redeems a
@@ -52,6 +53,7 @@ export function DevicesPanel({ onClose }: { onClose: () => void }) {
 
   return (
     <Drawer eyebrow="paired devices" title="Phone & car" onClose={onClose}>
+      <AndroidInstall />
       <section className="mb-8">
         <Label>pair a new device</Label>
         {pairing && remaining > 0 ? (
