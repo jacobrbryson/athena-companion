@@ -767,7 +767,15 @@ async function route(method: string, path: string, body?: any): Promise<any> {
     return mockAccess();
   }
   if (p === '/api/v1/profile') return { uuid: 'mock-profile', full_name: 'Sam Rivera' };
-  if (p === '/api/v1/dashboard') return dashboardSummary();
+  // mock_dashboard_down='calendar:needs_reauth,recovery:error' previews a card's fix button.
+  if (p === '/api/v1/dashboard') {
+    const summary: Record<string, unknown> = dashboardSummary();
+    for (const pair of (localStorage.getItem('mock_dashboard_down') || '').split(',').filter(Boolean)) {
+      const [key, status] = pair.split(':');
+      if (key in summary) summary[key] = unready(status as Parameters<typeof unready>[0]);
+    }
+    return summary;
+  }
   if (p === '/api/v1/dashboard/priority') return dashboardPriority();
   // Emergency banner: quiet by default; ?alert=urgent or =watch to see it.
   if (p === '/api/v1/dashboard/alert/ack' && method === 'POST') {

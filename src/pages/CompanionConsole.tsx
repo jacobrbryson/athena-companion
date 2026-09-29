@@ -116,6 +116,8 @@ export function CompanionConsole() {
   );
   // Land straight on the result rather than making the person find the panel.
   const [panel, setPanel] = useState<Panel>(integrationCallback ? 'integrations' : null);
+  // A dashboard Connect that hit a health-consent gate: Connected apps opens on that prompt.
+  const [consentFor, setConsentFor] = useState<string | null>(null);
   const inputId = useId();
   const menuRef = useRef<HTMLDivElement | null>(null);
   /**
@@ -341,8 +343,9 @@ export function CompanionConsole() {
     send(text);
   }
 
-  function openPanel(p: Panel) {
+  function openPanel(p: Panel, options?: { consentFor?: string }) {
     setMenuOpen(false);
+    setConsentFor(options?.consentFor ?? null);
     setPanel(p);
   }
 
@@ -759,7 +762,7 @@ export function CompanionConsole() {
           <span aria-hidden>🚪</span>Sign out
         </button>
       </div>
-      {briefing && <Drawer eyebrow="Athena" title="Your daily briefing" onClose={() => setBriefing(false)}><Dashboard compact firstName={firstName} onAsk={askAthena} onPanel={p => { setBriefing(false); openPanel(p); }} onExpand={() => { setBriefing(false); navigateDashboard('Home'); }} /></Drawer>}
+      {briefing && <Drawer eyebrow="Athena" title="Your daily briefing" onClose={() => setBriefing(false)}><Dashboard compact firstName={firstName} onAsk={askAthena} onPanel={(p, options) => { setBriefing(false); openPanel(p, options); }} onExpand={() => { setBriefing(false); navigateDashboard('Home'); }} /></Drawer>}
 
       {panel === 'memory' && <MemoryPanel onClose={() => setPanel(null)} />}
       {panel === 'photo' && <PhotoMemory onClose={() => setPanel(null)} onTalkAbout={talkAboutPhoto} />}
@@ -773,8 +776,10 @@ export function CompanionConsole() {
       {panel === 'integrations' && (
         <IntegrationsPanel
           callback={integrationCallback}
+          askConsentFor={consentFor}
           onClose={() => {
             setIntegrationCallback(null);
+            setConsentFor(null);
             setPanel(null);
           }}
         />

@@ -2,7 +2,9 @@ import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type Reac
 import { createPortal } from 'react-dom';
 import type { CalendarEvent, Source, JiraIssue, RecoveryDay, DashboardSummary, GcpBilling, SystemHealthStatus, TriageEmail, FamilyHealthStatus, HealthSeverity, NearbyIncident, WeatherAlert } from '../api/dashboard';
 import { dashboardApi } from '../api/dashboard';
-import type { Fact } from '../api/companion';
+import { integrationsApi, type Fact } from '../api/companion';
+import { androidCall, isAndroidCompanion } from '../native/android';
+import type { ApiError } from '../api/client';
 import { useDashboardData } from './useDashboardData';
 import { NewsSourcesPanel } from './NewsSourcesPanel';
 import { PlansPanel } from './PlansPanel';
@@ -12,6 +14,8 @@ import { EmailPanel, CATEGORY_LABEL } from './EmailPanel';
 import { DreamCard, DreamsPage } from './Dreams';
 import { DashboardIcon } from './icons';
 
+/** Open a console panel; `consentFor` opens Connected apps on that provider's consent prompt. */
+export type OpenPanel = (panel: 'integrations' | 'memory' | 'actions' | 'photo' | 'devices', options?: { consentFor?: string }) => void;
 export type DashboardSection = 'Home' | 'Today' | 'Calendar' | 'Health' | 'Family' | 'Community' | 'Mail' | 'Work' | 'Projects' | 'News' | 'Dreams' | 'System';
 // Icons live in ./icons — one registry, so a drawn icon looks the same in
 // the nav, on its card and in the phone's bottom bar.
@@ -30,39 +34,53 @@ export const dashboardSections: DashboardSection[] = ['Home', 'Calendar', 'Healt
 const DEFAULT_CARD_ORDER = ['health', 'family', 'community', 'calendar', 'mail', 'work', 'news', 'projects'];
 // The first row holds three cards; whatever ranks below them drops to the second.
 const PRIMARY_SLOTS = 3;
-/**
- * The connectors each card is made of, for the cards that are made of nothing
- * else. When none of them is linked the card has no subject, so it leaves the
- * briefing rather than sitting there advertising three apps.
- *
- * Family, Community and Projects are deliberately absent: they still have
- * memories, watched places and saved goals to show when every connector is dark.
- */
-const CARD_SOURCES: Partial<Record<string, (keyof DashboardSummary)[]>> = {
-  calendar: ['calendar'],
-  health: ['recovery', 'sleep', 'strain', 'activity'],
-  mail: ['emailTriage'],
-  work: ['jira', 'slack'],
-};
 const statusText = { not_connected: 'Not connected', needs_reauth: 'Reconnect to refresh', consent_required: 'Health consent required', error: 'Couldn’t load this source', ready: 'Connected' };
 /**
- * Why a card is quiet about something.
- *
- * A source nobody has linked is not news: it says nothing about today and
- * there is nothing to do about it here, so a briefing stays silent on it. The
- * section page still names it, with the button that connects it. Everything
- * else — a link that expired, consent not given, a provider erroring — is a
- * fact about the data in front of the person and is still said out loud.
+ * The integration each summary source is re-linked through — the same ids the
+ * Connected apps panel passes to `integrationsApi.connect`.
  */
-function SourceNote({ source, name }: { source?: Source<unknown>; name: string }) {
-  if (source?.status === 'not_connected') return null;
-  return <><p className="source-note">{name} · {source ? statusText[source.status] : 'Loading…'}</p>
-    {source?.detail && <p className="source-note source-detail">{source.detail}</p>}</>;
+const SOURCE_PROVIDER: Partial<Record<keyof DashboardSummary, string>> = {
+  calendar: 'google_calendar', emailTriage: 'gmail',
+  recovery: 'whoop', sleep: 'whoop', strain: 'whoop', activity: 'strava',
+  jira: 'jira', slack: 'slack', familyChores: 'family_chores',
+};
+/** What a source that cannot be read offers to do about it, where it is read. */
+interface SourceFix { reconnect: () => void; panel: () => void; retry: () => void; busy?: boolean }
+/**
+ * The one button that fixes an unreadable source, right beside the line that
+ * says so: a missing or expired link goes straight to the provider, consent
+ * opens the panel that asks for it, and a provider error is worth one more try.
+ */
+function FixButton({ source, fix, className = 'source-fix' }: { source?: Source<unknown>; fix?: SourceFix; className?: string }) {
+  if (!fix || !source) return null;
+  const [label, run] = source.status === 'not_connected' ? ['Connect', fix.reconnect]
+    : source.status === 'needs_reauth' ? ['Reconnect', fix.reconnect]
+    : source.status === 'consent_required' ? ['Give consent', fix.panel]
+      : source.status === 'error' ? ['Retry', fix.retry]
+        : [null, null];
+  if (!label || !run) return null;
+  return <button type="button" className={className} disabled={fix.busy} onClick={run}>{fix.busy ? 'Opening…' : label} <span>↗</span></button>;
 }
-/** A labelled run of card rows that is simply absent when nothing is linked. */
-function SourceBlock({ source, label, name, children }: { source?: Source<unknown>; label: string; name: string; children: ReactNode }) {
-  if (source?.status === 'not_connected') return null;
-  return <><p className="source-note">{label}</p>{source?.status === 'ready' ? children : <SourceNote source={source} name={name} />}</>;
+/**
+ * Why a card is quiet about something, with the button that fixes it.
+ *
+ * A source nobody has linked is said out loud too, with Connect beside it:
+ * the owner asked (2026-09-29) for every card missing data to carry its call
+ * to action, rather than a briefing that stays silent about what it can't see.
+ */
+function SourceNote({ source, name, fix }: { source?: Source<unknown>; name: string; fix?: SourceFix }) {
+  return <><p className="source-note">{name} · {source ? statusText[source.status] : 'Loading…'}</p>
+    {source?.detail && <p className="source-note source-detail">{source.detail}</p>}
+    <FixButton source={source} fix={fix} /></>;
+}
+/** A labelled run of card rows, or the note that says why they are missing. */
+function SourceBlock({ source, label, name, fix, children }: { source?: Source<unknown>; label: string; name: string; fix?: SourceFix; children: ReactNode }) {
+  // Not ready: the note names the source itself, so the label would say it twice.
+  return source?.status === 'ready' ? <><p className="source-note">{label}</p>{children}</> : <SourceNote source={source} name={name} fix={fix} />;
+}
+/** An empty card row that says what would fill it, with the button that does. */
+function EmptyCta({ text, action, onClick }: { text: ReactNode; action: string; onClick: () => void }) {
+  return <><p className="dashboard-empty">{text}</p><button type="button" className="source-fix" onClick={onClick}>{action} <span>↗</span></button></>;
 }
 function safeHref(url?: string | null) { try { const parsed = new URL(url || ''); return parsed.protocol === 'https:' && !parsed.username && !parsed.password ? parsed.href : undefined; } catch { return undefined; } }
 function ExternalLink({ url, children }: { url?: string | null; children: ReactNode }) {
@@ -114,16 +132,14 @@ export function Panel({ title, note, children, wide, id }: { title: string; note
  * stated in the panel rather than whispered under it — and, where the person
  * can actually fix it, it comes with the button that does.
  */
-function Unavailable({ source, name, onPanel }: { source?: Source<unknown>; name: string; onPanel?: () => void }) {
-  const status = source?.status;
-  const fixable = status === 'not_connected' || status === 'needs_reauth' || status === 'consent_required';
+function Unavailable({ source, name, fix }: { source?: Source<unknown>; name: string; fix?: SourceFix }) {
   return <div className="section-unavailable">
-    <p className="dashboard-empty">{name} · {source ? statusText[status!] : 'Loading…'}</p>
+    <p className="dashboard-empty">{name} · {source ? statusText[source.status] : 'Loading…'}</p>
     {/* What the provider actually said. A card that cannot be read is only
         actionable if it says why — "reconnect" is the wrong advice for an API
         that was never enabled, and the person has no way to tell them apart. */}
     {source?.detail && <p className="dashboard-empty source-detail">{source.detail}</p>}
-    {fixable && onPanel && <button className="dashboard-chat-cta" onClick={onPanel}>{status === 'not_connected' ? 'Connect it' : 'Fix this'} <span>↗</span></button>}
+    <FixButton source={source} fix={fix} className="dashboard-chat-cta" />
   </div>;
 }
 /**
@@ -159,7 +175,7 @@ function Trend({ rows, max, min = 0, goal, unit, format, neutral }: { rows: { da
 /** What every section page needs from the console around it. */
 export interface SectionContext {
   onAsk: (text: string) => void;
-  onPanel: (panel: 'integrations' | 'memory' | 'actions' | 'photo' | 'devices') => void;
+  onPanel: OpenPanel;
   onHome: () => void;
   error: string | null;
   sourcesOpen: boolean;
@@ -536,7 +552,7 @@ function dayHeading(key: string, today: string) {
 export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlaces, onNavigate, compact = false, onExpand }: {
   section?: DashboardSection;
   firstName: string; onAsk: (text: string) => void;
-  onPanel: (panel: 'integrations' | 'memory' | 'actions' | 'photo' | 'devices') => void;
+  onPanel: OpenPanel;
   onPlaces?: () => void;
   onNavigate?: (section: DashboardSection) => void;
   compact?: boolean; onExpand?: () => void;
@@ -561,6 +577,37 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
   const [healthSaving, setHealthSaving] = useState(false);
   const [healthError, setHealthError] = useState('');
   const [healthResolving, setHealthResolving] = useState<string | null>(null);
+  const [reconnecting, setReconnecting] = useState<string | null>(null);
+
+  /**
+   * Straight back to the provider's consent screen, the same way the Connected
+   * apps panel does it. Anything that can't be finished from a card — consent
+   * to record, an unknown provider, the server refusing — opens that panel,
+   * which knows how to say why.
+   */
+  const reconnect = async (provider?: string) => {
+    if (!provider) return onPanel('integrations');
+    setReconnecting(provider);
+    try {
+      const { authorize_url } = await integrationsApi.connect(provider, window.location.origin);
+      // Google blocks embedded user agents; Android hands consent to the system browser.
+      if (isAndroidCompanion()) await androidCall('openExternal', { url: authorize_url });
+      else window.location.assign(authorize_url);
+    } catch (e) {
+      // Health providers need consent first; land on that prompt, not the list.
+      onPanel('integrations', (e as ApiError).code === 'consent_required' ? { consentFor: provider } : undefined);
+    } finally {
+      setReconnecting(null);
+    }
+  };
+  const fixFor = (key: keyof DashboardSummary): SourceFix => ({
+    reconnect: () => void reconnect(SOURCE_PROVIDER[key]),
+    panel: () => onPanel('integrations', { consentFor: SOURCE_PROVIDER[key] }),
+    retry: () => void data.refresh(),
+    busy: !!reconnecting && reconnecting === SOURCE_PROVIDER[key],
+  });
+  const unavailable = (key: keyof DashboardSummary, name: string) => <Unavailable source={summary?.[key] as Source<unknown> | undefined} name={name} fix={fixFor(key)} />;
+  const retryData = () => void data.refresh();
 
   // Only fetched while the Mail page is actually open — 2,000 emails do not
   // belong in the dashboard summary blob the way a week of calendar does.
@@ -680,7 +727,7 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
 
   function calendarBody(limit: number) {
     const source = summary?.calendar;
-    if (!ready(source)) return <SourceNote source={source} name="Google Calendar" />;
+    if (!ready(source)) return <SourceNote source={source} name="Google Calendar" fix={fixFor('calendar')} />;
     return <><p className="source-note">Next 7 days · {source?.data?.timeZone}</p>{!events.length && <p className="dashboard-empty">No upcoming events in this window.</p>}<ul className="dashboard-data-list calendar-events">{events.slice(0, limit).map((event, index) => <li key={`${event.id}-${index}`}><span className="event-dot" /><div><small>{event.allDay ? `${dateLabel(`${event.start}T12:00:00Z`, { timeZone: 'UTC' })} · All day` : `${dateLabel(event.start, { timeZone })} · ${eventTime(event, timeZone)}`}</small><strong>{event.title}</strong>{event.location && <small>{event.location}</small>}{event.shared && <small>{event.calendar}</small>}</div></li>)}</ul></>;
   }
   /** The heart tiles, in the one place the card and the Health page agree on. */
@@ -700,23 +747,35 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
         note="Overnight blood oxygen. Under 95% alongside a raised heart rate is worth noticing." />}
     </>;
   }
+  /**
+   * One WHOOP link feeds recovery, sleep and strain, so when all three are
+   * down for the same reason they are one line and one Reconnect, not three.
+   */
+  function whoopNotes() {
+    const down = (['recovery', 'sleep', 'strain'] as const).filter(key => !ready(summary?.[key]));
+    if (!down.length) return null;
+    if (down.every(key => summary?.[key]?.status === summary?.[down[0]]?.status && !summary?.[key]?.detail)) return <SourceNote source={summary?.[down[0]]} name="WHOOP" fix={fixFor(down[0])} />;
+    return down.map(key => <SourceNote key={key} source={summary?.[key]} name={`WHOOP ${key}`} fix={fixFor(key)} />);
+  }
   function healthBody() {
-    return <><div className="recovery-preview"><RecoveryRing score={recovery?.recovery_score} />
+    // With WHOOP never linked there is no ring or tile to draw — only the Connect.
+    const whoopUnlinked = (['recovery', 'sleep', 'strain'] as const).every(key => summary?.[key]?.status === 'not_connected');
+    return <>{!whoopUnlinked && <><div className="recovery-preview"><RecoveryRing score={recovery?.recovery_score} />
       <p>{readiness ? <span className={`readiness readiness-${readiness.level}`}>{readiness.label}</span> : 'Latest recovery'}<small>{recovery ? dateLabel(`${recovery.date}T12:00:00Z`, { timeZone: 'UTC' }) : 'No scored result'}</small></p></div>
       {readiness && <p className="readiness-reason">{readiness.reason}</p>}
-      <div className="health-metrics">{heartMetrics()}</div>
-      {(['recovery', 'sleep', 'strain'] as const).map(key => !ready(summary?.[key]) && <SourceNote key={key} source={summary?.[key]} name={`WHOOP ${key}`} />)}
-      <SourceBlock source={summary?.activity} label="Strava · last 7 days" name="Strava">
+      <div className="health-metrics">{heartMetrics()}</div></>}
+      {whoopNotes()}
+      <SourceBlock source={summary?.activity} label="Strava · last 7 days" name="Strava" fix={fixFor('activity')}>
         {activities.slice(0, 2).map((a, i) => <p className="activity-line" key={i}>{a.name} · {a.distance_mi} mi <small>{dateLabel(a.start)}</small></p>)}
         {!activities.length && <p className="dashboard-empty">No recent activities.</p>}
       </SourceBlock></>;
   }
   function workBody(limit: number) {
     return <>
-      <SourceBlock source={summary?.jira} label="Jira · assigned open issues" name="Jira">
+      <SourceBlock source={summary?.jira} label="Jira · assigned open issues" name="Jira" fix={fixFor('jira')}>
         {!issues.length && <p className="dashboard-empty">No assigned open issues returned.</p>}<Issues issues={issues.slice(0, limit)} />{summary?.jira.data?.partial && <p className="source-note">Some sites could not be included.</p>}
       </SourceBlock>
-      <SourceBlock source={summary?.slack} label="Slack · recent mentions" name="Slack">
+      <SourceBlock source={summary?.slack} label="Slack · recent mentions" name="Slack" fix={fixFor('slack')}>
         <ul className="dashboard-data-list">{summary?.slack.data?.messages.slice(0, limit).map(m => <li key={m.timestamp}><ExternalLink url={m.url}><strong>#{m.channel}</strong><small>{m.text}</small></ExternalLink></li>)}</ul>{!summary?.slack.data?.messages.length && <p className="dashboard-empty">No mentions returned in the last 7 days.</p>}
       </SourceBlock></>;
   }
@@ -726,10 +785,12 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
   }
   function mailBody(limit: number) {
     const source = summary?.emailTriage;
-    if (!ready(source)) return <SourceNote source={source} name="Mail" />;
+    if (!ready(source)) return <SourceNote source={source} name="Gmail" fix={fixFor('emailTriage')} />;
     const preview = source?.data?.preview || [];
     return <><p className="source-note">{source?.data?.newCount || 0} to review · receipts, travel, school</p>
-      {!preview.length && <p className="dashboard-empty">Nothing new to sort — try Scan more from the Mail page.</p>}
+      {!preview.length && (mailScanning ? <p className="dashboard-empty">Scanning your inbox…</p>
+        : mailScanNote ? <p className="dashboard-empty">{mailScanNote}</p>
+          : <EmptyCta text="Nothing new to sort." action="Scan more" onClick={() => void scanMoreMail()} />)}
       <ul className="dashboard-data-list">{preview.slice(0, limit).map(emailPreviewLine)}</ul></>;
   }
   function healthStatusLine(h: FamilyHealthStatus) {
@@ -763,15 +824,11 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
   }
   function newsBody(limit: number) {
     const failing = newsSources.filter(s => s.lastError);
-    return <>{data.news.loading && <p className="source-note">Loading what I’ve read…</p>}{data.news.error && <p className="source-note" role="status">News couldn’t load. Retry or check source setup.</p>}{data.news.data && !newsSources.length && <p className="dashboard-empty">Paste a news page and I’ll start reading it for you.</p>}{failing.map(s => <p key={s.uuid} className="source-note">Couldn’t read {s.host} last time. {s.lastError}</p>)}<ul className="dashboard-data-list">{news.slice(0, limit).map((n, i) => <li key={`${n.url}-${i}`}><ExternalLink url={n.url}><strong>{n.title}</strong><small>{n.source} · {dateLabel(n.firstSeen)}</small></ExternalLink></li>)}</ul>{data.news.data && newsSources.length > 0 && !news.length && <p className="dashboard-empty">Nothing new on these pages yet — I’ll keep looking.</p>}</>;
+    return <>{data.news.loading && <p className="source-note">Loading what I’ve read…</p>}{data.news.error && <><p className="source-note" role="status">News couldn’t load.</p><button type="button" className="source-fix" onClick={retryData}>Retry <span>↗</span></button></>}{data.news.data && !newsSources.length && <EmptyCta text="Paste a news page and I’ll start reading it for you." action="Add a news page" onClick={() => setSourcesOpen(true)} />}{failing.map(s => <p key={s.uuid} className="source-note">Couldn’t read {s.host} last time. {s.lastError}</p>)}{failing.length > 0 && <button type="button" className="source-fix" onClick={() => setSourcesOpen(true)}>Fix {failing.length === 1 ? 'this page' : 'these pages'} <span>↗</span></button>}<ul className="dashboard-data-list">{news.slice(0, limit).map((n, i) => <li key={`${n.url}-${i}`}><ExternalLink url={n.url}><strong>{n.title}</strong><small>{n.source} · {dateLabel(n.firstSeen)}</small></ExternalLink></li>)}</ul>{data.news.data && newsSources.length > 0 && !news.length && <p className="dashboard-empty">Nothing new on these pages yet — I’ll keep looking.</p>}</>;
   }
-  // A card built entirely from connectors nobody has linked yet.
-  const unlinked = (id: string) => {
-    const keys = CARD_SOURCES[id];
-    return !!keys && !!summary && keys.every(key => summary[key]?.status === 'not_connected');
-  };
-  // The fixed order, minus cards built entirely from unlinked connectors.
-  const ranked = DEFAULT_CARD_ORDER.filter(id => !unlinked(id)).map(id => ({ id }));
+  // The fixed order. Every card stays, even one whose apps are all unlinked:
+  // it carries the Connect buttons that would fill it.
+  const ranked = DEFAULT_CARD_ORDER.map(id => ({ id }));
   function card(id: string, name: string, title: string, body: ReactNode, action: string, click: () => void, count?: number) {
     return <article className={`dashboard-card card-${id}`} id={`dashboard-${name.toLowerCase()}`} key={id}>
       <div className="dashboard-card-head">
@@ -788,19 +845,20 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
     // is more use than dropping someone straight into the settings panel.
     calendar: card('calendar', 'Calendar', 'Calendar', calendarBody(3), 'View schedule', go('Calendar'), summary?.calendar.data?.events.length),
     health: card('health', 'Health', 'Health & Performance', healthBody(), 'View health', go('Health')),
-    family: card('family', 'Family', 'Family', <>{sickFamily.length > 0 && <><p className="source-note">Family health watch</p><ul className="dashboard-data-list">{sickFamily.slice(0, 3).map(healthStatusLine)}</ul></>}<p className="source-note">From your memories</p>{data.facts.error ? <p className="dashboard-empty">Memories couldn’t load.</p> : data.facts.loading ? <p className="dashboard-empty">Loading memories…</p> : family.length ? <Facts facts={family.slice(0, 3)} /> : <p className="dashboard-empty">No family memories saved yet.</p>}<SourceBlock source={summary?.familyChores} label="Family Chores · today" name="Family Chores"><ul className="dashboard-data-list">{chores.slice(0, 3).map((c, i) => <li key={i}><strong>{c.completed ? '✓' : '○'} {c.title}</strong><small>{c.completed ? 'Completed' : c.status || 'Open'}</small></li>)}</ul>{!chores.length && <p className="dashboard-empty">No chores returned for today.</p>}</SourceBlock></>, 'View family', go('Family'), sickFamily.length || undefined),
+    family: card('family', 'Family', 'Family', <>{sickFamily.length > 0 && <><p className="source-note">Family health watch</p><ul className="dashboard-data-list">{sickFamily.slice(0, 3).map(healthStatusLine)}</ul></>}<p className="source-note">From your memories</p>{data.facts.error ? <EmptyCta text="Memories couldn’t load." action="Retry" onClick={retryData} /> : data.facts.loading ? <p className="dashboard-empty">Loading memories…</p> : family.length ? <Facts facts={family.slice(0, 3)} /> : <EmptyCta text="No family memories saved yet." action="Tell her about them" onClick={() => onAsk('Let me tell you about my family.')} />}<SourceBlock source={summary?.familyChores} label="Family Chores · today" name="Family Chores" fix={fixFor('familyChores')}><ul className="dashboard-data-list">{chores.slice(0, 3).map((c, i) => <li key={i}><strong>{c.completed ? '✓' : '○'} {c.title}</strong><small>{c.completed ? 'Completed' : c.status || 'Open'}</small></li>)}</ul>{!chores.length && <p className="dashboard-empty">No chores returned for today.</p>}</SourceBlock></>, 'View family', go('Family'), sickFamily.length || undefined),
     community: card('community', 'Community', 'Community', <>
       <p className="source-note">Around your watched places</p>
       {data.nearby.loading ? <p className="dashboard-empty">Checking nearby…</p>
-        : data.nearby.error ? <p className="dashboard-empty">Nearby activity couldn’t load.</p>
+        : data.nearby.error ? <EmptyCta text="Nearby activity couldn’t load." action="Retry" onClick={retryData} />
           : nearbyCalls.length || nearbyWeather.length ? <ul className="dashboard-data-list">{nearbyWeather.slice(0, 1).map(weatherLine)}{nearbyCalls.slice(0, nearbyWeather.length ? 2 : 3).map(incidentLine)}</ul>
             : <p className="dashboard-empty">Quiet near your places.</p>}
-      {communityPlaces.length > 0 && <><p className="source-note">Places you’ve mentioned</p><Facts facts={communityPlaces.slice(0, 2)} /></>}
+      {communityPlaces.length > 0 ? <><p className="source-note">Places you’ve mentioned</p><Facts facts={communityPlaces.slice(0, 2)} /></>
+        : onPlaces && !data.nearby.error && <button type="button" className="source-fix" onClick={onPlaces}>Add a place to watch <span>↗</span></button>}
     </>, 'View community', go('Community'), nearbyCalls.length + nearbyWeather.length || undefined),
     mail: card('mail', 'Mail', 'Mail', mailBody(3), 'Review inbox', go('Mail'), summary?.emailTriage.data?.newCount),
     work: card('work', 'Work', 'Work', workBody(1), 'View work', go('Work')),
     news: card('news', 'News', 'News & Updates', newsBody(3), 'View news', go('News'), news.length || undefined),
-    projects: card('projects', 'Projects', 'Projects', <><SourceBlock source={summary?.jira} label="Jira projects · your assigned issues" name="Jira">{issues.length ? <ul className="dashboard-data-list">{[...new Set(issues.map(i => i.project))].slice(0, 3).map(project => <li key={project}><strong>{project}</strong><small>{issues.filter(i => i.project === project).length} assigned issues in this snapshot</small></li>)}</ul> : <p className="dashboard-empty">No assigned issues in this snapshot.</p>}</SourceBlock><p className="source-note">Saved goals</p>{projects.length ? <Facts facts={projects.slice(0, 2)} /> : <p className="dashboard-empty">{data.facts.error ? 'Memories unavailable.' : 'No saved goals yet.'}</p>}</>, 'View projects', go('Projects')),
+    projects: card('projects', 'Projects', 'Projects', <><SourceBlock source={summary?.jira} label="Jira projects · your assigned issues" name="Jira" fix={fixFor('jira')}>{issues.length ? <ul className="dashboard-data-list">{[...new Set(issues.map(i => i.project))].slice(0, 3).map(project => <li key={project}><strong>{project}</strong><small>{issues.filter(i => i.project === project).length} assigned issues in this snapshot</small></li>)}</ul> : <p className="dashboard-empty">No assigned issues in this snapshot.</p>}</SourceBlock><p className="source-note">Saved goals</p>{projects.length ? <Facts facts={projects.slice(0, 2)} /> : data.facts.error ? <EmptyCta text="Memories unavailable." action="Retry" onClick={retryData} /> : <EmptyCta text="No saved goals yet." action="Tell her what you’re working towards" onClick={() => onAsk('Here is what I am working towards right now.')} />}</>, 'View projects', go('Projects')),
   };
 
   // --- The section pages ---------------------------------------------------
@@ -826,18 +884,18 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
       </>}
     >
       <Panel title="Today’s schedule" note={timeZone} wide>
-        {!ready(summary?.calendar) ? <Unavailable source={summary?.calendar} name="Google Calendar" onPanel={() => onPanel('integrations')} />
+        {!ready(summary?.calendar) ? unavailable('calendar', 'Google Calendar')
           : !todayEvents.length ? <p className="dashboard-empty">Nothing on the calendar for today.</p>
             : <ul className="dashboard-data-list calendar-events">{todayEvents.map((event, i) => <li key={`${event.id}-${i}`}><span className="event-dot" /><div><small>{eventTime(event, timeZone)}</small><strong>{event.title}</strong>{event.location && <small>{event.location}</small>}{event.shared && <small>{event.calendar}</small>}</div></li>)}</ul>}
       </Panel>
       <Panel title="Waiting on you" note={pending.length ? `${pending.length} open` : undefined}>
         {data.actions.loading ? <p className="dashboard-empty">Checking approvals…</p>
-          : data.actions.error ? <p className="dashboard-empty">Approvals couldn’t load.</p>
+          : data.actions.error ? <EmptyCta text="Approvals couldn’t load." action="Retry" onClick={retryData} />
             : pending.length ? <><ul className="dashboard-data-list">{pending.map(a => <li key={a.uuid}><strong>{a.label}</strong><small>{a.summary}</small></li>)}</ul><button className="dashboard-chat-cta" onClick={() => onPanel('actions')}>Review them <span>↗</span></button></>
               : <p className="dashboard-empty">Nothing waiting for your approval.</p>}
       </Panel>
       <Panel title="Chores today" note={summary?.familyChores.data?.name}>
-        {!ready(summary?.familyChores) ? <Unavailable source={summary?.familyChores} name="Family Chores" onPanel={() => onPanel('integrations')} />
+        {!ready(summary?.familyChores) ? unavailable('familyChores', 'Family Chores')
           : !chores.length ? <p className="dashboard-empty">No chores returned for today.</p>
             : <ul className="dashboard-data-list chore-list">{chores.map((c, i) => <li key={i} className={c.completed ? 'chore-done' : ''}><strong>{c.completed ? '✓' : '○'} {c.title}</strong><small>{c.completed ? 'Completed' : c.status || 'Open'}</small></li>)}</ul>}
       </Panel>
@@ -861,7 +919,7 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
       </>}
     >
       <Panel title="Your schedule" note={ready(summary?.calendar) ? `${events.length} events` : undefined} wide>
-        {!ready(summary?.calendar) ? <Unavailable source={summary?.calendar} name="Google Calendar" onPanel={() => onPanel('integrations')} />
+        {!ready(summary?.calendar) ? unavailable('calendar', 'Google Calendar')
           : !days.length ? <p className="dashboard-empty">No upcoming events in this window.</p>
             : days.map(day => <div className="day-group" key={day}>
               <h3>{dayHeading(day, today)}</h3>
@@ -892,28 +950,28 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
     >
       <Panel title="Heart" note={`goals · ${HEART_GOALS.restingHeartRate} bpm resting, ${HEART_GOALS.hrvMs} ms HRV`} wide>
         {ready(summary?.recovery) ? <div className="health-metrics health-metrics-wide">{heartMetrics(true)}</div>
-          : <Unavailable source={summary?.recovery} name="WHOOP recovery" onPanel={() => onPanel('integrations')} />}
+          : unavailable('recovery', 'WHOOP recovery')}
       </Panel>
       <Panel title="Resting heart rate" note={`45–75 bpm · line is your ${HEART_GOALS.restingHeartRate} goal`}>
-        {ready(summary?.recovery) ? <Trend rows={rhrWeek} min={45} max={75} goal={HEART_GOALS.restingHeartRate} unit="resting beats per minute" neutral /> : <Unavailable source={summary?.recovery} name="WHOOP recovery" onPanel={() => onPanel('integrations')} />}
+        {ready(summary?.recovery) ? <Trend rows={rhrWeek} min={45} max={75} goal={HEART_GOALS.restingHeartRate} unit="resting beats per minute" neutral /> : unavailable('recovery', 'WHOOP recovery')}
       </Panel>
       <Panel title="HRV" note={`20–90 ms · line is your ${HEART_GOALS.hrvMs} goal`}>
-        {ready(summary?.recovery) ? <Trend rows={hrvWeek} min={20} max={90} goal={HEART_GOALS.hrvMs} unit="milliseconds of heart rate variability" neutral /> : <Unavailable source={summary?.recovery} name="WHOOP recovery" onPanel={() => onPanel('integrations')} />}
+        {ready(summary?.recovery) ? <Trend rows={hrvWeek} min={20} max={90} goal={HEART_GOALS.hrvMs} unit="milliseconds of heart rate variability" neutral /> : unavailable('recovery', 'WHOOP recovery')}
       </Panel>
       <Panel title="Average heart rate" note="50–90 bpm · whole day">
-        {ready(summary?.strain) ? <Trend rows={avgHrWeek} min={50} max={90} unit="average beats per minute" neutral /> : <Unavailable source={summary?.strain} name="WHOOP strain" onPanel={() => onPanel('integrations')} />}
+        {ready(summary?.strain) ? <Trend rows={avgHrWeek} min={50} max={90} unit="average beats per minute" neutral /> : unavailable('strain', 'WHOOP strain')}
       </Panel>
       <Panel title="Recovery" note="last 7 days · %">
-        {ready(summary?.recovery) ? <Trend rows={recoveryWeek} max={100} unit="percent recovered" /> : <Unavailable source={summary?.recovery} name="WHOOP recovery" onPanel={() => onPanel('integrations')} />}
+        {ready(summary?.recovery) ? <Trend rows={recoveryWeek} max={100} unit="percent recovered" /> : unavailable('recovery', 'WHOOP recovery')}
       </Panel>
       <Panel title="Sleep" note="last 7 days · hours asleep">
-        {ready(summary?.sleep) ? <Trend rows={sleepWeek} max={9} unit="hours asleep" format={v => hoursMinutes(v)} /> : <Unavailable source={summary?.sleep} name="WHOOP sleep" onPanel={() => onPanel('integrations')} />}
+        {ready(summary?.sleep) ? <Trend rows={sleepWeek} max={9} unit="hours asleep" format={v => hoursMinutes(v)} /> : unavailable('sleep', 'WHOOP sleep')}
       </Panel>
       <Panel title="Day strain" note="last 7 days · 0–21">
-        {ready(summary?.strain) ? <Trend rows={strainWeek} max={21} unit="day strain" format={v => v.toFixed(1)} neutral /> : <Unavailable source={summary?.strain} name="WHOOP strain" onPanel={() => onPanel('integrations')} />}
+        {ready(summary?.strain) ? <Trend rows={strainWeek} max={21} unit="day strain" format={v => v.toFixed(1)} neutral /> : unavailable('strain', 'WHOOP strain')}
       </Panel>
       <Panel title="Activities" note="Strava · last 7 days" wide>
-        {!ready(summary?.activity) ? <Unavailable source={summary?.activity} name="Strava" onPanel={() => onPanel('integrations')} />
+        {!ready(summary?.activity) ? unavailable('activity', 'Strava')
           : !activities.length ? <p className="dashboard-empty">No recent activities.</p>
             : <ul className="dashboard-data-list">{activities.map((a, i) => <li key={i}><strong>{a.name}</strong><small>{a.type} · {a.distance_mi} mi · {Math.round(a.moving_time_s / 60)} min · {dateLabel(a.start)}</small></li>)}</ul>}
       </Panel>
@@ -936,7 +994,7 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
         {familyHealthPanel()}
       </Panel>
       <Panel title="Chores today" note={summary?.familyChores.data?.name} wide>
-        {!ready(summary?.familyChores) ? <Unavailable source={summary?.familyChores} name="Family Chores" onPanel={() => onPanel('integrations')} />
+        {!ready(summary?.familyChores) ? unavailable('familyChores', 'Family Chores')
           : !chores.length ? <p className="dashboard-empty">No chores returned for today.</p>
             : <>
               <div className="progress-track" role="img" aria-label={`${choresDone} of ${chores.length} chores complete`}><span style={{ width: `${(choresDone / chores.length) * 100}%` }} /></div>
@@ -944,7 +1002,7 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
             </>}
       </Panel>
       <Panel title="People &amp; pets" note="from your memories" wide>
-        {data.facts.error ? <p className="dashboard-empty">Memories couldn’t load.</p>
+        {data.facts.error ? <EmptyCta text="Memories couldn’t load." action="Retry" onClick={retryData} />
           : data.facts.loading ? <p className="dashboard-empty">Loading memories…</p>
             : family.length ? <><Facts facts={family} /><button className="dashboard-chat-cta" onClick={() => onPanel('memory')}>Explore memories <span>↗</span></button></>
               : <><p className="dashboard-empty">No family memories saved yet. Tell Athena about them and she will keep them.</p><button className="dashboard-chat-cta" onClick={() => onAsk('Let me tell you about my family.')}>Tell her <span>↗</span></button></>}
@@ -968,7 +1026,7 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
     >
       <Panel title="Near your places" note={updated ? `updated ${updated}` : undefined} wide>
         {data.nearby.loading ? <p className="dashboard-empty">Checking nearby…</p>
-          : data.nearby.error ? <p className="dashboard-empty">Nearby activity couldn’t load.</p>
+          : data.nearby.error ? <EmptyCta text="Nearby activity couldn’t load." action="Retry" onClick={retryData} />
             : <>
               {nearbyWeather.length > 0 && <ul className="dashboard-data-list">{nearbyWeather.map(weatherLine)}</ul>}
               {nearbyCalls.length ? <ul className="dashboard-data-list">{nearbyCalls.map(incidentLine)}</ul> : <p className="dashboard-empty">Quiet near your places.</p>}
@@ -976,7 +1034,7 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
         {onPlaces && <button className="dashboard-chat-cta" onClick={onPlaces}>Watched places <span>↗</span></button>}
       </Panel>
       <Panel title="Places you’ve mentioned" note="from your memories" wide>
-        {data.facts.error ? <p className="dashboard-empty">Memories couldn’t load.</p>
+        {data.facts.error ? <EmptyCta text="Memories couldn’t load." action="Retry" onClick={retryData} />
           : data.facts.loading ? <p className="dashboard-empty">Loading memories…</p>
             : communityPlaces.length ? <Facts facts={communityPlaces} />
               : <><p className="dashboard-empty">No places saved yet — your church, the kids’ school, the park you go to.</p><button className="dashboard-chat-cta" onClick={() => onAsk('Let me tell you about the places in my community.')}>Tell her <span>↗</span></button></>}
@@ -998,7 +1056,7 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
       </>}
     >
       <Panel title="Jira" note={summary?.jira.data?.partial ? 'Some sites could not be included' : 'assigned open issues'} wide>
-        {!ready(summary?.jira) ? <Unavailable source={summary?.jira} name="Jira" onPanel={() => onPanel('integrations')} />
+        {!ready(summary?.jira) ? unavailable('jira', 'Jira')
           : !issues.length ? <p className="dashboard-empty">No assigned open issues returned.</p>
             : byStatus.map(status => <div className="day-group" key={status}>
               <h3>{status} <span className="card-count">{issues.filter(i => i.status === status).length}</span></h3>
@@ -1006,12 +1064,12 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
             </div>)}
       </Panel>
       <Panel title="Slack" note={summary?.slack.data?.workspace}>
-        {!ready(summary?.slack) ? <Unavailable source={summary?.slack} name="Slack" onPanel={() => onPanel('integrations')} />
+        {!ready(summary?.slack) ? unavailable('slack', 'Slack')
           : !mentions.length ? <p className="dashboard-empty">No mentions returned in the last 7 days.</p>
             : <ul className="dashboard-data-list">{mentions.map(m => <li key={m.timestamp}><ExternalLink url={m.url}><strong>#{m.channel}</strong><small>{m.text}</small></ExternalLink></li>)}</ul>}
       </Panel>
       <Panel title="Saved work context" note="what Athena remembers" wide>
-        {facts.filter(f => f.category === 'work').length ? <Facts facts={facts.filter(f => f.category === 'work')} /> : <p className="dashboard-empty">Nothing saved about your work yet.</p>}
+        {facts.filter(f => f.category === 'work').length ? <Facts facts={facts.filter(f => f.category === 'work')} /> : <><p className="dashboard-empty">Nothing saved about your work yet.</p><button className="dashboard-chat-cta" onClick={() => onAsk('Let me tell you about my work.')}>Tell her <span>↗</span></button></>}
       </Panel>
     </SectionPage>;
   }
@@ -1042,7 +1100,7 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
       </>}
     >
       <Panel title="Your inbox" note={mailLoading ? 'Loading…' : `${mailItems.length} to review`} wide>
-        {!ready(summary?.emailTriage) ? <Unavailable source={summary?.emailTriage} name="Gmail" onPanel={() => onPanel('integrations')} /> : <>
+        {!ready(summary?.emailTriage) ? unavailable('emailTriage', 'Gmail') : <>
           <button className="dashboard-chat-cta" onClick={() => void scanMoreMail()} disabled={mailScanning}>{mailScanning ? 'Scanning…' : 'Scan more'} <span>↗</span></button>
           {mailScanNote && <p className="source-note">{mailScanNote}</p>}
           {mailError && <p className="dashboard-notice" role="status">{mailError}</p>}
@@ -1075,7 +1133,7 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
       </>}
     >
       <Panel title="Jira projects" note="your assigned issues" wide>
-        {!ready(summary?.jira) ? <Unavailable source={summary?.jira} name="Jira" onPanel={() => onPanel('integrations')} />
+        {!ready(summary?.jira) ? unavailable('jira', 'Jira')
           : !names.length ? <p className="dashboard-empty">No assigned open issues returned.</p>
             : names.map(project => <div className="day-group" key={project}>
               <h3>{project} <span className="card-count">{issues.filter(i => i.project === project).length}</span></h3>
@@ -1083,7 +1141,7 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
             </div>)}
       </Panel>
       <Panel title="Goals" note="saved in memory" wide>
-        {data.facts.error ? <p className="dashboard-empty">Memories unavailable.</p>
+        {data.facts.error ? <EmptyCta text="Memories unavailable." action="Retry" onClick={retryData} />
           : projects.length ? <><Facts facts={projects} /><button className="dashboard-chat-cta" onClick={() => onAsk('Help me pick the next step on one of my goals.')}>Pick a next step <span>↗</span></button></>
             : <><p className="dashboard-empty">No saved goals yet. Tell Athena what you are working towards.</p><button className="dashboard-chat-cta" onClick={() => onAsk('Here is what I am working towards right now.')}>Tell her <span>↗</span></button></>}
       </Panel>
@@ -1109,7 +1167,7 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
     >
       <Panel title="What I’m watching" note={`${newsSources.length} page${newsSources.length === 1 ? '' : 's'}`}>
         {data.news.loading ? <p className="dashboard-empty">Loading your list…</p>
-          : data.news.error ? <p className="dashboard-empty" role="status">News couldn’t load. Retry or check source setup.</p>
+          : data.news.error ? <EmptyCta text="News couldn’t load." action="Retry" onClick={retryData} />
             : <>
               <ul className="dashboard-data-list">{newsSources.map(s => <li key={s.uuid}>
                 <strong>{s.label}{s.enabled ? '' : ' (paused)'}</strong>

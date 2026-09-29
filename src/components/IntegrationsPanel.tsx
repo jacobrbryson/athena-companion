@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Drawer, Label, ago } from './Drawer';
 import {
   consentApi,
@@ -67,9 +67,12 @@ const CONSENT_COPY: Record<string, string> = {
 export function IntegrationsPanel({
   onClose,
   callback,
+  askConsentFor,
 }: {
   onClose: () => void;
   callback?: IntegrationCallback | null;
+  /** Open on this provider's consent prompt — a dashboard Connect that hit the gate. */
+  askConsentFor?: string | null;
 }) {
   const [providers, setProviders] = useState<IntegrationProvider[] | null>(null);
   const [granted, setGranted] = useState<Set<string>>(new Set());
@@ -98,6 +101,17 @@ export function IntegrationsPanel({
       setError((e as Error).message || 'Could not load integrations.');
     }
   }, []);
+
+  // Once the list and consent state are in, open straight on the prompt the
+  // dashboard asked for — only if that provider still needs consent, so an
+  // already-agreed one just shows the list. Accepting still takes the tick.
+  const askedConsent = useRef(false);
+  useEffect(() => {
+    if (askedConsent.current || !askConsentFor || !providers) return;
+    askedConsent.current = true;
+    const target = providers.find((p) => p.provider === askConsentFor);
+    if (target?.requires_consent && !granted.has(target.requires_consent)) setConsentFor(target);
+  }, [askConsentFor, providers, granted]);
 
   useEffect(() => {
     void refresh();
