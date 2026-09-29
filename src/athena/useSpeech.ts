@@ -85,7 +85,47 @@ export interface Speech {
    */
   prepare: (text: string, options?: { lyrics?: string }) => PreparedSpeech;
   speak: (text: string, onEnd?: () => void) => void;
+  /**
+   * Say her "let me check your calendar, hmm…" while a reply is being
+   * written. Plays at once if this device already has her voice for the line;
+   * otherwise it is fetched quietly for next time and this turn stays silent.
+   * A reply that is ready first waits for the line to finish.
+   */
+  sayFiller: (text: string) => void;
   cancel: () => void;
+}
+
+// Filler clips, kept across app restarts: the lines are a small fixed set, and
+// fetching one when it is needed would arrive after the reply it covers for.
+const FILLER_CACHE = 'athena-filler-voice-v1';
+const fillerMemory = new Map<string, SpeechResponse>();
+const fillerKey = (text: string) => `https://athena.local/filler/${encodeURIComponent(text)}`;
+
+async function cachedFiller(text: string): Promise<SpeechResponse | null> {
+  const hit = fillerMemory.get(text);
+  if (hit) return hit;
+  try {
+    const res = await (await caches.open(FILLER_CACHE)).match(fillerKey(text));
+    if (!res) return null;
+    const payload = (await res.json()) as SpeechResponse;
+    if (!payload?.audioBase64) return null;
+    fillerMemory.set(text, payload);
+    return payload;
+  } catch {
+    return null; // Cache Storage unavailable: memory only.
+  }
+}
+
+async function storeFiller(text: string, payload: SpeechResponse): Promise<void> {
+  fillerMemory.set(text, payload);
+  try {
+    await (await caches.open(FILLER_CACHE)).put(
+      fillerKey(text),
+      new Response(JSON.stringify(payload), { headers: { 'Content-Type': 'application/json' } })
+    );
+  } catch {
+    // Memory only this session.
+  }
 }
 
 function pcmDurationMs(audioBase64: string, sampleRate: number, channels: number): number {
@@ -109,6 +149,10 @@ export function useSpeech(): Speech {
   // The prepared speech that last took the voice; a song waiting behind its
   // intro only plays if it still holds it.
   const ownerRef = useRef<string | null>(null);
+  // While a filler plays, a reply that is ready waits on this instead of
+  // cutting the line off mid-word.
+  const fillerDoneRef = useRef<Promise<void> | null>(null);
+  const fillerFetchesRef = useRef(new Set<string>());
 
   const finish = useCallback((requestId?: string) => {
     const pending = pendingRef.current;
@@ -298,6 +342,11 @@ export function useSpeech(): Speech {
       };
 
       const play = (onEnd?: () => void) => {
+        const filler = fillerDoneRef.current;
+        if (filler) {
+          void filler.then(() => play(onEnd));
+          return;
+        }
         if (cancelled || !enabledRef.current || !bridgeRef.current || (!audio && !song)) {
           onEnd?.();
           return;
@@ -330,10 +379,49 @@ export function useSpeech(): Speech {
     [prepare]
   );
 
+  const sayFiller = useCallback(
+    (text: string) => {
+      const line = text?.trim();
+      if (!line || !enabledRef.current || !bridgeRef.current) return;
+      void cachedFiller(line).then((clip) => {
+        if (!clip) {
+          // Not on this device yet: fetch it once, quietly, for next time.
+          if (fillerFetchesRef.current.has(line)) return;
+          fillerFetchesRef.current.add(line);
+          void fetchAudio(line, false, new AbortController().signal)
+            .then((payload) => (payload ? storeFiller(line, payload) : undefined))
+            .finally(() => fillerFetchesRef.current.delete(line));
+          return;
+        }
+        // Something is already speaking (a late reply, a greeting): skip.
+        const bridge = bridgeRef.current;
+        if (!enabledRef.current || !bridge || pendingRef.current) return;
+        const clipId = `filler:${crypto.randomUUID()}`;
+        let release: () => void = () => undefined;
+        const done = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        fillerDoneRef.current = done;
+        const end = () => {
+          if (fillerDoneRef.current === done) fillerDoneRef.current = null;
+          release();
+        };
+        const timer = window.setTimeout(
+          () => finish(clipId),
+          pcmDurationMs(clip.audioBase64, clip.sampleRate, clip.channels) + 2000
+        );
+        pendingRef.current = { id: clipId, abort: new AbortController(), timer, onEnd: end };
+        const unityPayload: UnitySpeechPayload = { requestId: clipId, ...clip };
+        bridge.sendToGameObject('AthenaBridge', 'PlaySpeech', JSON.stringify(unityPayload));
+      });
+    },
+    [fetchAudio, finish]
+  );
+
   const toggle = useCallback(() => setEnabled((value) => !value), []);
 
   return useMemo(
-    () => ({ isSupported, enabled, attachUnity, toggle, prepare, speak, cancel }),
-    [attachUnity, cancel, enabled, isSupported, prepare, speak, toggle]
+    () => ({ isSupported, enabled, attachUnity, toggle, prepare, speak, sayFiller, cancel }),
+    [attachUnity, cancel, enabled, isSupported, prepare, sayFiller, speak, toggle]
   );
 }

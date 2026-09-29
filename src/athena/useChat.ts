@@ -51,6 +51,12 @@ export interface ChatOptions {
    * callers are expected to cap themselves (see MAX_VOICE_HOLD_MS).
    */
   onBeforeAthenaMessage?: (message: Message) => Promise<void>;
+  /**
+   * Called once per sent message with the line she says while she works
+   * ("Let me check your calendar, hmm…"), when the server guessed one. For
+   * speaking it; the transcript's thinking bubble shows it either way.
+   */
+  onFiller?: (text: string) => void;
 }
 
 /** Fired when Athena proposes an action. See useActions. */
@@ -136,6 +142,8 @@ export function useChat(profileUuid: string, options?: ChatOptions): ChatState {
   // without being re-created on every render.
   const gateRef = useRef<ChatOptions['onBeforeAthenaMessage']>(options?.onBeforeAthenaMessage);
   gateRef.current = options?.onBeforeAthenaMessage;
+  const onFillerRef = useRef<ChatOptions['onFiller']>(options?.onFiller);
+  onFillerRef.current = options?.onFiller;
 
   const storageKey = `companion_sessionId:${profileUuid}`;
 
@@ -452,14 +460,28 @@ export function useChat(profileUuid: string, options?: ChatOptions): ChatState {
         sessionId: session,
         // Surface + timezone: lets Athena keep replies speakable when driving
         // and read "yesterday" in the person's local day during recall.
-        companion: { device: 'web', driving: false, ...opts?.companion, timezone: localTimezone() },
+        // `filler`: ask for the "let me check…" line in the reply to this
+        // POST, so it shows (and is spoken) even when the socket is down.
+        companion: { device: 'web', driving: false, ...opts?.companion, filler: true, timezone: localTimezone() },
       };
 
       // Last turn's line never carries over to this one.
       setFiller(null);
       setThinking(true);
       try {
-        const res = await api.post<{ message?: Partial<Message> }>('/api/v1/message', body);
+        const res = await api.post<{ message?: Partial<Message>; filler?: { text?: string } }>(
+          '/api/v1/message',
+          body
+        );
+        const line = typeof res?.filler?.text === 'string' ? res.filler.text.trim() : '';
+        if (line && isThinkingRef.current) {
+          setFiller(line);
+          try {
+            onFillerRef.current?.(line);
+          } catch (err) {
+            console.warn('useChat: onFiller failed', err);
+          }
+        }
         if (res?.message) {
           const message = res.message;
           if (typeof message.text === 'string' && typeof message.is_human === 'boolean') {

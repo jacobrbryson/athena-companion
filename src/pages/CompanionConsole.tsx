@@ -72,7 +72,17 @@ export function CompanionConsole() {
     await Promise.race([prepared.ready, new Promise((r) => window.setTimeout(r, MAX_VOICE_HOLD_MS))]);
   }, []);
 
-  const chat = useChat(profile!.uuid, { onBeforeAthenaMessage: holdForVoice });
+  // Her "let me check your calendar, hmm…", spoken while the reply is
+  // written — unless the phone's hands-free listener is voicing this turn.
+  const sayFiller = useCallback(async (text: string) => {
+    if (await handsFreeRunning()) return;
+    ttsRef.current.sayFiller(text);
+  }, []);
+
+  const chat = useChat(profile!.uuid, {
+    onBeforeAthenaMessage: holdForVoice,
+    onFiller: (text) => void sayFiller(text),
+  });
   // Proposals Athena is waiting on. Gated on `arriving` being over so a card
   // cannot land on top of the arrival sequence.
   const actions = useActions(!!profile);
