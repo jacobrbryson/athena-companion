@@ -1018,6 +1018,12 @@ async function route(method: string, path: string, body?: any): Promise<any> {
   if (p === '/api/v1/message' && method === 'POST') {
     const human = { uuid: `h-${Date.now()}`, is_human: true, text: body.text, created_at: new Date().toISOString() };
     messages.push(human);
+    // Stands in for the server's `filler` push: the guessed "let me check…"
+    // line the chat shows while she works.
+    if (/tonight|tomorrow|calendar|plans|going on|sleep|recover/i.test(body.text)) {
+      const line = /sleep|recover/i.test(body.text) ? 'Let me check WHOOP, hmm…' : 'Let me check your calendar, hmm…';
+      setTimeout(() => window.dispatchEvent(new CustomEvent('athena-chat-filler', { detail: line })), 250);
+    }
     setTimeout(() => {
       const remember = /remember|recall/i.test(body.text);
       const proposed = maybePropose(body.text);

@@ -64,12 +64,26 @@ export const ACTION_PROPOSED_EVENT = 'athena-action-proposed';
  */
 export const DASHBOARD_REFRESH_EVENT = 'athena-dashboard-refresh';
 
+/**
+ * The line she says while she works ("Let me check your calendar, hmm…"),
+ * pushed by the server once it has guessed what a message needs. Re-broadcast
+ * as a DOM event like the two above, so mock mode (which has no socket) can
+ * stand in for the push the same way.
+ */
+export const CHAT_FILLER_EVENT = 'athena-chat-filler';
+
 export type ChatTransport = 'connecting' | 'ws' | 'polling';
 
 export interface ChatState {
   sessionId: string | null;
   messages: Message[];
   isThinking: boolean;
+  /**
+   * What she says while she works — "Let me check your calendar, hmm…" —
+   * when the server guessed one for the pending reply. Null otherwise (and
+   * always on the polling transport, which has no push to carry it).
+   */
+  filler: string | null;
   wsConnected: boolean;
   /** Which channel is currently delivering Athena's replies. */
   transport: ChatTransport;
@@ -99,6 +113,7 @@ export function useChat(profileUuid: string, options?: ChatOptions): ChatState {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [isThinking, setIsThinking] = useState(false);
+  const [filler, setFiller] = useState<string | null>(null);
   const [wsConnected, setWsConnected] = useState(false);
   const [transport, setTransport] = useState<ChatTransport>('connecting');
   const [ready, setReady] = useState(false);
@@ -127,6 +142,8 @@ export function useChat(profileUuid: string, options?: ChatOptions): ChatState {
   const setThinking = useCallback((value: boolean) => {
     isThinkingRef.current = value;
     setIsThinking(value);
+    // A filler belongs to one pending reply; it goes when the reply does.
+    if (!value) setFiller(null);
   }, []);
 
   /**
@@ -254,6 +271,11 @@ export function useChat(profileUuid: string, options?: ChatOptions): ChatState {
           }
           if (msg?.rpc === 'sessionStatus' && msg.session?.is_busy === true) {
             setThinking(true);
+          }
+          // The line she says while she works. Arrives only while a reply is
+          // pending (a hands-free turn may be the first sign of one).
+          if (msg?.rpc === 'filler' && typeof msg.filler?.text === 'string') {
+            window.dispatchEvent(new CustomEvent(CHAT_FILLER_EVENT, { detail: msg.filler.text }));
           }
           // Athena proposed doing something. Re-broadcast as a DOM event
           // rather than adding it to chat state: the proposal card lives
@@ -400,6 +422,17 @@ export function useChat(profileUuid: string, options?: ChatOptions): ChatState {
     };
   }, [syncMessages]);
 
+  useEffect(() => {
+    const onFiller = (event: Event) => {
+      const text = (event as CustomEvent<unknown>).detail;
+      if (typeof text !== 'string' || !text.trim()) return;
+      setThinking(true);
+      setFiller(text.trim());
+    };
+    window.addEventListener(CHAT_FILLER_EVENT, onFiller);
+    return () => window.removeEventListener(CHAT_FILLER_EVENT, onFiller);
+  }, [setThinking]);
+
   // Thinking watchdog: a reply that never arrives (server error, dropped
   // broadcast) must not pin the UI on "Athena is thinking" forever.
   useEffect(() => {
@@ -422,6 +455,8 @@ export function useChat(profileUuid: string, options?: ChatOptions): ChatState {
         companion: { device: 'web', driving: false, ...opts?.companion, timezone: localTimezone() },
       };
 
+      // Last turn's line never carries over to this one.
+      setFiller(null);
       setThinking(true);
       try {
         const res = await api.post<{ message?: Partial<Message> }>('/api/v1/message', body);
@@ -469,6 +504,7 @@ export function useChat(profileUuid: string, options?: ChatOptions): ChatState {
     sessionId,
     messages,
     isThinking,
+    filler,
     wsConnected,
     transport,
     connected: wsConnected || (ready && transport === 'polling'),

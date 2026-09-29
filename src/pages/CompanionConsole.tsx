@@ -581,8 +581,11 @@ export function CompanionConsole() {
           )}
           {chat.isThinking && (
             <div className="flex justify-start">
-              <p className="rounded-2xl bg-white/5 px-4 py-2 text-sm opacity-60">
-                Athena is thinking<span className="animate-caret">…</span>
+              <p className="max-w-[85%] rounded-2xl bg-white/5 px-4 py-2 text-sm opacity-60">
+                {/* Her "let me check your calendar, hmm…" when the server
+                    guessed one, so the wait says what she's doing. */}
+                {chat.filler ? chat.filler.replace(/[.…\s]+$/, '') : 'Athena is thinking'}
+                <span className="animate-caret">…</span>
               </p>
             </div>
           )}
