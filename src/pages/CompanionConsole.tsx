@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { handsFreeRunning } from '../native/handsFree';
 import { useAuth } from '../auth/AuthContext';
 import { useChat, type Message } from '../athena/useChat';
 import { useVoiceInput } from '../athena/useVoiceInput';
@@ -62,6 +63,8 @@ export function CompanionConsole() {
   const holdForVoice = useCallback(async (message: Message) => {
     const speech = ttsRef.current;
     if (!speech.enabled || !speech.isSupported || !message.text?.trim()) return;
+    // The phone's hands-free listener speaks its own replies.
+    if (await handsFreeRunning()) return;
     // With lyrics, the held voice is her spoken lead-in (as quick as any
     // reply); the song keeps generating behind it.
     const prepared = speech.prepare(message.text, { lyrics: message.lyrics });
