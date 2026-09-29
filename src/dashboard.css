@@ -304,6 +304,7 @@ svg.dashboard-icon-drawn .icon-fill { fill: currentColor; fill-opacity: .9; }
 .stat-tile strong { display: block; margin-top: 7px; font-size: 30px; font-weight: 300; line-height: 1.1; letter-spacing: -.02em; color: #eaf5ff; }
 .stat-tile .stat-small { font-size: 15px; line-height: 1.5; overflow-wrap: anywhere; }
 .stat-tile small { display: block; margin-top: 7px; color: #8fadbe; font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
+.stat-tile small a { color: inherit; text-decoration: underline; text-underline-offset: 2px; } .stat-tile small a:hover { color: #eaf5ff; }
 .stat-good { border-left-color: #33dfb5; } .stat-good strong { color: #7df3d3; }
 .stat-ok { border-left-color: #e8c35c; } .stat-ok strong { color: #f3dc9c; }
 .stat-low { border-left-color: #ff8267; } .stat-low strong { color: #ffb1a0; }

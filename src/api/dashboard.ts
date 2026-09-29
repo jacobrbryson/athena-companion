@@ -106,14 +106,23 @@ export interface EmergencyAlert {
   acknowledgedKey?: string | null;
 }
 /** Month-to-date OpenAI spend (Costs API). OpenAI publishes no prepaid balance, so there is none here. */
-export interface OpenAIBilling { configured: boolean; checkedAt: string; currency?: string; monthStart?: string; costThisMonth?: number; costToday?: number; lineItems?: { name: string; cost: number }[]; daily?: { date: string; cost: number }[] }
+export interface OpenAIBilling { configured: boolean; checkedAt: string; currency?: string; monthStart?: string; costThisMonth?: number; costToday?: number; costAllTime?: number; allTimeSince?: string; lineItems?: { name: string; cost: number }[]; daily?: { date: string; cost: number }[] }
 /** Month-to-date GCP cost for the Athena project, read from the Cloud Billing export in BigQuery. `cost` is net of credits. */
 export interface GcpBilling {
   configured: boolean; checkedAt: string; reason?: 'no_project' | 'no_dataset' | 'no_export'; project?: string | null; dataset?: string;
   invoiceMonth?: string; currency?: string; lastExportAt?: string | null; costThisMonth?: number; grossThisMonth?: number; creditsThisMonth?: number;
+  /** Gemini (and any other model API) billed to the project, and everything else — both net of credits, this month. */
+  llmThisMonth?: number; hostingThisMonth?: number;
+  /** Everything the export holds for the project; it has no history before `dataSince`. */
+  costAllTime?: number; dataSince?: string | null;
+  /** The newest usage the export has reached. A fresh export backfills oldest-first, so this can trail the current month. */
+  dataThrough?: string | null;
   services?: { name: string; cost: number; gross: number }[]; topSkus?: { service: string; name: string; cost: number; gross: number }[]; daily?: { date: string; cost: number }[];
 }
-export interface TwilioBilling { configured: boolean; checkedAt: string; balance?: { amount: string | null; currency: string | null }; smsMessagesSent?: number; smsCostThisMonth?: number }
+export interface TwilioBilling { configured: boolean; checkedAt: string; balance?: { amount: string | null; currency: string | null }; smsMessagesSent?: number; smsCostThisMonth?: number; costAllTime?: number | null }
+export type SystemHealthStatus = 'ok' | 'degraded' | 'down';
+/** Athena's own health: each check says why when it isn't ok. */
+export interface SystemHealth { status: SystemHealthStatus; checkedAt: string; checks: { id: string; label: string; status: SystemHealthStatus; detail: string }[] }
 /**
  * A page Athena watches, and the rhythm she has settled on for it. The rhythm
  * is hers: there is no endpoint for setting it, only for saying which pages to
@@ -267,6 +276,7 @@ export const dashboardApi = {
   systemTwilio: () => api.get<TwilioBilling>('/api/v1/system/twilio-billing'),
   systemOpenAI: () => api.get<OpenAIBilling>('/api/v1/system/openai-billing'),
   systemGcp: () => api.get<GcpBilling>('/api/v1/system/gcp-billing'),
+  systemHealth: () => api.get<SystemHealth>('/api/v1/system/health'),
   sources: () => api.get<{ sources: NewsSource[]; maxSources: number }>('/api/v1/dashboard/news/sources'),
   saveSources: (sources: (string | { url: string; label?: string | null; scope?: 'world' | 'personal' })[]) =>
     api.put<{ sources: NewsSource[] }>('/api/v1/dashboard/news/sources', { sources }),

@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import type { CalendarEvent, Source, JiraIssue, RecoveryDay, DashboardSummary, GcpBilling, TriageEmail, FamilyHealthStatus, HealthSeverity, NearbyIncident, WeatherAlert } from '../api/dashboard';
+import type { CalendarEvent, Source, JiraIssue, RecoveryDay, DashboardSummary, GcpBilling, SystemHealthStatus, TriageEmail, FamilyHealthStatus, HealthSeverity, NearbyIncident, WeatherAlert } from '../api/dashboard';
 import { dashboardApi } from '../api/dashboard';
 import type { Fact } from '../api/companion';
 import { useDashboardData } from './useDashboardData';
@@ -106,8 +106,8 @@ function Issues({ issues }: { issues: JiraIssue[] }) {
 export function Stat({ label, value, note, tone }: { label: string; value: ReactNode; note?: ReactNode; tone?: 'good' | 'ok' | 'low' | 'idle' }) {
   return <div className={`stat-tile${tone ? ` stat-${tone}` : ''}`}><span>{label}</span><strong>{value}</strong>{note && <small>{note}</small>}</div>;
 }
-export function Panel({ title, note, children, wide }: { title: string; note?: ReactNode; children: ReactNode; wide?: boolean }) {
-  return <section className={`section-panel${wide ? ' section-panel-wide' : ''}`}><header><h2>{title}</h2>{note && <span>{note}</span>}</header>{children}</section>;
+export function Panel({ title, note, children, wide, id }: { title: string; note?: ReactNode; children: ReactNode; wide?: boolean; id?: string }) {
+  return <section id={id} className={`section-panel${wide ? ' section-panel-wide' : ''}`}><header><h2>{title}</h2>{note && <span>{note}</span>}</header>{children}</section>;
 }
 /**
  * A source that cannot be read is the whole answer for its panel, so it is
@@ -229,7 +229,33 @@ const GCP_SETUP: Record<NonNullable<GcpBilling['reason']>, string> = {
   no_export: 'Cloud Billing export is not switched on yet, or has not delivered its first rows.',
 };
 
+const HEALTH_LABEL: Record<SystemHealthStatus, { word: string; tone: 'good' | 'ok' | 'low' }> = {
+  ok: { word: 'Good', tone: 'good' },
+  degraded: { word: 'Degraded', tone: 'ok' },
+  down: { word: 'Down', tone: 'low' },
+};
+
+/**
+ * Several providers' figures as one amount. A provider that couldn't be read
+ * is named rather than counted as zero, so a partial total never passes for
+ * the whole one.
+ */
+function combined(parts: { name: string; currency?: string | null; value?: number | null }[]) {
+  const read = parts.filter(p => p.value != null && p.currency);
+  if (!read.length || new Set(read.map(p => p.currency)).size > 1) return { value: '—', missing: parts.map(p => p.name) };
+  return { value: money(read[0].currency, read.reduce((sum, p) => sum + (p.value as number), 0)), missing: parts.filter(p => !read.includes(p)).map(p => p.name) };
+}
+const without = (missing: string[]) => missing.length ? ` · without ${missing.join(', ')}` : '';
+const clock = (iso: string) => new Date(iso).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+
+/** A new export backfills oldest-first; until it reaches this month, this month reads as nothing. */
+function exportBehind(cloud: GcpBilling | null) {
+  if (!cloud?.dataThrough || !cloud.invoiceMonth) return null;
+  return cloud.dataThrough.slice(0, 7).replace('-', '') < cloud.invoiceMonth ? dateLabel(cloud.dataThrough) : null;
+}
+
 function SystemPage({ ctx }: { ctx: SectionContext }) {
+  const health = useSystemRead(dashboardApi.systemHealth);
   const twilio = useSystemRead(dashboardApi.systemTwilio);
   const openai = useSystemRead(dashboardApi.systemOpenAI);
   const gcp = useSystemRead(dashboardApi.systemGcp);
@@ -238,21 +264,43 @@ function SystemPage({ ctx }: { ctx: SectionContext }) {
   const balance = billing?.balance?.amount && billing.balance.currency ? `${billing.balance.currency} ${billing.balance.amount}` : '—';
   const ai = openai.data?.configured ? openai.data : null;
   const cloud = gcp.data?.configured ? gcp.data : null;
+  const behind = exportBehind(cloud);
+  const state = health.data ? HEALTH_LABEL[health.data.status] : null;
+  const failing = health.data?.checks.filter(c => c.status !== 'ok').length ?? 0;
+  const lifetime = combined([
+    { name: 'Twilio', currency: billing?.balance?.currency, value: billing?.configured ? billing.costAllTime : null },
+    { name: 'OpenAI', currency: ai?.currency, value: ai?.costAllTime },
+    { name: 'Google Cloud', currency: cloud?.currency, value: cloud?.costAllTime },
+  ]);
+  const llmCost = combined([
+    { name: 'OpenAI', currency: ai?.currency, value: ai?.costThisMonth },
+    { name: 'Gemini', currency: cloud?.currency, value: cloud?.llmThisMonth },
+  ]);
   return <SectionPage ctx={ctx}
-    eyebrow="ATHENA SYSTEM" title="System" blurb="A small, live view of what the services Athena runs on are costing."
+    eyebrow="ATHENA SYSTEM" title="System" blurb="A small, live view of how Athena is doing and what the services she runs on are costing."
     ask="What should I know about the Athena system right now?"
     stats={<>
-      <Stat label="Twilio balance" value={loading ? '…' : balance} note={billing?.balance?.currency ? 'Current account balance' : 'No balance returned'} tone={billing?.balance?.amount ? 'good' : 'idle'} />
-      <Stat label="OpenAI spend" value={openai.loading ? '…' : money(ai?.currency, ai?.costThisMonth)} note={ai ? `This month · ${money(ai.currency, ai.costToday)} today` : 'Not available'} tone={ai ? undefined : 'idle'} />
-      <Stat label="GCP cost" value={gcp.loading ? '…' : money(cloud?.currency, cloud?.costThisMonth)} note={cloud ? 'This month, after credits' : 'Billing export not ready'} tone={cloud ? undefined : 'idle'} />
-      <Stat label="SMS cost" value={loading ? '…' : billing?.smsCostThisMonth != null && billing?.balance?.currency ? `${billing.balance.currency} ${billing.smsCostThisMonth.toFixed(2)}` : '—'} note={`This month · ${billing?.smsMessagesSent ?? '—'} sent`} />
+      <Stat label="Athena's health" value={health.loading ? '…' : state?.word ?? 'Unknown'} tone={state?.tone ?? 'idle'}
+        note={health.loading ? 'Checking…' : health.data?.status === 'ok' ? `Last check ${clock(health.data.checkedAt)}`
+          : <a href="#system-health" onClick={e => { e.preventDefault(); document.getElementById('system-health')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}>{health.data ? `Why? ${failing} check${failing === 1 ? ' needs' : 's need'} attention` : 'Why? The health check did not answer'} ↓</a>} />
+      <Stat label="Total spend" value={twilio.loading || openai.loading || gcp.loading ? '…' : lifetime.value}
+        note={`Lifetime · Twilio, OpenAI, Google Cloud${without(lifetime.missing)}`} tone={lifetime.missing.length === 3 ? 'idle' : undefined} />
+      <Stat label="LLM cost" value={openai.loading || gcp.loading ? '…' : llmCost.value}
+        note={`This month · OpenAI + Gemini${without(llmCost.missing)}${behind ? ` · Gemini through ${behind}` : ''}`} tone={llmCost.missing.length === 2 ? 'idle' : undefined} />
+      <Stat label="Hosting cost" value={gcp.loading ? '…' : money(cloud?.currency, cloud?.hostingThisMonth)}
+        note={!cloud ? 'Billing export not ready' : behind ? `Export catching up · data through ${behind}` : 'This month · Google Cloud, excluding Gemini'} tone={cloud && !behind ? undefined : 'idle'} />
     </>}
   >
+    <Panel id="system-health" title="Health" note={health.data ? `checked ${clock(health.data.checkedAt)}` : 'live check'} wide>
+      {health.loading ? <p className="dashboard-empty">Checking Athena…</p>
+        : !health.data ? <div className="section-unavailable"><p className="dashboard-empty">{health.error || 'The health check did not answer.'}</p><p className="source-detail">If this persists, Athena's API itself may be down, and the rest of this page will be unavailable too.</p></div>
+        : <ul className="dashboard-data-list">{health.data.checks.map(c => <li key={c.id}><strong>{HEALTH_LABEL[c.status].word} · {c.label}</strong><small>{c.detail}</small></li>)}</ul>}
+    </Panel>
     <Panel title="OpenAI" note="organization costs · month to date" wide>
       {openai.loading ? <p className="dashboard-empty">Reading OpenAI costs…</p>
         : !ai ? <div className="section-unavailable"><p className="dashboard-empty">{openai.error || 'OpenAI billing is not configured on this Athena system.'}</p><p className="source-detail">The system owner needs an OpenAI admin key in OPENAI_API_ADMIN_KEY. OpenAI does not publish a prepaid credit balance through its API, so this shows spend.</p></div>
         : <>
-          <div className="system-summary-grid"><div><span>This month</span><strong>{money(ai.currency, ai.costThisMonth)}</strong></div><div><span>Today (UTC)</span><strong>{money(ai.currency, ai.costToday)}</strong></div></div>
+          <div className="system-summary-grid"><div><span>This month</span><strong>{money(ai.currency, ai.costThisMonth)}</strong></div><div><span>Today (UTC)</span><strong>{money(ai.currency, ai.costToday)}</strong></div><div><span>Lifetime{ai.allTimeSince ? ` · since ${dateLabel(`${ai.allTimeSince}T12:00:00`)}` : ''}</span><strong>{money(ai.currency, ai.costAllTime)}</strong></div></div>
           <div className="day-group"><h3>Last 7 days</h3><CostTrend daily={ai.daily} currency={ai.currency || 'USD'} /></div>
           <div className="day-group"><h3>By model and usage</h3>{ai.lineItems?.length ? <ul className="dashboard-data-list">{ai.lineItems.slice(0, 10).map(item => <li key={item.name}><strong>{money(ai.currency, item.cost)}</strong><small>{item.name}</small></li>)}</ul> : <p className="dashboard-empty">No spend yet this month.</p>}</div>
         </>}
@@ -261,14 +309,15 @@ function SystemPage({ ctx }: { ctx: SectionContext }) {
       {gcp.loading ? <p className="dashboard-empty">Reading the billing export…</p>
         : !cloud ? <div className="section-unavailable"><p className="dashboard-empty">{gcp.error || (gcp.data?.reason ? GCP_SETUP[gcp.data.reason] : 'GCP billing is unavailable.')}</p><p className="source-detail">In the Cloud console: Billing → Billing export → Standard usage cost → export to {gcp.data?.dataset || 'the billing_export dataset'}. The first rows arrive within a few hours; earlier history is not included.</p></div>
         : <>
-          <div className="system-summary-grid"><div><span>This month · after credits</span><strong>{money(cloud.currency, cloud.costThisMonth)}</strong></div><div><span>Before credits · credits</span><strong>{money(cloud.currency, cloud.grossThisMonth)} · {money(cloud.currency, cloud.creditsThisMonth)}</strong></div></div>
+          {behind && <p className="dashboard-notice" role="status">The billing export is still catching up: it has reached {behind}, and this month's figures appear once it gets here. The connection itself is fine.</p>}
+          <div className="system-summary-grid"><div><span>This month · after credits</span><strong>{money(cloud.currency, cloud.costThisMonth)}</strong></div><div><span>Before credits · credits</span><strong>{money(cloud.currency, cloud.grossThisMonth)} · {money(cloud.currency, cloud.creditsThisMonth)}</strong></div><div><span>Hosting · Gemini</span><strong>{money(cloud.currency, cloud.hostingThisMonth)} · {money(cloud.currency, cloud.llmThisMonth)}</strong></div><div><span>Lifetime{cloud.dataSince ? ` · since ${dateLabel(`${cloud.dataSince}T12:00:00`)}` : ''}</span><strong>{money(cloud.currency, cloud.costAllTime)}</strong></div></div>
           <div className="day-group"><h3>Last 7 days</h3><CostTrend daily={cloud.daily} currency={cloud.currency || 'USD'} /></div>
           <div className="day-group"><h3>By service</h3>{cloud.services?.length ? <ul className="dashboard-data-list">{cloud.services.map(s => <li key={s.name}><strong>{money(cloud.currency, s.cost)} · {s.name}</strong>{s.gross !== s.cost && <small>{money(cloud.currency, s.gross)} before credits</small>}</li>)}</ul> : <p className="dashboard-empty">No charges yet this month.</p>}</div>
           {!!cloud.topSkus?.length && <div className="day-group"><h3>Top line items</h3><ul className="dashboard-data-list">{cloud.topSkus.map(s => <li key={`${s.service}-${s.name}`}><strong>{money(cloud.currency, s.cost)} · {s.name}</strong><small>{s.service}</small></li>)}</ul></div>}
         </>}
     </Panel>
     <Panel title="Twilio" note="live account read" wide>
-      {unavailable ? <div className="section-unavailable"><p className="dashboard-empty">{unavailable}</p><p className="source-detail">The system owner can check the Twilio credentials and account permissions.</p></div> : <div className="system-summary-grid"><div><span>Balance</span><strong>{balance}</strong></div><div><span>SMS messages sent · this month</span><strong>{loading ? '…' : billing?.smsMessagesSent ?? '—'}</strong></div><div><span>SMS cost · this month</span><strong>{loading ? '…' : billing?.smsCostThisMonth != null && billing?.balance?.currency ? `${billing.balance.currency} ${billing.smsCostThisMonth.toFixed(2)}` : '—'}</strong></div></div>}
+      {unavailable ? <div className="section-unavailable"><p className="dashboard-empty">{unavailable}</p><p className="source-detail">The system owner can check the Twilio credentials and account permissions.</p></div> : <div className="system-summary-grid"><div><span>Balance</span><strong>{balance}</strong></div><div><span>SMS messages sent · this month</span><strong>{loading ? '…' : billing?.smsMessagesSent ?? '—'}</strong></div><div><span>SMS cost · this month</span><strong>{loading ? '…' : billing?.smsCostThisMonth != null && billing?.balance?.currency ? `${billing.balance.currency} ${billing.smsCostThisMonth.toFixed(2)}` : '—'}</strong></div><div><span>Lifetime · all charges</span><strong>{loading ? '…' : money(billing?.balance?.currency, billing?.costAllTime)}</strong></div></div>}
     </Panel>
   </SectionPage>;
 }
