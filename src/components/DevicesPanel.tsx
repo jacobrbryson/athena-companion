@@ -3,6 +3,7 @@ import { Drawer, Label, ago } from './Drawer';
 import { devicesApi, type PairedDevice } from '../api/companion';
 import { AndroidInstall } from './AndroidInstall';
 import { HandsFree } from './HandsFree';
+import { HeartRate } from './HeartRate';
 
 /**
  * Pair Athena's phone / car app with this account. The device redeems a
@@ -55,6 +56,7 @@ export function DevicesPanel({ onClose }: { onClose: () => void }) {
   return (
     <Drawer eyebrow="paired devices" title="Phone & car" onClose={onClose}>
       <HandsFree />
+      <HeartRate />
       <AndroidInstall />
       <section className="mb-8">
         <Label>pair a new device</Label>

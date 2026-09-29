@@ -490,6 +490,19 @@ export const locationApi = {
     api.put<{ success: true; pref: LocationPref }>('/api/v1/location/pref', patch),
 };
 
+// ------------------------------------------------------------ heart rate ---
+
+/** Whether Athena keeps the phone's one-minute heart-rate summaries (adults only). */
+export interface HeartPref {
+  enabled: boolean;
+  retention_days: number;
+}
+
+export const heartApi = {
+  status: () => api.get<{ pref: HeartPref }>('/api/v1/heart/pref'),
+  setPref: (patch: Partial<HeartPref>) => api.put<{ success: true; pref: HeartPref }>('/api/v1/heart/pref', patch),
+};
+
 // ---------------------------------------------------------------- vision ---
 
 export interface SceneObject {
