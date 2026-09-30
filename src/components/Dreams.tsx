@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { dreamsApi, type Dream, type DreamQuestion, type DreamStep } from '../api/dashboard';
 import { Panel, SectionPage, Stat, type SectionContext } from './Dashboard';
 import { DashboardIcon } from './icons';
@@ -26,9 +27,12 @@ function Paragraphs({ text, className }: { text: string; className?: string }) {
  * The dream's picture. Fetched as a blob because the image route is behind
  * the same auth as everything else and an <img src> can't carry the client
  * header. Absent (not broken) when there is no picture or it has aged out.
+ * The thumbnail is cropped to fit beside the story; clicking it opens the
+ * whole painting over the page.
  */
 function DreamImage({ uuid, className }: { uuid: string; className?: string }) {
   const [src, setSrc] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState(false);
   useEffect(() => {
     let url: string | null = null;
     let alive = true;
@@ -38,7 +42,28 @@ function DreamImage({ uuid, className }: { uuid: string; className?: string }) {
     return () => { alive = false; if (url) URL.revokeObjectURL(url); };
   }, [uuid]);
   if (!src) return null;
-  return <img className={className || 'dream-image'} src={src} alt="A painting of the dream" loading="lazy" />;
+  return <>
+    <button type="button" className={className || 'dream-image'} onClick={() => setExpanded(true)} aria-label="Expand the painting of the dream">
+      <img src={src} alt="A painting of the dream" loading="lazy" />
+    </button>
+    {expanded && <DreamLightbox src={src} onClose={() => setExpanded(false)} />}
+  </>;
+}
+
+/** The whole painting, uncropped, over everything. Escape, the backdrop or ✕ closes it. */
+function DreamLightbox({ src, onClose }: { src: string; onClose: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    document.addEventListener('keydown', onKey);
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.removeEventListener('keydown', onKey); document.body.style.overflow = overflow; };
+  }, [onClose]);
+  return createPortal(<div className="dream-lightbox" role="dialog" aria-modal="true" aria-label="The painting of the dream">
+    <button type="button" className="dream-lightbox-backdrop" aria-label="Close" onClick={onClose} />
+    <img src={src} alt="A painting of the dream" />
+    <button type="button" className="dream-lightbox-close" aria-label="Close the painting" onClick={onClose} autoFocus>✕</button>
+  </div>, document.body);
 }
 
 const nightLabel = (date: string) => {

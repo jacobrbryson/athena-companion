@@ -427,6 +427,15 @@ svg.dashboard-icon-drawn .icon-fill { fill: currentColor; fill-opacity: .9; }
 .dream-step-error { margin-top: 6px; color: #f39bb0; font: 11px/1.5 ui-monospace,monospace; }
 @media(max-width:700px) { .dream-card-heading { padding: 11px 13px; }.dream-card-heading .dream-date { flex-basis: 100%; margin-left: 0; padding-left: 0; }.dream-card-body { padding: 0 18px 14px; }.dream-card-action { padding: 12px 18px; }.dream-narrative p { font-size: 14px; }.dream-actions>button { flex: 1; justify-content: center; } }
 /* The dream's picture: floated beside the story on wide screens, above it on phones. */
-.dream-image { float: right; width: min(42%, 420px); aspect-ratio: 3 / 2; object-fit: cover; margin: 10px 0 12px 22px; border: 1px solid #4b3f8c; border-radius: 10px; box-shadow: 0 8px 24px #00000059, 0 0 22px #a58cff26; }
+.dream-image { display: block; float: right; width: min(42%, 420px); aspect-ratio: 3 / 2; overflow: hidden; margin: 10px 0 12px 22px; padding: 0; border: 1px solid #4b3f8c; border-radius: 10px; box-shadow: 0 8px 24px #00000059, 0 0 22px #a58cff26; cursor: zoom-in; }
+.dream-image img { display: block; width: 100%; height: 100%; object-fit: cover; }
+@media (hover: hover) { .companion-shell .dream-image:hover { border-color: #a58cff; box-shadow: 0 8px 24px #00000059, 0 0 30px #a58cff4d; } }
 .dream-card-body::after,.dream-night::after { content: ""; display: block; clear: both; }
 @media(max-width:700px) { .dream-image { float: none; width: 100%; margin: 4px 0 6px; } }
+/* Clicking the picture opens it whole — the thumbnail above is cropped. */
+.dream-lightbox { position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center; padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom)); animation: dream-lightbox-in .18s ease; }
+.dream-lightbox-backdrop { position: absolute; inset: 0; background: #05041acc; backdrop-filter: blur(4px); cursor: zoom-out; }
+.dream-lightbox img { position: relative; max-width: 100%; max-height: 100%; object-fit: contain; border: 1px solid #5b4aa8; border-radius: 12px; box-shadow: 0 16px 50px #000000a0, 0 0 40px #a58cff33; pointer-events: none; }
+.dream-lightbox-close { position: absolute; top: max(14px, env(safe-area-inset-top)); right: 14px; width: 38px; height: 38px; border: 1px solid #5b4aa8; border-radius: 50%; background: #140f33e6; color: #e6e0ff; font-size: 15px; line-height: 1; }
+.dream-lightbox-close:hover { border-color: #a58cff; background: #2d2366; }
+@keyframes dream-lightbox-in { from { opacity: 0; } to { opacity: 1; } }
