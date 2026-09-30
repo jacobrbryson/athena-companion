@@ -382,25 +382,41 @@ interface Readiness { level: ReadinessLevel; label: string; headline: string; re
  * falls is the shape an infection tends to make, which is why the two of them
  * together outrank a merely poor recovery score — but this is a reason to pay
  * attention, not a diagnosis, and the card says so.
+ *
+ * Blood oxygen is read against your own nights, not a population line: WHOOP
+ * measures it asleep, where 92–96% is ordinary for plenty of people, and a
+ * fixed 95% cut-off flagged a normal night as a warning. It counts when it sits
+ * well under your usual or genuinely low, and it is worded as one signal —
+ * never folded into the "two signals" sentence it isn't part of.
  */
 function readinessOf(today: RecoveryDay | undefined, prior: RecoveryDay[], sleepPercent: number | null): Readiness | null {
   if (!today || today.state !== 'SCORED') return null;
   const score = today.recovery_score;
   const baseRhr = average(prior, r => r.resting_heart_rate);
   const baseHrv = average(prior, r => r.hrv_ms);
+  const baseSpo2 = average(prior, r => r.spo2_percent);
   const rhrUp = baseRhr !== null && today.resting_heart_rate != null ? today.resting_heart_rate - baseRhr : null;
   const hrvOff = baseHrv !== null && today.hrv_ms != null ? (today.hrv_ms - baseHrv) / baseHrv : null;
-  const lowOxygen = today.spo2_percent != null && today.spo2_percent < 95;
+  const spo2 = today.spo2_percent ?? null;
+  const spo2Drop = baseSpo2 !== null && spo2 !== null ? baseSpo2 - spo2 : null;
+  const lowOxygen = spo2 !== null && (spo2 < 90 || (spo2Drop !== null && spo2Drop >= 3));
+  const infectionShape = rhrUp !== null && rhrUp >= 4 && hrvOff !== null && hrvOff <= -.2;
 
   const notes: string[] = [];
   if (rhrUp !== null && rhrUp >= 3) notes.push(`resting HR ${rhrUp.toFixed(1)} bpm over baseline`);
   if (hrvOff !== null && hrvOff <= -.15) notes.push(`HRV ${Math.round(-hrvOff * 100)}% under baseline`);
-  if (lowOxygen) notes.push(`blood oxygen ${today.spo2_percent!.toFixed(1)}%`);
+  if (lowOxygen || (spo2Drop !== null && spo2Drop >= 2)) {
+    notes.push(`blood oxygen ${spo2!.toFixed(1)}%${baseSpo2 !== null ? ` (usually ${baseSpo2.toFixed(1)}%)` : ''}`);
+  }
   if (sleepPercent !== null && sleepPercent < 60) notes.push(`slept ${sleepPercent}% of need`);
   const said = notes.length ? `${notes.join(' · ')}.` : '';
 
-  if ((rhrUp !== null && rhrUp >= 4 && hrvOff !== null && hrvOff <= -.2) || lowOxygen) {
-    return { level: 'warning', label: 'WARNING', headline: lowOxygen ? 'Blood oxygen is low' : 'Resting HR up while HRV is down', reason: `${said} Two signals moving the wrong way at once — this is often how a bug starts. Worth an easy day and an early night.` };
+  if (infectionShape) {
+    const oxygen = lowOxygen ? ' Blood oxygen is down too.' : '';
+    return { level: 'warning', label: 'WARNING', headline: 'Resting HR up while HRV is down', reason: `${said} Two signals moving the wrong way at once — this is often how a bug starts.${oxygen} Worth an easy day and an early night.` };
+  }
+  if (lowOxygen) {
+    return { level: 'warning', label: 'WARNING', headline: 'Blood oxygen is low', reason: `${said} Well under your usual overnight reading. One night can be a loose strap; if it stays low, or you feel short of breath, take it seriously.` };
   }
   if ((score != null && score < 34) || (rhrUp !== null && rhrUp >= 4) || (hrvOff !== null && hrvOff <= -.2) || (sleepPercent !== null && sleepPercent < 60)) {
     return { level: 'rest', label: 'REST', headline: notes[0] || `Recovery ${score}%`, reason: said || `Recovery is ${score}%. Keep today light and let it come back.` };
