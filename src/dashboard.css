@@ -439,3 +439,14 @@ svg.dashboard-icon-drawn .icon-fill { fill: currentColor; fill-opacity: .9; }
 .dream-lightbox-close { position: absolute; top: max(14px, env(safe-area-inset-top)); right: 14px; width: 38px; height: 38px; border: 1px solid #5b4aa8; border-radius: 50%; background: #140f33e6; color: #e6e0ff; font-size: 15px; line-height: 1; }
 .dream-lightbox-close:hover { border-color: #a58cff; background: #2d2366; }
 @keyframes dream-lightbox-in { from { opacity: 0; } to { opacity: 1; } }
+
+/* Mail card bundles (MailBundles.tsx): one row per proposal, a compact action
+   button instead of the full-width call to action, and a scrollable checklist
+   when a bundle is opened on the Mail page. */
+.mail-bundle { border: 1px solid #204253; border-radius: 8px; padding: 10px 12px; background: #03151f88; }
+.mail-bundle > strong, .mail-bundle strong { color: #e6f6ff; font-size: 13px; }
+.mail-bundle small { font-size: 11px; line-height: 1.4; }
+.mail-bundles .dashboard-chat-cta, .section-panel .mail-bundles .dashboard-chat-cta { margin-top: 0; padding: 6px 12px; gap: 8px; width: fit-content; justify-content: center; white-space: nowrap; }
+.mail-bundles .dashboard-chat-cta:disabled { opacity: .45; cursor: default; }
+.dashboard-link-button { border: none; background: none; color: #7fdcf0; font-size: 12px; padding: 6px 4px; cursor: pointer; }
+.mail-bundle-list { max-height: 320px; overflow-y: auto; margin-top: 10px; }

@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import type { CalendarEvent, Source, JiraIssue, RecoveryDay, DashboardSummary, GcpBilling, SystemHealthStatus, TriageEmail, FamilyHealthStatus, HealthSeverity, NearbyIncident, WeatherAlert } from '../api/dashboard';
+import type { CalendarEvent, Source, JiraIssue, RecoveryDay, DashboardSummary, GcpBilling, TimeSaved, SystemHealthStatus, TriageEmail, FamilyHealthStatus, HealthSeverity, NearbyIncident, WeatherAlert } from '../api/dashboard';
 import { dashboardApi } from '../api/dashboard';
 import { integrationsApi, type Fact } from '../api/companion';
 import { androidCall, isAndroidCompanion } from '../native/android';
@@ -11,6 +11,7 @@ import { PlansPanel } from './PlansPanel';
 import { EmergencyBanner } from './EmergencyBanner';
 import { RightNowCard } from './RightNowCard';
 import { EmailPanel, CATEGORY_LABEL } from './EmailPanel';
+import { MailBundles } from './MailBundles';
 import { DreamCard, DreamsPage } from './Dreams';
 import { DashboardIcon } from './icons';
 
@@ -270,11 +271,35 @@ function exportBehind(cloud: GcpBilling | null) {
   return cloud.dataThrough.slice(0, 7).replace('-', '') < cloud.invoiceMonth ? dateLabel(cloud.dataThrough) : null;
 }
 
+/** Minutes as the unit a person would say: "40 min", "6.2 h". */
+const duration = (minutes: number) => minutes < 60 ? `${Math.round(minutes)} min` : `${(minutes / 60).toFixed(1)} h`;
+const monthName = (month: string) => new Date(`${month}-15T12:00:00Z`).toLocaleDateString(undefined, { month: 'long' });
+
+/**
+ * What Athena has saved, from approved actions only. Every figure traces to a
+ * count and a per-action rate shown right beside it, so it can be argued with;
+ * actions with no rate are shown as not counted rather than left out.
+ */
+function TimeSavedPanel({ saved }: { saved: { data: TimeSaved | null; loading: boolean; error: string | null } }) {
+  const t = saved.data;
+  return <Panel title="Time saved" note={t ? `${monthName(t.month)} · approved actions only` : 'approved actions only'} wide>
+    {saved.loading ? <p className="dashboard-empty">Counting what Athena has done…</p>
+      : !t ? <div className="section-unavailable"><p className="dashboard-empty">{saved.error || 'Time saved is unavailable.'}</p></div>
+      : !t.actionsAllTime ? <p className="dashboard-empty">Nothing yet. This counts actions Athena carried out after you approved them — add an event, file or trash an email, save a memory — at a conservative number of minutes each.</p>
+      : <>
+        <div className="system-summary-grid"><div><span>This month · {t.actionsThisMonth} action{t.actionsThisMonth === 1 ? '' : 's'}</span><strong>{duration(t.minutesThisMonth)}</strong></div><div><span>Last month</span><strong>{duration(t.minutesLastMonth)}</strong></div><div><span>Lifetime{t.since ? ` · since ${dateLabel(`${t.since}T12:00:00`)}` : ''}</span><strong>{duration(t.minutesAllTime)}</strong></div></div>
+        <div className="day-group"><h3>Last 7 days</h3>{t.daily.length ? <Trend rows={lastWeek(t.daily.map(d => ({ date: d.date, cost: d.minutes })))} max={Math.max(1, ...t.daily.map(d => d.minutes))} unit="minutes" format={v => `${Math.round(v)}m`} neutral /> : <p className="dashboard-empty">Nothing done in the last 7 days.</p>}</div>
+        <div className="day-group"><h3>This month, by action</h3>{t.byAction.length ? <ul className="dashboard-data-list">{t.byAction.map(a => <li key={a.actionId}><strong>{a.minutesEach ? duration(a.minutes) : 'Not counted'} · {a.label}</strong><small>{a.count} × {a.minutesEach ? `${a.minutesEach} min` : 'no fair hand-done time to credit yet'}</small></li>)}</ul> : <p className="dashboard-empty">Nothing done yet this month.</p>}</div>
+      </>}
+  </Panel>;
+}
+
 function SystemPage({ ctx }: { ctx: SectionContext }) {
   const health = useSystemRead(dashboardApi.systemHealth);
   const twilio = useSystemRead(dashboardApi.systemTwilio);
   const openai = useSystemRead(dashboardApi.systemOpenAI);
   const gcp = useSystemRead(dashboardApi.systemGcp);
+  const saved = useSystemRead(dashboardApi.systemTimeSaved);
   const billing = twilio.data, loading = twilio.loading;
   const unavailable = twilio.error || (billing && !billing.configured ? 'Twilio is not configured on this Athena system.' : null);
   const balance = billing?.balance?.amount && billing.balance.currency ? `${billing.balance.currency} ${billing.balance.amount}` : '—';
@@ -293,12 +318,14 @@ function SystemPage({ ctx }: { ctx: SectionContext }) {
     { name: 'Gemini', currency: cloud?.currency, value: cloud?.llmThisMonth },
   ]);
   return <SectionPage ctx={ctx}
-    eyebrow="ATHENA SYSTEM" title="System" blurb="A small, live view of how Athena is doing and what the services she runs on are costing."
+    eyebrow="ATHENA SYSTEM" title="System" blurb="A small, live view of how Athena is doing, the time she has saved you, and what the services she runs on are costing."
     ask="What should I know about the Athena system right now?"
     stats={<>
       <Stat label="Athena's health" value={health.loading ? '…' : state?.word ?? 'Unknown'} tone={state?.tone ?? 'idle'}
         note={health.loading ? 'Checking…' : health.data?.status === 'ok' ? `Last check ${clock(health.data.checkedAt)}`
           : <a href="#system-health" onClick={e => { e.preventDefault(); document.getElementById('system-health')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}>{health.data ? `Why? ${failing} check${failing === 1 ? ' needs' : 's need'} attention` : 'Why? The health check did not answer'} ↓</a>} />
+      <Stat label="Time saved" value={saved.loading ? '…' : saved.data ? duration(saved.data.minutesThisMonth) : '—'}
+        note={saved.data ? `This month · ${saved.data.actionsThisMonth} approved action${saved.data.actionsThisMonth === 1 ? '' : 's'}` : saved.error || 'Approved actions only'} tone={saved.data?.minutesThisMonth ? 'good' : 'idle'} />
       <Stat label="Total spend" value={twilio.loading || openai.loading || gcp.loading ? '…' : lifetime.value}
         note={`Lifetime · Twilio, OpenAI, Google Cloud${without(lifetime.missing)}`} tone={lifetime.missing.length === 3 ? 'idle' : undefined} />
       <Stat label="LLM cost" value={openai.loading || gcp.loading ? '…' : llmCost.value}
@@ -312,6 +339,7 @@ function SystemPage({ ctx }: { ctx: SectionContext }) {
         : !health.data ? <div className="section-unavailable"><p className="dashboard-empty">{health.error || 'The health check did not answer.'}</p><p className="source-detail">If this persists, Athena's API itself may be down, and the rest of this page will be unavailable too.</p></div>
         : <ul className="dashboard-data-list">{health.data.checks.map(c => <li key={c.id}><strong>{HEALTH_LABEL[c.status].word} · {c.label}</strong><small>{c.detail}</small></li>)}</ul>}
     </Panel>
+    <TimeSavedPanel saved={saved} />
     <Panel title="OpenAI" note="organization costs · month to date" wide>
       {openai.loading ? <p className="dashboard-empty">Reading OpenAI costs…</p>
         : !ai ? <div className="section-unavailable"><p className="dashboard-empty">{openai.error || 'OpenAI billing is not configured on this Athena system.'}</p><p className="source-detail">The system owner needs an OpenAI admin key in OPENAI_API_ADMIN_KEY. OpenAI does not publish a prepaid credit balance through its API, so this shows spend.</p></div>
@@ -803,12 +831,19 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
     const source = summary?.emailTriage;
     if (!ready(source)) return <SourceNote source={source} name="Gmail" fix={fixFor('emailTriage')} />;
     const preview = source?.data?.preview || [];
-    return <><p className="source-note">{source?.data?.newCount || 0} to review · receipts, travel, school</p>
-      {!preview.length && (mailScanning ? <p className="dashboard-empty">Scanning your inbox…</p>
+    const pending = source?.data?.pendingCount || 0;
+    const bundles = source?.data?.bundles;
+    const open = source?.data?.newCount || 0;
+    return <><p className="source-note">{open} open{pending ? ` · ${pending} new, sorting` : ''}</p>
+      {!open && (mailScanning ? <p className="dashboard-empty">Scanning your inbox…</p>
         : mailScanNote ? <p className="dashboard-empty">{mailScanNote}</p>
           : <EmptyCta text="Nothing new to sort." action="Scan more" onClick={() => void scanMoreMail()} />)}
-      <ul className="dashboard-data-list">{preview.slice(0, limit).map(emailPreviewLine)}</ul></>;
+      {open > 0 && (bundles
+        ? <MailBundles bundles={bundles} compact onOpenEmail={setSelectedEmail} onChanged={mailChanged} onReviewEvents={go('Mail')} />
+        : <ul className="dashboard-data-list">{preview.slice(0, limit).map(emailPreviewLine)}</ul>)}</>;
   }
+  /** After any mail action: refetch the page list and the card's summary. */
+  function mailChanged() { setMailRefresh(n => n + 1); void data.refresh(); }
   function healthStatusLine(h: FamilyHealthStatus) {
     return <li key={h.uuid}>
       <strong>{h.personName} · {h.symptom}</strong>
@@ -1103,18 +1138,22 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
       }
     }
     const groupEntries = [...grouped.entries()];
+    const bundles = summary?.emailTriage.data?.bundles;
     return <>
     <SectionPage ctx={ctx}
       eyebrow="SORTING YOUR INBOX" title="Mail"
-      blurb="Receipts, travel and school emails Athena has sorted out of your inbox. Nothing moves, gets labeled or logged until you approve it."
+      blurb="What Athena proposes for your inbox, and everything she has sorted. Nothing in Gmail changes until you approve it."
       ask="Help me get through my mail triage list."
       stats={<>
-        <Stat label="New to review" value={summary?.emailTriage.data?.newCount ?? '—'} note="waiting for you" />
-        <Stat label="Receipts" value={summary?.emailTriage.data?.receiptCount ?? '—'} note="ready to file and log" />
-        <Stat label="Travel" value={summary?.emailTriage.data?.travelCount ?? '—'} note="may need a calendar event" />
-        <Stat label="School" value={summary?.emailTriage.data?.schoolCount ?? '—'} note="may need a calendar event" />
+        <Stat label="Open" value={summary?.emailTriage.data?.newCount ?? '—'} note={summary?.emailTriage.data?.pendingCount ? `${summary.emailTriage.data.pendingCount} still sorting` : 'sorted and waiting'} />
+        <Stat label="To archive" value={bundles?.archive.count ?? '—'} note="promos and updates" />
+        <Stat label="Receipts" value={bundles?.receipts.count ?? '—'} note="ready to file and log" />
+        <Stat label="Needs you" value={bundles?.replies.count ?? '—'} note="someone is asking" tone={bundles?.replies.count ? 'ok' : undefined} />
       </>}
     >
+      {bundles && ready(summary?.emailTriage) && <Panel title="Athena proposes" note="one approval per bundle" wide>
+        <MailBundles bundles={bundles} onOpenEmail={setSelectedEmail} onChanged={mailChanged} />
+      </Panel>}
       <Panel title="Your inbox" note={mailLoading ? 'Loading…' : `${mailItems.length} to review`} wide>
         {!ready(summary?.emailTriage) ? unavailable('emailTriage', 'Gmail') : <>
           <button className="dashboard-chat-cta" onClick={() => void scanMoreMail()} disabled={mailScanning}>{mailScanning ? 'Scanning…' : 'Scan more'} <span>↗</span></button>
@@ -1132,7 +1171,7 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
         </>}
       </Panel>
     </SectionPage>
-    {selectedEmail && <EmailPanel uuid={selectedEmail} onClose={() => setSelectedEmail(null)} onChanged={() => { setMailRefresh(n => n + 1); void data.refresh(); }} />}
+    {selectedEmail && <EmailPanel uuid={selectedEmail} onClose={() => setSelectedEmail(null)} onChanged={mailChanged} />}
     </>;
   }
 

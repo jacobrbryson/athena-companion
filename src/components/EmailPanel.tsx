@@ -18,7 +18,16 @@ const field = 'w-full rounded-lg border border-emerald-800/50 bg-black/40 p-2 te
 const labelCls = 'flex flex-col gap-1 text-[11px] uppercase tracking-widest opacity-60';
 
 export const CATEGORY_LABEL: Record<EmailCategory, string> = {
-  receipt: 'Receipt', travel: 'Travel', school: 'School', other: 'Other',
+  receipt: 'Receipt', travel: 'Travel', school: 'School', needs_reply: 'Needs you', promo: 'Promo', notification: 'Update', fyi: 'FYI', other: 'Other', pending: 'Sorting…',
+};
+
+/** Categories with an extraction behind them, so something specific to propose. */
+const PROPOSABLE: EmailCategory[] = ['receipt', 'travel', 'school'];
+const NOTHING_TO_PROPOSE: Partial<Record<EmailCategory, string>> = {
+  pending: "New mail Athena hasn't sorted yet — she will within about 15 minutes, or now if you press Scan more.",
+  promo: 'Marketing mail. Archive it, or leave it for the archive bundle on the Mail card.',
+  notification: 'An automated update. Archive it, or leave it for the archive bundle on the Mail card.',
+  fyi: 'Nothing to answer or do here — archive it when you have read it.',
 };
 
 export function EmailPanel({ uuid, onClose, onChanged }: { uuid: string; onClose: () => void; onChanged: () => void }) {
@@ -28,6 +37,8 @@ export function EmailPanel({ uuid, onClose, onChanged }: { uuid: string; onClose
   const [action, setAction] = useState<AthenaAction | null>(null);
   const [confirmBusy, setConfirmBusy] = useState(false);
   const [includeGroup, setIncludeGroup] = useState(true);
+  /** The reply being drafted: null = not started; '' while Athena writes it. */
+  const [reply, setReply] = useState<string | null>(null);
 
   const [merchant, setMerchant] = useState('');
   const [category, setCategory] = useState('');
@@ -97,6 +108,30 @@ export function EmailPanel({ uuid, onClose, onChanged }: { uuid: string; onClose
     finally { setBusy(false); }
   };
 
+  /** Athena writes a first draft into an editable box; nothing is saved yet. */
+  const suggestReply = async () => {
+    setBusy(true); setError(''); setReply('');
+    try { setReply((await dashboardApi.mailSuggestReply(uuid)).body); }
+    catch (e) { setError((e as Error).message); setReply(null); }
+    finally { setBusy(false); }
+  };
+  /** Proposes saving the edited text to Gmail's Drafts — the person sends it from Gmail. */
+  const proposeDraft = async () => {
+    if (!reply?.trim()) return;
+    setBusy(true); setError('');
+    try { setAction((await dashboardApi.mailProposeDraft(uuid, reply)).action); }
+    catch (e) { setError((e as Error).message); }
+    finally { setBusy(false); }
+  };
+
+  /** Proposes archiving this one email — out of the inbox, still in All Mail. Needs Approve. */
+  const archiveEmail = async () => {
+    setBusy(true); setError('');
+    try { setAction((await dashboardApi.mailArchive([uuid])).action); }
+    catch (e) { setError((e as Error).message); }
+    finally { setBusy(false); }
+  };
+
   /** Proposes moving this email (or the whole group) to Gmail's Trash — still needs Approve, like propose(). */
   const deleteEmail = async () => {
     if (!detail) return;
@@ -118,7 +153,8 @@ export function EmailPanel({ uuid, onClose, onChanged }: { uuid: string; onClose
       onChanged();
       // Deleted is gone — nothing left in this drawer worth looking at, unlike
       // filing/calendar actions where the "done" card is still worth reading.
-      if (res.action.action_id === 'delete_email') onClose();
+      if (res.action.action_id === 'delete_email' || res.action.action_id === 'archive_emails') onClose();
+      if (res.action.action_id === 'draft_reply') setReply(null);
     } catch (e) { setError((e as Error).message); }
     finally { setConfirmBusy(false); }
   };
@@ -145,7 +181,7 @@ export function EmailPanel({ uuid, onClose, onChanged }: { uuid: string; onClose
       {detail.body && <pre className="mt-3 max-h-64 overflow-y-auto whitespace-pre-wrap break-words rounded-lg border border-emerald-800/50 bg-black/40 p-3 font-sans text-xs leading-relaxed text-emerald-50/90">{detail.body}</pre>}
       {!detail.body && !detail.bodyError && <p className="mt-3 text-xs opacity-40">This email has no readable text body.</p>}
 
-      {!action && detail.category !== 'other' && <div className="mt-4 flex flex-col gap-3">
+      {!action && PROPOSABLE.includes(detail.category) && <div className="mt-4 flex flex-col gap-3">
         {detail.category === 'receipt' ? <>
           <label className={labelCls}>Merchant<input className={field} value={merchant} onChange={e => setMerchant(e.target.value)} /></label>
           <label className={labelCls}>Spend category<input className={field} value={category} onChange={e => setCategory(e.target.value)} placeholder="groceries, dining_out, energy…" /></label>
@@ -179,9 +215,26 @@ export function EmailPanel({ uuid, onClose, onChanged }: { uuid: string; onClose
         <p className="text-[11px] opacity-40">Delete moves it to Gmail's Trash — recoverable there for about 30 days.</p>
       </div>}
 
-      {!action && detail.category === 'other' && <div className="mt-4">
-        <p className="text-sm opacity-60">Athena didn't find a receipt, travel booking or school announcement here — nothing to propose.</p>
+      {!action && !PROPOSABLE.includes(detail.category) && <div className="mt-4">
+        {detail.category === 'needs_reply'
+          ? <p className="text-sm opacity-80">{typeof detail.extracted?.ask === 'string' ? <>Asking you to <strong>{detail.extracted.ask}</strong>. </> : ''}Athena can draft a reply for you to edit; it is saved to Gmail's Drafts, never sent.</p>
+          : <p className="text-sm opacity-60">{NOTHING_TO_PROPOSE[detail.category] ?? "Athena didn't find a receipt, travel booking or school announcement here — nothing to propose."}</p>}
+        {reply !== null && <div className="mt-3 flex flex-col gap-2">
+          <label className={labelCls}>Your reply{reply === '' && busy ? ' — Athena is writing…' : ''}
+            <textarea className={`${field} min-h-40`} value={reply} onChange={e => setReply(e.target.value)} disabled={reply === '' && busy} />
+          </label>
+          <p className="text-[11px] opacity-50">Fill in anything in [brackets]. Saving puts it in Gmail's Drafts in this thread — you send it from Gmail.</p>
+          <div className="flex gap-2">
+            <button onClick={proposeDraft} disabled={busy || !reply.trim()} className="h-10 rounded-full border border-emerald-400/60 bg-emerald-500/15 px-4 text-sm disabled:opacity-40">Save to Gmail drafts</button>
+            <button onClick={() => setReply(null)} disabled={busy} className="h-10 rounded-full border border-emerald-500/20 px-4 text-sm disabled:opacity-40">Cancel</button>
+          </div>
+        </div>}
         <div className="mt-3 flex gap-2">
+          {reply === null && (detail.category === 'needs_reply' || detail.category === 'fyi' || detail.category === 'other') &&
+            <button onClick={suggestReply} disabled={busy} className="h-10 rounded-full border border-emerald-400/60 bg-emerald-500/15 px-4 text-sm disabled:opacity-40">Draft a reply</button>}
+          <button onClick={archiveEmail} disabled={busy} className="h-10 rounded-full border border-emerald-500/30 px-4 text-sm disabled:opacity-40">
+            Archive
+          </button>
           <button onClick={dismiss} disabled={busy} className="h-10 rounded-full border border-emerald-500/20 px-4 text-sm disabled:opacity-40">
             {busy ? 'Working…' : 'Dismiss from list'}
           </button>

@@ -307,9 +307,9 @@ let mockProjects = [
 type MockEmail = {
   uuid: string; gmail_message_id: string; thread_id: string | null;
   subject: string | null; from_address: string | null; from_name: string | null;
-  received_at: string | null; category: 'receipt' | 'travel' | 'school' | 'other';
+  received_at: string | null; category: 'receipt' | 'travel' | 'school' | 'needs_reply' | 'promo' | 'notification' | 'fyi' | 'other' | 'pending';
   group_key: string | null; extracted: Record<string, unknown> | null;
-  status: 'new' | 'actioned' | 'dismissed' | 'trashed'; created_at: string;
+  status: 'new' | 'actioned' | 'dismissed' | 'trashed' | 'archived'; created_at: string;
   /** Stands in for the live Gmail read the real detail() controller does — plain text only. */
   body: string;
 };
@@ -320,7 +320,58 @@ let mockEmails: MockEmail[] = [
   { uuid: 'email-4', gmail_message_id: 'g-104', thread_id: 't-104', subject: 'Your trip to Denver — confirmation', from_address: 'noreply@united.com', from_name: 'United Airlines', received_at: iso(DAY * 5), category: 'travel', group_key: null, extracted: { has_event: true, title: 'Flight to Denver (UA 512)', start: inMinutes(9 * 24 * 60), end: inMinutes(9 * 24 * 60 + 210), all_day: false, location: 'CLT → DEN' }, status: 'new', created_at: iso(DAY * 5), body: 'Your trip is confirmed.\n\nConfirmation code: 7QJKXP\n\nUA 512   CLT -> DEN\nDeparts 6:35 PM   Arrives 8:05 PM (Mountain Time)\nSeat 14C, Economy\n\n1 checked bag included with your fare.\n\nManage your trip at united.com/manage or in the United app.' },
   { uuid: 'email-5', gmail_message_id: 'g-105', thread_id: 't-105', subject: 'Riverside Elementary: early dismissal Friday', from_address: 'office@riverside.k12.example', from_name: 'Riverside Elementary', received_at: iso(DAY * 3), category: 'school', group_key: null, extracted: { has_event: true, title: 'Early dismissal — Riverside Elementary', start: dayStamp(-4), end: null, all_day: true, location: null }, status: 'new', created_at: iso(DAY * 3), body: 'Dear families,\n\nA reminder that this Friday is an early dismissal day for staff professional development. Students will be released at 12:15 PM instead of the usual 3:00 PM.\n\nAfter-care will still be available for families who need it — please sign up through the front office by Wednesday if you have not already.\n\nThank you,\nRiverside Elementary Office' },
   { uuid: 'email-6', gmail_message_id: 'g-106', thread_id: 't-106', subject: 'Weekend plans?', from_address: 'priya@example.com', from_name: 'Priya', received_at: iso(DAY * 6), category: 'other', group_key: null, extracted: null, status: 'new', created_at: iso(DAY * 6), body: "Hey! Any interest in checking out that new trail out by the lake this weekend? Weather looks decent Saturday morning. Let me know, no worries if you're busy." },
+  // Sorted by the phase-2 classifier: a reply someone is waiting on.
+  { uuid: 'email-8', gmail_message_id: 'g-108', thread_id: 't-108', subject: 'Troutman U10 roster + first practice', from_address: 'shawn@example.com', from_name: 'Shawn', received_at: iso(DAY / 24), category: 'needs_reply', group_key: null, extracted: { sorted: 2, ask: 'send the final Troutman roster' }, status: 'new', created_at: iso(DAY / 24), body: 'Hey — can you send over the final roster when you get a chance? First practice is Tuesday at 6.' },
+  // Promos and automated updates — what the archive bundle offers to clear.
+  ...([
+    ['email-9', 'Target', 'target.com', 'Your weekend deals are here — up to 40% off', 'promo', 3],
+    ['email-10', 'Target', 'target.com', 'Circle Week starts Sunday', 'promo', 30],
+    ['email-15', 'Target', 'target.com', 'New arrivals picked for you', 'promo', 50],
+    ['email-11', 'Old Navy', 'oldnavy.com', 'Last chance: jeans for the whole family', 'promo', 8],
+    ['email-12', 'GitHub', 'github.com', '[athena] Dependabot opened 3 pull requests', 'notification', 5],
+    ['email-13', 'Nextdoor', 'nextdoor.com', '12 new posts near Maple St', 'notification', 20],
+  ] as const).map(([uuid, name, domain, subject, category, hoursAgo]) => ({
+    uuid, gmail_message_id: `g-${uuid}`, thread_id: `t-${uuid}`, subject, from_address: `no-reply@${domain}`, from_name: name,
+    received_at: iso(hoursAgo * DAY / 24), category, group_key: domain, extracted: domain === 'target.com' ? { sorted: 2, unsub: 'https://target.example/unsub' } : { sorted: 2 }, status: 'new', created_at: iso(hoursAgo * DAY / 24),
+    body: `${subject}\n\nView in browser · Unsubscribe`,
+  } as MockEmail)),
+  // Arrived since the last sort: the sync has seen it, the mail job has not classified it yet.
+  { uuid: 'email-14', gmail_message_id: 'g-114', thread_id: 't-114', subject: 'Picture day order form', from_address: 'office@riverside.example.edu', from_name: 'Riverside Elementary', received_at: iso(DAY / 48), category: 'pending', group_key: null, extracted: null, status: 'new', created_at: iso(DAY / 48), body: 'Picture day is Friday. Order forms are due Thursday.' },
 ];
+const mailBundles = () => {
+  const open = mockEmails.filter((e) => e.status === 'new');
+  const newest = (rows: MockEmail[]) => [...rows].sort((a, b) => String(b.received_at).localeCompare(String(a.received_at)));
+  const item = (e: MockEmail) => ({ uuid: e.uuid, from: e.from_name || e.from_address || 'Unknown sender', subject: e.subject, received_at: e.received_at });
+  const archive = newest(open.filter((e) => e.category === 'promo' || e.category === 'notification'));
+  const tally = new Map<string, number>();
+  for (const e of archive) tally.set(item(e).from, (tally.get(item(e).from) || 0) + 1);
+  const receipts = newest(open.filter((e) => e.category === 'receipt'));
+  const replies = newest(open.filter((e) => e.category === 'needs_reply'));
+  return {
+    archive: { count: archive.length, senders: [...tally].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([name, count]) => ({ name, count })), items: archive.map((e) => ({ ...item(e), category: e.category })) },
+    receipts: { count: receipts.length, items: receipts.map((e) => ({ ...item(e), merchant: ((e.extracted || {}) as { merchant?: string }).merchant || null })) },
+    events: (() => {
+      const rows = newest(open.filter((e) => e.category === 'travel' || e.category === 'school'));
+      return { count: rows.length, items: rows.map((e) => {
+        const x = (e.extracted || {}) as { has_event?: boolean; title?: string; start?: string; all_day?: boolean; location?: string };
+        const dated = x.has_event !== false && !!x.start;
+        return { ...item(e), category: e.category, title: x.title || e.subject, start: dated ? x.start! : null, all_day: x.all_day === true, location: x.location || null };
+      }) };
+    })(),
+    replies: { count: replies.length, items: replies.map((e) => ({ ...item(e), ask: ((e.extracted || {}) as { ask?: string }).ask || null })) },
+    unsubscribe: (() => {
+      const bySender = new Map<string, { key: string; name: string; count: number; email_triage_uuid: string | null }>();
+      for (const e of archive) {
+        const s = bySender.get(e.group_key || '') || { key: e.group_key || '', name: item(e).from, count: 0, email_triage_uuid: null };
+        s.count++;
+        if (!s.email_triage_uuid && (e.extracted as { unsub?: string } | null)?.unsub) s.email_triage_uuid = e.uuid;
+        bySender.set(s.key, s);
+      }
+      const senders = [...bySender.values()].filter((s) => s.email_triage_uuid && s.count >= 3).sort((a, b) => b.count - a.count);
+      return { count: senders.length, senders };
+    })(),
+  };
+};
 const mailSummary = () => {
   const news = mockEmails.filter((e) => e.status === 'new');
   const byCategory = (c: MockEmail['category']) => news.filter((e) => e.category === c).length;
@@ -330,7 +381,10 @@ const mailSummary = () => {
     travelCount: byCategory('travel'),
     schoolCount: byCategory('school'),
     otherCount: byCategory('other'),
-    preview: news.slice(0, 3),
+    pendingCount: byCategory('pending'),
+    bundles: mailBundles(),
+    // Arrival order, newest first — as the API now sorts it.
+    preview: [...news].sort((a, b) => String(b.received_at).localeCompare(String(a.received_at))).slice(0, 3),
   };
 };
 const mockRightNow = () => ({
@@ -400,7 +454,8 @@ const newsItems = () => [
 ].filter(item => newsSources.some(source => source.uuid === item.sourceUuid));
 // The System page's reads. `?gcp=none` shows the page before the billing export
 // has delivered anything, `?gcp=behind` while it is still backfilling last
-// month, and `?health=degraded` / `?health=down` the health stat's "why" link.
+// month, `?health=degraded` / `?health=down` the health stat's "why" link, and
+// `?saved=none` the System page before Athena has done anything.
 const spendDays = (costs: number[]) => costs.map((cost, i) => ({ date: iso(DAY * (costs.length - 1 - i)).slice(0, 10), cost }));
 function mockSystemBilling(p: string, query: URLSearchParams) {
   const checkedAt = new Date().toISOString();
@@ -412,6 +467,19 @@ function mockSystemBilling(p: string, query: URLSearchParams) {
       mode === 'down' ? { id: 'models', label: 'Models', status: 'down', detail: 'No model is available to answer chat.' } : { id: 'models', label: 'Models', status: 'ok', detail: 'Chat is on gpt-5.5 (frontier)' },
       mode === 'degraded' ? { id: 'nightly', label: 'Nightly review', status: 'degraded', detail: 'Last ran 4 days ago (2026-09-24).' } : { id: 'nightly', label: 'Nightly review', status: 'ok', detail: `Last ran ${checkedAt.slice(0, 10)}` },
     ] };
+  }
+  if (p.endsWith('/time-saved')) {
+    const rates = [['create_calendar_event', 'Add a calendar event', 2], ['file_travel_or_school_email', 'Add to calendar and file the email', 2.5], ['file_receipt_email', 'File a receipt', 0.5],
+      ['delete_email', 'Move to Trash', 0.25], ['remember_fact', 'Save something to memory', 0.5], ['dismiss_email', 'Dismiss from the mail list', 0], ['look_through_camera', 'Take a look through your camera', 0]] as const;
+    const empty = query.get('saved') === 'none';
+    const counts: Record<string, number> = empty ? {} : { create_calendar_event: 9, file_travel_or_school_email: 3, file_receipt_email: 14, delete_email: 41, remember_fact: 22, dismiss_email: 12 };
+    const byAction = rates.filter(([id]) => counts[id]).map(([actionId, label, minutesEach]) => ({ actionId, label, count: counts[actionId], minutesEach, minutes: counts[actionId] * minutesEach }))
+      .sort((a, b) => b.minutes - a.minutes);
+    const minutesThisMonth = byAction.reduce((sum, a) => sum + a.minutes, 0);
+    const daily = empty ? [] : [6, 0, 11.5, 4, 2.75, 9, 5.5].map((minutes, i) => ({ date: new Date(Date.now() - (6 - i) * 86400000).toISOString().slice(0, 10), minutes }));
+    return { checkedAt, month: checkedAt.slice(0, 7), since: empty ? null : '2026-09-02', minutesThisMonth, minutesLastMonth: 0, minutesAllTime: minutesThisMonth,
+      actionsThisMonth: Object.values(counts).reduce((a, b) => a + b, 0), actionsAllTime: Object.values(counts).reduce((a, b) => a + b, 0), byAction, daily,
+      rates: rates.map(([actionId, label, minutesEach]) => ({ actionId, label, minutesEach })) };
   }
   if (p.endsWith('/twilio-billing')) return { configured: true, checkedAt, balance: { amount: '18.42', currency: 'USD' }, smsMessagesSent: 37, smsCostThisMonth: 0.31, costAllTime: 26.58 };
   if (p.endsWith('/openai-billing')) return {
@@ -536,6 +604,10 @@ const ACTION_CATALOG = [
   { id: 'file_travel_or_school_email', label: 'Add to calendar and file the email', provider: 'google_calendar', consent_type: 'action_authority', reversible: true, standing: false },
   { id: 'dismiss_email', label: 'Dismiss from the mail list', provider: null, consent_type: 'action_authority', reversible: false, standing: false },
   { id: 'delete_email', label: 'Move to Trash', provider: 'gmail', consent_type: 'action_authority', reversible: true, standing: false },
+  { id: 'add_email_events', label: 'Add events from emails', provider: 'google_calendar', consent_type: 'action_authority', reversible: true, standing: false },
+  { id: 'unsubscribe_senders', label: 'Unsubscribe from senders', provider: 'gmail', consent_type: 'action_authority', reversible: false, standing: false },
+  { id: 'draft_reply', label: 'Save a reply draft', provider: 'gmail', consent_type: 'action_authority', reversible: true, standing: false },
+  { id: 'archive_emails', label: 'Archive emails', provider: 'gmail', consent_type: 'action_authority', reversible: true, standing: false },
 ];
 
 /**
@@ -968,6 +1040,72 @@ async function route(method: string, path: string, body?: any): Promise<any> {
     if (!rows.length) fail(404, 'Those emails could not be found');
     return { success: true, action: proposeEmailAction(rows, body?.overrides || {}) };
   }
+  if (method === 'POST' && /^\/api\/v1\/dashboard\/email\/[^/]+\/reply\/suggest$/.test(p)) {
+    await wait(900);
+    const row = mockEmails.find((e) => e.uuid === decodeURIComponent(p.split('/')[5]));
+    if (!row) fail(404, 'That email is no longer open');
+    return { success: true, body: `Hi ${row!.from_name || 'there'} — thanks for the reminder. I'll send the final roster [tonight]. See you Tuesday at 6.
+
+Sam` };
+  }
+  if (method === 'POST' && /^\/api\/v1\/dashboard\/email\/[^/]+\/reply\/propose$/.test(p)) {
+    const row = mockEmails.find((e) => e.uuid === decodeURIComponent(p.split('/')[5]));
+    if (!row) fail(404, 'That email is no longer open');
+    const text = String(body?.body || '');
+    const action: MockAction = {
+      uuid: `act-email-draft-${Date.now()}`, action_id: 'draft_reply', label: 'Save a reply draft',
+      summary: `Save a draft reply to ${row!.from_name} in Gmail — not sent: "${text.length > 220 ? `${text.slice(0, 220)}…` : text}"`,
+      rationale: null, params: { email_triage_uuid: row!.uuid, body: text }, status: 'pending', approval: null,
+      reversible: true, result_ref: null, error: null,
+      created_at: new Date().toISOString(), expires_at: new Date(Date.now() + 15 * 60_000).toISOString(), executed_at: null,
+    };
+    proposals.push(action);
+    return { success: true, action };
+  }
+  if (p === '/api/v1/dashboard/email/unsubscribe') {
+    const uuids: string[] = Array.isArray(body?.email_triage_uuids) ? body.email_triage_uuids : [];
+    const rows = mockEmails.filter((e) => uuids.includes(e.uuid) && e.status === 'new' && (e.extracted as { unsub?: string } | null)?.unsub);
+    if (!rows.length) fail(404, 'None of those senders offers a one-click unsubscribe');
+    const action: MockAction = {
+      uuid: `act-email-unsub-${Date.now()}`, action_id: 'unsubscribe_senders', label: 'Unsubscribe from senders',
+      summary: `Unsubscribe from ${rows.map((r) => r.from_name).join(', ')} and archive what they already sent — unsubscribing can't be undone from here`,
+      rationale: null, params: { items: rows.map((r) => ({ email_triage_uuid: r.uuid, sender: r.from_name })) }, status: 'pending', approval: null,
+      reversible: false, result_ref: null, error: null,
+      created_at: new Date().toISOString(), expires_at: new Date(Date.now() + 15 * 60_000).toISOString(), executed_at: null,
+    };
+    proposals.push(action);
+    return { success: true, action };
+  }
+  if (p === '/api/v1/dashboard/email/events') {
+    const uuids: string[] = Array.isArray(body?.email_triage_uuids) ? body.email_triage_uuids : [];
+    const rows = mockEmails.filter((e) => uuids.includes(e.uuid) && e.status === 'new' && (e.category === 'travel' || e.category === 'school')
+      && (e.extracted as { start?: string } | null)?.start);
+    if (!rows.length) fail(404, "None of those emails has a date Athena could read — open each to add one");
+    const titles = rows.map((r) => `"${(r.extracted as { title?: string }).title || r.subject}"`);
+    const action: MockAction = {
+      uuid: `act-email-events-${Date.now()}`, action_id: 'add_email_events', label: 'Add events from emails',
+      summary: `Add ${rows.length === 1 ? 'this event' : `${rows.length} events`} to your calendar — ${titles.join(', ')} — and file the emails`,
+      rationale: null, params: { items: rows.map((r) => ({ email_triage_uuid: r.uuid })) }, status: 'pending', approval: null,
+      reversible: true, result_ref: null, error: null,
+      created_at: new Date().toISOString(), expires_at: new Date(Date.now() + 15 * 60_000).toISOString(), executed_at: null,
+    };
+    proposals.push(action);
+    return { success: true, action };
+  }
+  if (p === '/api/v1/dashboard/email/archive') {
+    const uuids: string[] = Array.isArray(body?.email_triage_uuids) ? body.email_triage_uuids : [];
+    const rows = mockEmails.filter((e) => uuids.includes(e.uuid) && e.status === 'new');
+    if (!rows.length) fail(404, 'Those emails are no longer in your inbox');
+    const action: MockAction = {
+      uuid: `act-email-archive-${Date.now()}`, action_id: 'archive_emails', label: 'Archive emails',
+      summary: `Archive ${rows.length === 1 ? 'this email' : `${rows.length} emails`} out of your inbox (still in All Mail and search)`,
+      rationale: null, params: { email_triage_uuids: rows.map((r) => r.uuid) }, status: 'pending', approval: null,
+      reversible: true, result_ref: null, error: null,
+      created_at: new Date().toISOString(), expires_at: new Date(Date.now() + 15 * 60_000).toISOString(), executed_at: null,
+    };
+    proposals.push(action);
+    return { success: true, action };
+  }
   if (p === '/api/v1/dashboard/email/delete') {
     const uuids: string[] = Array.isArray(body?.email_triage_uuids) ? body.email_triage_uuids : [];
     const rows = mockEmails.filter((e) => uuids.includes(e.uuid));
@@ -1009,7 +1147,7 @@ async function route(method: string, path: string, body?: any): Promise<any> {
     let items = mockEmails.filter((e) => e.status === (url.searchParams.get('status') || 'new'));
     const category = url.searchParams.get('category');
     if (category) items = items.filter((e) => e.category === category);
-    return { items };
+    return { items: [...items].sort((a, b) => String(b.received_at).localeCompare(String(a.received_at))) };
   }
   if (p === '/api/v1/dashboard/news') return dashboardNews();
   if (p.startsWith('/api/v1/system/')) return mockSystemBilling(p, new URLSearchParams(window.location.search));
@@ -1253,7 +1391,7 @@ async function route(method: string, path: string, body?: any): Promise<any> {
     Object.assign(action!, { status: 'done', approval: 'human', result_ref: 'mock-evt-1', executed_at: new Date().toISOString() });
     // The real execute() also marks the triaged email(s) 'actioned'; mirrored
     // here so a filed email leaves the Mail list the same way.
-    if (action!.action_id === 'file_receipt_email') {
+    if (action!.action_id === 'file_receipt_email' || action!.action_id === 'add_email_events') {
       const ids = ((action!.params?.items as { email_triage_uuid: string }[]) || []).map((i) => i.email_triage_uuid);
       mockEmails = mockEmails.map((e) => (ids.includes(e.uuid) ? { ...e, status: 'actioned' } : e));
     } else if (action!.action_id === 'file_travel_or_school_email') {
@@ -1262,6 +1400,15 @@ async function route(method: string, path: string, body?: any): Promise<any> {
     } else if (action!.action_id === 'delete_email') {
       const ids = (action!.params?.email_triage_uuids as string[]) || [];
       mockEmails = mockEmails.map((e) => (ids.includes(e.uuid) ? { ...e, status: 'trashed' } : e));
+    } else if (action!.action_id === 'unsubscribe_senders') {
+      const keys = ((action!.params?.items as { email_triage_uuid: string }[]) || []).map((i) => mockEmails.find((e) => e.uuid === i.email_triage_uuid)?.group_key);
+      mockEmails = mockEmails.map((e) => (keys.includes(e.group_key) && (e.category === 'promo' || e.category === 'notification') ? { ...e, status: 'archived' } : e));
+    } else if (action!.action_id === 'draft_reply') {
+      const id = action!.params?.email_triage_uuid as string | undefined;
+      mockEmails = mockEmails.map((e) => (e.uuid === id ? { ...e, status: 'actioned' } : e));
+    } else if (action!.action_id === 'archive_emails') {
+      const ids = (action!.params?.email_triage_uuids as string[]) || [];
+      mockEmails = mockEmails.map((e) => (ids.includes(e.uuid) ? { ...e, status: 'archived' } : e));
     }
     return { success: true, action };
   }

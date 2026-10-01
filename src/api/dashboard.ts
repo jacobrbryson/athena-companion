@@ -24,7 +24,7 @@ export interface DashboardSummary {
   familyChores: Source<{ name: string; chores: { title: string; completed: boolean; status: string | null; dueDate: string | null }[] }>;
   jira: Source<{ issues: JiraIssue[]; partial: boolean }>;
   slack: Source<{ workspace: string; messages: { text: string; channel: string; url: string; timestamp: string }[] }>;
-  emailTriage: Source<{ newCount: number; receiptCount: number; travelCount: number; schoolCount: number; otherCount: number; preview: TriageEmail[] }>;
+  emailTriage: Source<{ newCount: number; receiptCount: number; travelCount: number; schoolCount: number; otherCount: number; pendingCount?: number; bundles?: MailBundles; preview: TriageEmail[] }>;
   familyHealth: Source<{ active: FamilyHealthStatus[] }>;
 }
 export type HealthSeverity = 'mild' | 'moderate' | 'severe';
@@ -33,8 +33,25 @@ export interface FamilyHealthStatus {
   uuid: string; personName: string; symptom: string; severity: HealthSeverity;
   status: 'active' | 'resolved'; startedAt: string; resolvedAt: string | null; notes: string | null; daysActive: number;
 }
-export type EmailCategory = 'receipt' | 'travel' | 'school' | 'other';
-export type EmailTriageStatus = 'new' | 'actioned' | 'dismissed' | 'trashed';
+/** `pending`: new mail the sync has seen but Athena has not sorted yet. */
+export type EmailCategory = 'receipt' | 'travel' | 'school' | 'needs_reply' | 'promo' | 'notification' | 'fyi' | 'other' | 'pending';
+export type EmailTriageStatus = 'new' | 'actioned' | 'dismissed' | 'trashed' | 'archived' | 'gone';
+/** One email inside a bundle — enough to show it and let the person untick it. */
+export interface BundleEmail { uuid: string; from: string; subject: string | null; received_at: string | null }
+/**
+ * What Athena proposes for the open list (Mail card phase 2). Each bundle
+ * carries the rows it would act on; `count` can exceed `items` (capped at
+ * 100 archive / 25 receipts / 10 replies), and one approval covers `items`.
+ */
+export interface MailBundles {
+  archive: { count: number; senders: { name: string; count: number }[]; items: (BundleEmail & { category: EmailCategory })[] };
+  receipts: { count: number; items: (BundleEmail & { merchant: string | null })[] };
+  /** `start` is null when Athena found no date — those need one typed in, one at a time. */
+  events: { count: number; items: (BundleEmail & { category: EmailCategory; title: string | null; start: string | null; all_day: boolean; location: string | null })[] };
+  replies: { count: number; items: (BundleEmail & { ask: string | null })[] };
+  /** Senders with 3+ promos/updates waiting and a one-click unsubscribe; `email_triage_uuid` is the email whose link is used. */
+  unsubscribe?: { count: number; senders: { key: string; name: string; count: number; email_triage_uuid: string }[] };
+}
 /** One receipt/travel/school-announcement email Athena has sorted out of the inbox.
  *  `extracted` is the LLM's structured read of it — receipt fields, or a candidate
  *  calendar event — null for 'other', which gets no extraction pass at all. */
@@ -122,6 +139,14 @@ export interface GcpBilling {
 export interface TwilioBilling { configured: boolean; checkedAt: string; balance?: { amount: string | null; currency: string | null }; smsMessagesSent?: number; smsCostThisMonth?: number; costAllTime?: number | null }
 export type SystemHealthStatus = 'ok' | 'degraded' | 'down';
 /** Athena's own health: each check says why when it isn't ok. */
+/** Minutes saved by actions Athena carried out after an approval. UTC months. */
+export interface TimeSaved {
+  checkedAt: string; month: string; since: string | null;
+  minutesThisMonth: number; minutesLastMonth: number; minutesAllTime: number; actionsThisMonth: number; actionsAllTime: number;
+  byAction: { actionId: string; label: string; count: number; minutesEach: number; minutes: number }[];
+  daily: { date: string; minutes: number }[];
+  rates: { actionId: string; label: string; minutesEach: number }[];
+}
 export interface SystemHealth { status: SystemHealthStatus; checkedAt: string; checks: { id: string; label: string; status: SystemHealthStatus; detail: string }[] }
 /**
  * A page Athena watches, and the rhythm she has settled on for it. The rhythm
@@ -277,6 +302,7 @@ export const dashboardApi = {
   systemOpenAI: () => api.get<OpenAIBilling>('/api/v1/system/openai-billing'),
   systemGcp: () => api.get<GcpBilling>('/api/v1/system/gcp-billing'),
   systemHealth: () => api.get<SystemHealth>('/api/v1/system/health'),
+  systemTimeSaved: () => api.get<TimeSaved>('/api/v1/system/time-saved'),
   sources: () => api.get<{ sources: NewsSource[]; maxSources: number }>('/api/v1/dashboard/news/sources'),
   saveSources: (sources: (string | { url: string; label?: string | null; scope?: 'world' | 'personal' })[]) =>
     api.put<{ sources: NewsSource[] }>('/api/v1/dashboard/news/sources', { sources }),
@@ -312,6 +338,21 @@ export const dashboardApi = {
   mailDismiss: (uuid: string) =>
     api.post<{ success: true; action: AthenaAction }>(`/api/v1/dashboard/email/${encodeURIComponent(uuid)}/dismiss`),
   /** Proposes moving one or more emails to Gmail's Trash — recoverable there for ~30 days. Still needs approval. */
+  /** Proposes archiving these emails out of the inbox (still in All Mail and search). Still needs approval. */
+  /** Proposes adding the events from several dated travel/school emails (and filing them). Still needs approval. */
+  mailEvents: (emailTriageUuids: string[]) =>
+    api.post<{ success: true; action: AthenaAction }>('/api/v1/dashboard/email/events', { email_triage_uuids: emailTriageUuids }),
+  /** Proposes one-click unsubscribing from senders (one email uuid per sender). Can't be undone; still needs approval. */
+  mailUnsubscribe: (emailTriageUuids: string[]) =>
+    api.post<{ success: true; action: AthenaAction }>('/api/v1/dashboard/email/unsubscribe', { email_triage_uuids: emailTriageUuids }),
+  /** A suggested reply as editable text — writes nothing anywhere. */
+  mailSuggestReply: (uuid: string) =>
+    api.post<{ success: true; body: string }>(`/api/v1/dashboard/email/${encodeURIComponent(uuid)}/reply/suggest`, {}),
+  /** Proposes saving the (edited) reply to Gmail's Drafts — never sent. Still needs approval. */
+  mailProposeDraft: (uuid: string, body: string) =>
+    api.post<{ success: true; action: AthenaAction }>(`/api/v1/dashboard/email/${encodeURIComponent(uuid)}/reply/propose`, { body }),
+  mailArchive: (emailTriageUuids: string[]) =>
+    api.post<{ success: true; action: AthenaAction }>('/api/v1/dashboard/email/archive', { email_triage_uuids: emailTriageUuids }),
   mailDelete: (emailTriageUuids: string[]) =>
     api.post<{ success: true; action: AthenaAction }>('/api/v1/dashboard/email/delete', { email_triage_uuids: emailTriageUuids }),
   /** Report (or update) a family member's symptom. Athena picks this up in chat and, if initiative is on, may raise it herself. */
