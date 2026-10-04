@@ -78,6 +78,14 @@ export const DASHBOARD_REFRESH_EVENT = 'athena-dashboard-refresh';
  */
 export const CHAT_FILLER_EVENT = 'athena-chat-filler';
 
+/**
+ * What she is genuinely doing right now — "calendar", "email" — pushed by the
+ * server only while a real read is under way, and ended when it ends. The
+ * avatar acts it out (see UnityAthena); nothing else should invent one.
+ * Detail is `{ activity, state: 'start' | 'end' }`.
+ */
+export const CHAT_ACTIVITY_EVENT = 'athena-chat-activity';
+
 export type ChatTransport = 'connecting' | 'ws' | 'polling';
 
 export interface ChatState {
@@ -285,6 +293,18 @@ export function useChat(profileUuid: string, options?: ChatOptions): ChatState {
           // pending (a hands-free turn may be the first sign of one).
           if (msg?.rpc === 'filler' && typeof msg.filler?.text === 'string') {
             window.dispatchEvent(new CustomEvent(CHAT_FILLER_EVENT, { detail: msg.filler.text }));
+          }
+          // A real read is under way (or has finished): the avatar shows it.
+          if (
+            msg?.rpc === 'activity' &&
+            typeof msg.activity === 'string' &&
+            (msg.state === 'start' || msg.state === 'end')
+          ) {
+            window.dispatchEvent(
+              new CustomEvent(CHAT_ACTIVITY_EVENT, {
+                detail: { activity: msg.activity, state: msg.state },
+              })
+            );
           }
           // Athena proposed doing something. Re-broadcast as a DOM event
           // rather than adding it to chat state: the proposal card lives

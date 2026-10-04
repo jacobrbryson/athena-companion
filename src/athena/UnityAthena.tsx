@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { UNITY_ASSET_BASE } from '../config';
+import { CHAT_ACTIVITY_EVENT } from './useChat';
 
 /**
  * Unity WebGL Athena player — the Guardians app's embed (itself a port of
@@ -15,6 +16,9 @@ import { UNITY_ASSET_BASE } from '../config';
  * UNITY_ASSET_BASE (the shared GCS bucket by default).
  */
 
+const ACTIVITY_MIN_SHOW_MS = 1800;
+const ACTIVITY_MAX_SHOW_MS = 60_000;
+
 const u = (p: string) => `${UNITY_ASSET_BASE}/${p}`;
 
 /**
@@ -25,6 +29,8 @@ const u = (p: string) => `${UNITY_ASSET_BASE}/${p}`;
 export interface AthenaBridge {
   playGesture: (gesture: 'Wave' | 'Happy' | 'Yes' | 'No') => void;
   setThinking: (thinking: boolean) => void;
+  /** What she is really doing right now; '' for nothing. See CHAT_ACTIVITY_EVENT. */
+  setActivity: (activity: string) => void;
   sendToGameObject: (gameObject: string, method: string, param?: string) => void;
 }
 
@@ -113,6 +119,8 @@ export function UnityAthena({ sessionId, isThinking, onReady }: Props) {
               instance.SendMessage('AthenaBridge', 'PlayGesture', gesture),
             setThinking: (thinking) =>
               instance.SendMessage('AthenaBridge', 'SetThinking', String(thinking)),
+            setActivity: (activity) =>
+              instance.SendMessage('AthenaBridge', 'SetActivity', activity),
             sendToGameObject: (gameObject, method, param) =>
               param === undefined
                 ? instance.SendMessage(gameObject, method)
@@ -147,6 +155,53 @@ export function UnityAthena({ sessionId, isThinking, onReady }: Props) {
   useEffect(() => {
     instanceRef.current?.SendMessage('AthenaBridge', 'SetThinking', String(isThinking));
   }, [isThinking]);
+
+  // --- server -> Unity: show what she is really doing. ---
+  // The server announces an activity only while the read is happening, and a
+  // calendar read can finish in a few hundred ms — too short to see. So the
+  // avatar holds each activity for ACTIVITY_MIN_SHOW_MS after it began. That
+  // only ever extends a true moment; it never shows one that did not happen.
+  // ACTIVITY_MAX_SHOW_MS covers a lost 'end' (dropped socket) so she can't be
+  // left "working" on nothing.
+  useEffect(() => {
+    let current = '';
+    let shownAt = 0;
+    let clearTimer: number | undefined;
+    let watchdog: number | undefined;
+
+    const show = (activity: string) => {
+      current = activity;
+      instanceRef.current?.SendMessage('AthenaBridge', 'SetActivity', activity);
+    };
+    const stop = () => {
+      window.clearTimeout(clearTimer);
+      window.clearTimeout(watchdog);
+      clearTimer = watchdog = undefined;
+      show('');
+    };
+
+    const onActivity = (event: Event) => {
+      const { activity, state } = (event as CustomEvent<{ activity: string; state: string }>).detail;
+      if (state === 'start') {
+        window.clearTimeout(clearTimer);
+        window.clearTimeout(watchdog);
+        shownAt = Date.now();
+        show(activity);
+        watchdog = window.setTimeout(stop, ACTIVITY_MAX_SHOW_MS);
+      } else if (state === 'end' && current === activity) {
+        window.clearTimeout(clearTimer);
+        const wait = Math.max(0, ACTIVITY_MIN_SHOW_MS - (Date.now() - shownAt));
+        clearTimer = window.setTimeout(stop, wait);
+      }
+    };
+
+    window.addEventListener(CHAT_ACTIVITY_EVENT, onActivity);
+    return () => {
+      window.removeEventListener(CHAT_ACTIVITY_EVENT, onActivity);
+      window.clearTimeout(clearTimer);
+      window.clearTimeout(watchdog);
+    };
+  }, []);
 
   return (
     <div className="relative w-full h-full overflow-hidden bg-black/90">
