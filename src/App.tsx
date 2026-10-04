@@ -11,6 +11,7 @@ import { connection } from './localConnection';
 import { AndroidRegistration } from './native/AndroidRegistration';
 import { LegalPage } from './pages/LegalPage';
 import { SmsConsentPage } from './pages/SmsConsentPage';
+import { OAuthCallback } from './pages/OAuthCallback';
 
 /** Home: Athena when signed in, otherwise the sign-in gate. */
 function Home() {
@@ -35,6 +36,8 @@ export default function App() {
           <Route path="/privacy" element={<LegalPage kind="privacy" />} />
           <Route path="/terms" element={<LegalPage kind="terms" />} />
           <Route path="/sms-consent" element={<SmsConsentPage />} />
+          {/* Every Google consent returns here (one redirect URI for all of them). */}
+          <Route path="/oauth/google/callback" element={<OAuthCallback />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>

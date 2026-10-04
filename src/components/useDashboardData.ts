@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
-import { dashboardApi, type DashboardSummary, type NewsResult, type DashboardPriority, type RightNow, type EmergencyAlert } from '../api/dashboard';
+import { dashboardApi, type DashboardSummary, type NewsResult, type DashboardPriority, type RightNow, type EmergencyAlert, type CommunityOverview } from '../api/dashboard';
 import { memoryApi, actionsApi, type Fact, type AthenaAction } from '../api/companion';
 import { DASHBOARD_REFRESH_EVENT } from '../athena/useChat';
 import { invalidateReads } from '../api/readCache';
@@ -30,6 +30,9 @@ export function useDashboardData() {
   // The banner polls the same endpoint on its own minute; this only needs to
   // be as fresh as the cards around it.
   const [nearby, setNearby] = useState<Result<EmergencyAlert>>(initial);
+  // Points of interest, neighbours and local events: the Community page and
+  // the card's "coming up" line.
+  const [community, setCommunity] = useState<Result<CommunityOverview>>(initial);
   const alive = useRef(false);
   const inFlight = useRef(false);
   const queued = useRef(false);
@@ -49,7 +52,7 @@ export function useDashboardData() {
         try { const data = await fetcher(); if (canPublish()) setter({ data, loading: false, error: null }); }
         catch (e) { if (canPublish()) setter({ data: null, loading: false, error: (e as Error).message || 'Unavailable' }); }
       }
-      await Promise.allSettled([load(dashboardApi.summary, setSummary), load(memoryApi.facts, setFacts), load(actionsApi.pending, setActions), load(dashboardApi.news, setNews), load(dashboardApi.alert, setNearby)]);
+      await Promise.allSettled([load(dashboardApi.summary, setSummary), load(memoryApi.facts, setFacts), load(actionsApi.pending, setActions), load(dashboardApi.news, setNews), load(dashboardApi.alert, setNearby), load(dashboardApi.community, setCommunity)]);
       lastRefresh.current = Date.now();
       // After the data, never with it: the ordering is read from the snapshot
       // the server just built, and it must never hold up the cards themselves.
@@ -72,7 +75,7 @@ export function useDashboardData() {
     const refreshNow = () => {
       revision.current++;
       invalidateReads();
-      setSummary(initial); setFacts(initial); setActions(initial); setNews(initial); setPriority(null); setRightNow(initial); setNearby(initial);
+      setSummary(initial); setFacts(initial); setActions(initial); setNews(initial); setPriority(null); setRightNow(initial); setNearby(initial); setCommunity(initial);
       void refresh();
     };
     const timer = window.setInterval(tick, SILENT_REFRESH_MS);
@@ -80,5 +83,9 @@ export function useDashboardData() {
     window.addEventListener(DASHBOARD_REFRESH_EVENT, refreshNow);
     return () => { alive.current = false; revision.current++; window.clearInterval(timer); document.removeEventListener('visibilitychange', tick); window.removeEventListener(DASHBOARD_REFRESH_EVENT, refreshNow); };
   }, [refresh]);
-  return { summary, facts, actions, news, priority, rightNow, nearby, refresh, loading: summary.loading || facts.loading || actions.loading || news.loading };
+  /** After an edit on the Community page: the server's fresh list, without refetching the rest. */
+  const patchCommunity = useCallback((patch: Partial<CommunityOverview>) => {
+    setCommunity(previous => previous.data ? { ...previous, data: { ...previous.data, ...patch } } : previous);
+  }, []);
+  return { summary, facts, actions, news, priority, rightNow, nearby, community, patchCommunity, refresh, loading: summary.loading || facts.loading || actions.loading || news.loading };
 }

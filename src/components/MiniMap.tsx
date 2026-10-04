@@ -27,6 +27,8 @@ export interface MapPlace {
   longitude: number;
   name: string;
   radiusMiles?: number;
+  /** Drawn in the place's marker; a house when not given. */
+  icon?: string;
 }
 
 const TILE = 256;
@@ -149,7 +151,7 @@ export function MiniMap({
           </svg>
           {view.places.map((p, i) => (
             <div key={`place-${i}`} className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2" style={{ left: p.x, top: p.y }} title={p.name}>
-              <span className="flex h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-blue-600 text-[12px] shadow-md">🏠</span>
+              <span className="flex h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-blue-600 text-[12px] shadow-md">{p.icon || '🏠'}</span>
               <span className="absolute left-1/2 top-6 -translate-x-1/2 whitespace-nowrap rounded bg-white/90 px-1 text-[10px] font-semibold text-slate-800 shadow">{p.name}</span>
             </div>
           ))}

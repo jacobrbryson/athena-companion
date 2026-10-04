@@ -195,12 +195,95 @@ const inMinutes = (m: number) => new Date(now + m * 60_000).toISOString();
 const dayStamp = (daysAgo: number) => new Date(now - daysAgo * DAY).toISOString().slice(0, 10);
 
 /** Watched places for the emergency watch, kept in localStorage like the rest of the mock. */
-function mockWatchPlaces(): { uuid: string; name: string; address: string | null; latitude: number; longitude: number; radiusMiles: number; enabled: boolean }[] {
+function mockWatchPlaces(): { uuid: string; name: string; kind: string; address: string | null; notes: string | null; latitude: number; longitude: number; radiusMiles: number; enabled: boolean }[] {
   try {
     const saved = localStorage.getItem('mock_watch_places');
-    if (saved) return JSON.parse(saved);
+    if (saved) return JSON.parse(saved).map((p: { kind?: string; notes?: string | null }) => ({ kind: 'other', notes: null, ...p }));
   } catch { /* fall through */ }
-  return [{ uuid: 'wp-home', name: 'Home', address: '148 RUSHING WATER LN, TROUTMAN, NC, 28166', latitude: 35.6741, longitude: -80.9073, radiusMiles: 3, enabled: true }];
+  return [
+    { uuid: 'wp-home', name: 'Home', kind: 'home', address: '148 RUSHING WATER LN, TROUTMAN, NC, 28166', notes: null, latitude: 35.6741, longitude: -80.9073, radiusMiles: 3, enabled: true },
+    { uuid: 'wp-church', name: 'Troutman ARP Church', kind: 'church', address: '125 S MAIN ST, TROUTMAN, NC, 28166', notes: 'Wednesday night suppers', latitude: 35.6995, longitude: -80.8885, radiusMiles: 1, enabled: true },
+  ];
+}
+
+// -------------------------------------------------------- place reminders ---
+
+function mockPlaceReminders() {
+  const saved = localStorage.getItem('mock_place_reminders');
+  if (saved) return JSON.parse(saved) as Array<Record<string, unknown> & { uuid: string }>;
+  const base = { latitude: 35.7001, longitude: -80.8802, radiusM: 150, fireCount: 0, lastFiredAt: null, doneAt: null, createdAt: '2026-10-04T15:00:00Z' };
+  return [
+    { ...base, uuid: 'pr-1', placeUuid: null, placeName: "Missy's", address: '412 OAK ST, TROUTMAN, NC, 28166', reminder: 'Bring back her casserole dish', repeats: false, status: 'armed' },
+    { ...base, uuid: 'pr-2', placeUuid: null, placeName: 'Troutman ARP Church', address: null, reminder: 'Drop off the canned goods', repeats: true, status: 'armed' },
+  ];
+}
+
+// -------------------------------------------------------------- community ---
+// Neighbours and local events, kept in localStorage like the watched places so
+// the Community page can be worked on without a database.
+type MockNeighbor = { uuid: string; name: string | null; address: string | null; latitude: number | null; longitude: number | null; placeUuid: string | null; where: string | null; contact: string | null; notes: string | null; contacts: { contactId: string; name: string | null }[] };
+// Google Contacts, as GET /dashboard/community/contacts returns them. ?contacts=off
+// in the URL plays the "not connected" case.
+const MOCK_CONTACTS = [
+  { contactId: '111', name: 'Bill Henderson', phone: '+1 704-555-0100', email: 'bill.henderson@example.com', address: '152 Rushing Water Ln, Troutman, NC 28166', photoUrl: null },
+  { contactId: '222', name: 'Carol Henderson', phone: '+1 704-555-0101', email: null, address: '152 Rushing Water Ln, Troutman, NC 28166', photoUrl: null },
+  { contactId: '333', name: 'Pastor Jim Walker', phone: '+1 704-555-0142', email: 'jim@troutmanarp.example', address: null, photoUrl: null },
+  { contactId: '444', name: 'Maria Lopez', phone: '+1 704-555-0177', email: 'maria.lopez@example.com', address: '140 Rushing Water Ln, Troutman, NC 28166', photoUrl: null },
+];
+const mockContactsOff = () => new URLSearchParams(window.location.search).get('contacts') === 'off';
+const mockStreet = (a: string | null) => (a || '').split(',')[0].toLowerCase().replace(/\blane\b/g, 'ln').replace(/\s+/g, ' ').trim();
+function mockLinkedTo(contactId: string) {
+  const n = mockNeighbors().find((x) => x.contacts.some((c) => c.contactId === contactId));
+  return n ? { uuid: n.uuid, label: n.name || (n.address || '').split(',')[0] } : undefined;
+}
+function withMockContacts(list: MockNeighbor[]) {
+  return list.map((n) => ({
+    ...n,
+    contacts: n.contacts.map((link) => {
+      if (mockContactsOff()) return { ...link, card: null, status: 'not_connected' };
+      const c = MOCK_CONTACTS.find((x) => x.contactId === link.contactId);
+      return c ? { ...link, name: c.name, card: c, status: 'ok' } : { ...link, card: null, status: 'missing' };
+    }),
+  }));
+}
+type MockEvent = { uuid: string; title: string; startsOn: string; endsOn: string | null; time: string | null; placeUuid: string | null; location: string | null; repeats: 'none' | 'yearly'; url: string | null; notes: string | null };
+function mockStored<T>(key: string, fallback: T[]): T[] {
+  try { const saved = localStorage.getItem(key); if (saved) return JSON.parse(saved); } catch { /* fall through */ }
+  return fallback;
+}
+const mockNeighbors = () => mockStored<MockNeighbor>('mock_neighbors', [
+  { uuid: 'nb-1', name: 'The Hendersons', address: '152 RUSHING WATER LN, TROUTMAN, NC, 28166', latitude: 35.6747, longitude: -80.9061, placeUuid: 'wp-home', where: 'Two doors down, the blue house', contact: null, notes: 'Have a generator; Carol is a retired nurse.', contacts: [{ contactId: '111', name: 'Bill Henderson' }, { contactId: '222', name: 'Carol Henderson' }] },
+]);
+const mockEvents = () => mockStored<MockEvent>('mock_events', [
+  { uuid: 'ev-1', title: 'Ham Day', startsOn: '2026-09-26', endsOn: null, time: '9am–3pm', placeUuid: null, location: 'Downtown Troutman', repeats: 'yearly', url: null, notes: 'Parade at 10. Park behind the depot.' },
+]);
+function mockNextOn(e: MockEvent) {
+  if (e.repeats !== 'yearly') return { nextOn: e.startsOn, nextEndsOn: e.endsOn };
+  const today = new Date().toISOString().slice(0, 10);
+  let on = `${Math.max(Number(today.slice(0, 4)), Number(e.startsOn.slice(0, 4)))}${e.startsOn.slice(4)}`;
+  if ((Date.parse(today) - Date.parse(on)) / 86400000 > 14) on = `${Number(on.slice(0, 4)) + 1}${on.slice(4)}`;
+  return { nextOn: on, nextEndsOn: null };
+}
+function mockEventList() {
+  const today = new Date().toISOString().slice(0, 10);
+  const all = mockEvents().map((e) => ({ ...e, ...mockNextOn(e) }));
+  const past = (e: { nextOn: string; nextEndsOn: string | null }) => (e.nextEndsOn || e.nextOn) < today;
+  return all.sort((a, b) => past(a) !== past(b) ? (past(a) ? 1 : -1) : past(a) ? b.nextOn.localeCompare(a.nextOn) : a.nextOn.localeCompare(b.nextOn));
+}
+function mockCommunity() {
+  return {
+    places: mockWatchPlaces(),
+    neighbors: withMockContacts(mockNeighbors()),
+    events: mockEventList(),
+    localNews: [
+      { title: 'Ham Day draws its biggest crowd yet to downtown Troutman', url: 'https://example.com/ham-day', summary: null, published: null, firstSeen: new Date(Date.now() - 2 * 86400000).toISOString(), slot: 0, sourceUuid: 'src-1', source: 'Statesville Record & Landmark', matched: 'Troutman' },
+    ],
+    kinds: ['home', 'family', 'neighborhood', 'church', 'school', 'town', 'work', 'business', 'park', 'other'],
+  };
+}
+function mockUpsert<T extends { uuid: string }>(key: string, list: T[], uuid: string | null, row: Omit<T, 'uuid'>) {
+  const next = uuid ? list.map((x) => (x.uuid === uuid ? ({ ...row, uuid } as T) : x)) : [...list, { ...row, uuid: `${key}-${Date.now()}` } as T];
+  localStorage.setItem(key, JSON.stringify(next));
 }
 
 function dashboardSummary() {
@@ -879,7 +962,8 @@ async function route(method: string, path: string, body?: any): Promise<any> {
     if (method === 'PUT') {
       const list = mockWatchPlaces();
       const at = list.findIndex((x) => x.name === body.name);
-      const next = { uuid: at >= 0 ? list[at].uuid : `wp-${Date.now()}`, name: body.name, address: body.address ?? null, latitude: body.latitude, longitude: body.longitude, radiusMiles: body.radiusMiles ?? 3, enabled: body.enabled !== false };
+      const prev = at >= 0 ? list[at] : null;
+      const next = { uuid: prev ? prev.uuid : `wp-${Date.now()}`, name: body.name, kind: body.kind ?? prev?.kind ?? 'other', address: body.address ?? null, notes: body.notes !== undefined ? body.notes || null : prev?.notes ?? null, latitude: body.latitude, longitude: body.longitude, radiusMiles: body.radiusMiles ?? 3, enabled: body.enabled !== false };
       if (at >= 0) list[at] = next; else list.push(next);
       localStorage.setItem('mock_watch_places', JSON.stringify(list));
     }
@@ -889,6 +973,52 @@ async function route(method: string, path: string, body?: any): Promise<any> {
     const uuid = decodeURIComponent(p.split('/').pop() || '');
     localStorage.setItem('mock_watch_places', JSON.stringify(mockWatchPlaces().filter((x) => x.uuid !== uuid)));
     return { places: mockWatchPlaces() };
+  }
+  // The shared Google callback page posts here; a real server finds the flow from the state.
+  if (p === '/api/v1/integrations/callback' && method === 'POST') {
+    if (!body?.state) fail(400, 'That sign-in link has expired or was already used. Start again from Connected apps.');
+    if (body?.error) return { success: true, redirect: `/?integration=google&status=error&reason=${encodeURIComponent(body.error)}` };
+    return { success: true, redirect: '/?integration=google_contacts&status=connected' };
+  }
+  if (p.startsWith('/api/v1/place-reminders')) {
+    const uuid = p.split('/')[4] ? decodeURIComponent(p.split('/')[4]) : null;
+    let list = mockPlaceReminders();
+    if (method === 'DELETE') { list = list.filter((x) => x.uuid !== uuid); localStorage.setItem('mock_place_reminders', JSON.stringify(list)); }
+    return { reminders: list };
+  }
+  if (p === '/api/v1/dashboard/community') return mockCommunity();
+  if (p === '/api/v1/dashboard/community/contacts') {
+    if (mockContactsOff()) return { linked: false, matches: [] };
+    const q = (new URL(path, window.location.origin).searchParams.get('q') || '').trim().toLowerCase();
+    return { linked: true, matches: q.length < 2 ? [] : MOCK_CONTACTS.filter((c) => c.name.toLowerCase().includes(q) || (c.email || '').includes(q)).map((c) => ({ ...c, linkedTo: mockLinkedTo(c.contactId) })) };
+  }
+  if (p === '/api/v1/dashboard/community/contacts/at') {
+    if (mockContactsOff()) return { linked: false, matches: [] };
+    const street = mockStreet(new URL(path, window.location.origin).searchParams.get('address'));
+    return { linked: true, matches: MOCK_CONTACTS.filter((c) => street && mockStreet(c.address) === street).map((c) => ({ ...c, linkedTo: mockLinkedTo(c.contactId) })) };
+  }
+  if (p.startsWith('/api/v1/dashboard/community/neighbors')) {
+    const uuid = p.split('/')[6] ? decodeURIComponent(p.split('/')[6]) : null;
+    if (method === 'DELETE') localStorage.setItem('mock_neighbors', JSON.stringify(mockNeighbors().filter((x) => x.uuid !== uuid)));
+    else {
+      if (!/^\d/.test(String(body?.address || '').trim())) fail(400, 'Start the address with the house number and street, like 152 Rushing Water Ln.');
+      const others = mockNeighbors().filter((x) => x.uuid !== uuid);
+      if (others.some((x) => mockStreet(x.address) === mockStreet(body.address))) fail(400, `You already have a household at ${String(body.address).split(',')[0]} — edit that one instead.`);
+      const taken = (body.contacts || []).find((c: { contactId: string }) => others.some((x) => x.contacts.some((y) => y.contactId === c.contactId)));
+      if (taken) fail(400, `${taken.name || 'That contact'} is already linked to another household. Unlink them there first.`);
+      mockUpsert<MockNeighbor>('mock_neighbors', mockNeighbors(), uuid, { name: body.name || null, address: body.address, latitude: body.latitude ?? null, longitude: body.longitude ?? null, placeUuid: body.placeUuid || null, where: body.where || null, contact: body.contact || null, notes: body.notes || null, contacts: body.contacts || [] });
+    }
+    return { neighbors: withMockContacts(mockNeighbors()) };
+  }
+  if (p.startsWith('/api/v1/dashboard/community/events')) {
+    const uuid = p.split('/')[6] ? decodeURIComponent(p.split('/')[6]) : null;
+    if (method === 'DELETE') localStorage.setItem('mock_events', JSON.stringify(mockEvents().filter((x) => x.uuid !== uuid)));
+    else {
+      if (!String(body?.title || '').trim()) fail(400, 'Give the event a name, like Ham Day.');
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(body?.startsOn || '')) fail(400, 'Pick the day it happens.');
+      mockUpsert<MockEvent>('mock_events', mockEvents(), uuid, { title: body.title.trim(), startsOn: body.startsOn, endsOn: body.endsOn || null, time: body.time || null, placeUuid: body.placeUuid || null, location: body.location || null, repeats: body.repeats === 'yearly' ? 'yearly' : 'none', url: body.url || null, notes: body.notes || null });
+    }
+    return { events: mockEventList() };
   }
   if (p === '/api/v1/dashboard/incidents/geocode') {
     const q = new URL(path, window.location.origin).searchParams.get('q') || '';

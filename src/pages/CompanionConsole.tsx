@@ -15,7 +15,6 @@ import { DevicesPanel } from '../components/DevicesPanel';
 import { ActionsPanel } from '../components/ActionsPanel';
 import { InitiativePanel } from '../components/InitiativePanel';
 import { EmergencyBanner } from '../components/EmergencyBanner';
-import { PlacesPanel } from '../components/PlacesPanel';
 import { MiniMap } from '../components/MiniMap';
 import { useNudges } from '../athena/useNudges';
 import { ActionProposal } from '../components/ActionProposal';
@@ -50,7 +49,7 @@ const ARRIVAL_MAX_MS = 14000;
 const MAX_VOICE_HOLD_MS = 20000;
 const MAX_MESSAGE = 2000;
 
-type Panel = 'memory' | 'photo' | 'camera' | 'brain' | 'devices' | 'local' | 'integrations' | 'actions' | 'initiative' | 'places' | null;
+type Panel = 'memory' | 'photo' | 'camera' | 'brain' | 'devices' | 'local' | 'integrations' | 'actions' | 'initiative' | null;
 
 export function CompanionConsole() {
   const { user, profile, arrival, consumeArrival, signOut } = useAuth();
@@ -396,6 +395,16 @@ export function CompanionConsole() {
     // A new page starts at the top; the workspace is what scrolls, not window.
     window.setTimeout(() => document.querySelector('.companion-workspace')?.scrollTo({ top: 0, behavior: 'smooth' }), 0);
   }
+  /**
+   * Points of interest live on the Community page (they replaced the Watched
+   * places drawer), so "add a place" from the banner or a card goes there and
+   * lands on the list rather than the top of the page.
+   */
+  function showPointsOfInterest() {
+    setActiveSection('Community');
+    setView('dashboard');
+    window.setTimeout(() => document.getElementById('community-places')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+  }
   const menuItems: { icon: string; label: string; onClick: () => void; right?: string }[] = [
     { icon: '🧠', label: 'Memories', onClick: () => openPanel('memory') },
     // The phone has no left nav; this is its way to the Dreams page.
@@ -407,7 +416,6 @@ export function CompanionConsole() {
     { icon: '🏠', label: 'Local server', onClick: () => openPanel('local') },
     { icon: '⚡', label: 'Actions', onClick: () => openPanel('actions') },
     { icon: '💡', label: 'Initiative', onClick: () => openPanel('initiative') },
-    { icon: '📍', label: 'Watched places', onClick: () => openPanel('places') },
     { icon: '🔗', label: 'Connected apps', onClick: () => openPanel('integrations') },
     { icon: '🖥️', label: 'System', onClick: () => navigateDashboard('System') },
   ];
@@ -499,10 +507,10 @@ export function CompanionConsole() {
           not looking at. The dashboard home draws it itself, in the slot above
           its cards. */}
       {!(view === 'dashboard' && activeSection === 'Home') && (
-        <EmergencyBanner onAsk={askAthena} onPlaces={() => openPanel('places')} pinned={view === 'chat'} />
+        <EmergencyBanner onAsk={askAthena} onPlaces={showPointsOfInterest} pinned={view === 'chat'} />
       )}
 
-      {view === 'dashboard' && <Dashboard section={activeSection} firstName={firstName} onAsk={askAthena} onPanel={openPanel} onPlaces={() => openPanel('places')} onNavigate={navigateDashboard} />}
+      {view === 'dashboard' && <Dashboard section={activeSection} firstName={firstName} onAsk={askAthena} onPanel={openPanel} onPlaces={showPointsOfInterest} onNavigate={navigateDashboard} />}
       <div className="companion-chat" hidden={view !== 'chat'}>
 
       {/* Athena — large and front-and-center */}
@@ -784,7 +792,6 @@ export function CompanionConsole() {
       {panel === 'devices' && <DevicesPanel onClose={() => setPanel(null)} />}
       {panel === 'actions' && <ActionsPanel onClose={() => setPanel(null)} />}
       {panel === 'initiative' && <InitiativePanel onClose={() => setPanel(null)} />}
-      {panel === 'places' && <PlacesPanel onClose={() => setPanel(null)} />}
       {panel === 'local' && <LocalServerPanel onClose={() => setPanel(null)} />}
       {panel === 'integrations' && (
         <IntegrationsPanel

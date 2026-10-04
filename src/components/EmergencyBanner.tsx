@@ -292,7 +292,7 @@ export function EmergencyBanner({
         </button>
         {onPlaces && (
           <button type="button" onClick={onPlaces} className="self-center text-xs underline opacity-80 hover:opacity-100">
-            Watched places
+            Points of interest
           </button>
         )}
       </div>

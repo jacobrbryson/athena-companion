@@ -14,6 +14,8 @@ import { EmailPanel, CATEGORY_LABEL } from './EmailPanel';
 import { MailBundles } from './MailBundles';
 import { DreamCard, DreamsPage } from './Dreams';
 import { DashboardIcon } from './icons';
+import { CommunityMap, PointsOfInterest, Neighbors, LocalEvents, PlaceReminders, eventWhen, isPastEvent } from './Community';
+import { EmergencyAlertSetup } from './EmergencyAlertSetup';
 
 /** Open a console panel; `consentFor` opens Connected apps on that provider's consent prompt. */
 export type OpenPanel = (panel: 'integrations' | 'memory' | 'actions' | 'photo' | 'devices', options?: { consentFor?: string }) => void;
@@ -715,6 +717,8 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
   // incident watcher's stored situation — calls and NWS alerts, whether or not
   // they rose to a banner), and the places they have told Athena about.
   const communityPlaces = facts.filter(f => /^place$/i.test(f.category));
+  const community = data.community.data;
+  const nextLocalEvent = (community?.events || []).find(e => !isPastEvent(e));
   const nearbyCalls = data.nearby.data?.incidents || [];
   const nearbyWeather = data.nearby.data?.weather || [];
   const issues = summary?.jira.data?.issues || [];
@@ -898,13 +902,13 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
     health: card('health', 'Health', 'Health & Performance', healthBody(), 'View health', go('Health')),
     family: card('family', 'Family', 'Family', <>{sickFamily.length > 0 && <><p className="source-note">Family health watch</p><ul className="dashboard-data-list">{sickFamily.slice(0, 3).map(healthStatusLine)}</ul></>}<p className="source-note">From your memories</p>{data.facts.error ? <EmptyCta text="Memories couldn’t load." action="Retry" onClick={retryData} /> : data.facts.loading ? <p className="dashboard-empty">Loading memories…</p> : family.length ? <Facts facts={family.slice(0, 3)} /> : <EmptyCta text="No family memories saved yet." action="Tell her about them" onClick={() => onAsk('Let me tell you about my family.')} />}<SourceBlock source={summary?.familyChores} label="Family Chores · today" name="Family Chores" fix={fixFor('familyChores')}><ul className="dashboard-data-list">{chores.slice(0, 3).map((c, i) => <li key={i}><strong>{c.completed ? '✓' : '○'} {c.title}</strong><small>{c.completed ? 'Completed' : c.status || 'Open'}</small></li>)}</ul>{!chores.length && <p className="dashboard-empty">No chores returned for today.</p>}</SourceBlock></>, 'View family', go('Family'), sickFamily.length || undefined),
     community: card('community', 'Community', 'Community', <>
-      <p className="source-note">Around your watched places</p>
+      <p className="source-note">Around your points of interest</p>
       {data.nearby.loading ? <p className="dashboard-empty">Checking nearby…</p>
         : data.nearby.error ? <EmptyCta text="Nearby activity couldn’t load." action="Retry" onClick={retryData} />
           : nearbyCalls.length || nearbyWeather.length ? <ul className="dashboard-data-list">{nearbyWeather.slice(0, 1).map(weatherLine)}{nearbyCalls.slice(0, nearbyWeather.length ? 2 : 3).map(incidentLine)}</ul>
             : <p className="dashboard-empty">Quiet near your places.</p>}
-      {communityPlaces.length > 0 ? <><p className="source-note">Places you’ve mentioned</p><Facts facts={communityPlaces.slice(0, 2)} /></>
-        : onPlaces && !data.nearby.error && <button type="button" className="source-fix" onClick={onPlaces}>Add a place to watch <span>↗</span></button>}
+      {nextLocalEvent && <><p className="source-note">Coming up locally</p><ul className="dashboard-data-list calendar-events"><li><span className="event-dot" /><div><small>{eventWhen(nextLocalEvent)}</small><strong>{nextLocalEvent.title}</strong></div></li></ul></>}
+      {community && !community.places.length && onPlaces && <button type="button" className="source-fix" onClick={onPlaces}>Add a point of interest <span>↗</span></button>}
     </>, 'View community', go('Community'), nearbyCalls.length + nearbyWeather.length || undefined),
     mail: card('mail', 'Mail', 'Mail', mailBody(3), 'Review inbox', go('Mail'), summary?.emailTriage.data?.newCount),
     work: card('work', 'Work', 'Work', workBody(1), 'View work', go('Work')),
@@ -1064,17 +1068,29 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
   function CommunityPage() {
     const serious = nearbyCalls.filter(c => c.serious).length;
     const updated = agoLabel(data.nearby.data?.updatedAt);
+    const places = community?.places || [];
+    const upcoming = (community?.events || []).filter(e => !isPastEvent(e));
+    const localNews = community?.localNews;
+    const patch = data.patchCommunity;
+    // One list read feeds the three panels below; while it is missing they all
+    // say the same thing, and the retry is the same button.
+    const waiting = data.community.error ? <EmptyCta text="Your community list couldn’t load." action="Retry" onClick={retryData} />
+      : !community ? <p className="dashboard-empty">Loading…</p> : null;
     return <SectionPage ctx={ctx}
       eyebrow="THE PLACE AROUND YOU" title="Community"
-      blurb="What’s happening near the places you watch, and the places that matter to you."
+      blurb="The places, people and goings-on that make up where you live. Everything on this page is in my mind whenever we talk."
       ask="What’s going on around my community that I should know about?"
       stats={<>
-        <Stat label="Calls nearby" value={data.nearby.data ? nearbyCalls.length : '—'} note="near your watched places" tone={nearbyCalls.length ? 'ok' : 'idle'} />
-        <Stat label="Serious" value={data.nearby.data ? serious : '—'} note={serious ? 'worth a look' : 'Nothing serious'} tone={serious ? 'low' : 'idle'} />
-        <Stat label="Weather alerts" value={data.nearby.data ? nearbyWeather.length : '—'} note="National Weather Service" tone={nearbyWeather.length ? 'ok' : 'idle'} />
-        <Stat label="Places remembered" value={communityPlaces.length} note="from your memories" />
+        <Stat label="Points of interest" value={community ? places.filter(p => p.enabled).length : '—'} note="watched day and night" />
+        <Stat label="Neighbors" value={community ? community.neighbors.length : '—'} note="people you know nearby" />
+        <Stat label="Coming up" value={community ? upcoming.length : '—'} note={upcoming[0] ? `${upcoming[0].title} · ${eventWhen(upcoming[0])}` : community?.events.length ? 'Nothing on the calendar yet' : 'No local events saved'} />
+        <Stat label="Calls nearby" value={data.nearby.data ? nearbyCalls.length : '—'} note={serious ? `${serious} serious` : 'near your places'} tone={serious ? 'low' : nearbyCalls.length ? 'ok' : 'idle'} />
       </>}
     >
+      <Panel id="community-places" title="Points of interest" note="watched day and night" wide>
+        <p className="community-blurb">I keep watch around every place on this list, all the time. A 911 call or a severe-weather warning inside a ring reaches you straight away — here, on your phone, and by text — and I pick out news about these places from the pages I read for you. Home, your church, the kids’ school, the town square: the more you add, the more of your community I can look after.</p>
+        {waiting || <><CommunityMap places={places} /><PointsOfInterest places={places} onPlaces={next => patch({ places: next })} /></>}
+      </Panel>
       <Panel title="Near your places" note={updated ? `updated ${updated}` : undefined} wide>
         {data.nearby.loading ? <p className="dashboard-empty">Checking nearby…</p>
           : data.nearby.error ? <EmptyCta text="Nearby activity couldn’t load." action="Retry" onClick={retryData} />
@@ -1082,13 +1098,29 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
               {nearbyWeather.length > 0 && <ul className="dashboard-data-list">{nearbyWeather.map(weatherLine)}</ul>}
               {nearbyCalls.length ? <ul className="dashboard-data-list">{nearbyCalls.map(incidentLine)}</ul> : <p className="dashboard-empty">Quiet near your places.</p>}
             </>}
-        {onPlaces && <button className="dashboard-chat-cta" onClick={onPlaces}>Watched places <span>↗</span></button>}
+      </Panel>
+      <Panel title="Place reminders" note="when you get there" wide>
+        <PlaceReminders onAsk={onAsk} />
+      </Panel>
+      <Panel title="Local events" note="church, school, town">
+        {waiting || <LocalEvents events={community!.events} places={places} onEvents={next => patch({ events: next })} />}
+      </Panel>
+      <Panel title="Neighbors" note="who lives around you">
+        {waiting || <Neighbors neighbors={community!.neighbors} places={places} onNeighbors={next => patch({ neighbors: next })} onConnectContacts={() => onPanel('integrations')} />}
+      </Panel>
+      <Panel title="Local news" note="from the pages I read for you" wide>
+        {waiting || (localNews === null ? <EmptyCta text="News couldn’t load." action="Retry" onClick={retryData} />
+          : localNews?.length ? <ul className="dashboard-data-list">{localNews.map((n, i) => <li key={`${n.url}-${i}`}><ExternalLink url={n.url}><strong>{n.title}</strong><small>{n.source} · mentions {n.matched} · {dateLabel(n.firstSeen)}</small></ExternalLink></li>)}</ul>
+            : <EmptyCta text={newsSources.length ? 'Nothing this week mentions your towns or places. A local paper or your town’s page widens what I can catch.' : 'Give me a local paper or your town’s news page and I’ll pick out anything about your places.'} action="Add a local news page" onClick={() => setSourcesOpen(true)} />)}
+      </Panel>
+      <Panel title="Emergency alerts on this phone" note="911 calls · weather" wide>
+        <EmergencyAlertSetup />
       </Panel>
       <Panel title="Places you’ve mentioned" note="from your memories" wide>
         {data.facts.error ? <EmptyCta text="Memories couldn’t load." action="Retry" onClick={retryData} />
           : data.facts.loading ? <p className="dashboard-empty">Loading memories…</p>
             : communityPlaces.length ? <Facts facts={communityPlaces} />
-              : <><p className="dashboard-empty">No places saved yet — your church, the kids’ school, the park you go to.</p><button className="dashboard-chat-cta" onClick={() => onAsk('Let me tell you about the places in my community.')}>Tell her <span>↗</span></button></>}
+              : <><p className="dashboard-empty">Nothing yet — places you mention in conversation show up here.</p><button className="dashboard-chat-cta" onClick={() => onAsk('Let me tell you about the places in my community.')}>Tell her <span>↗</span></button></>}
       </Panel>
     </SectionPage>;
   }

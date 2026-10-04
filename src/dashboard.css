@@ -450,3 +450,76 @@ svg.dashboard-icon-drawn .icon-fill { fill: currentColor; fill-opacity: .9; }
 .mail-bundles .dashboard-chat-cta:disabled { opacity: .45; cursor: default; }
 .dashboard-link-button { border: none; background: none; color: #7fdcf0; font-size: 12px; padding: 6px 4px; cursor: pointer; }
 .mail-bundle-list { max-height: 320px; overflow-y: auto; margin-top: 10px; }
+
+/* ---- Community page ----
+   Points of interest, neighbours and local events: lists the person keeps,
+   each row a stack (name, context, their notes) with small text actions under
+   it, and the add/edit forms opening in place rather than in a drawer. */
+.community-blurb { margin: 14px 0 4px; color: #a3c1d2; font-size: 12px; line-height: 1.75; max-width: 760px; }
+.community-map { margin-top: 14px; }
+.community-list { display: grid; gap: 14px; margin-top: 16px; }
+.community-list > li { display: flex; gap: 11px; align-items: flex-start; min-width: 0; }
+.community-paused { opacity: .55; }
+.community-icon { display: grid; place-items: center; width: 30px; height: 30px; flex-shrink: 0; border: 1px solid #387585; border-radius: 50%; background: linear-gradient(140deg,#1d4658,#0b2232); font-size: 14px; }
+.community-body { flex: 1; min-width: 0; }
+.community-body strong { display: block; font-size: 12px; font-weight: 500; line-height: 1.45; color: #dcecf6; overflow-wrap: anywhere; }
+.community-body strong a { color: inherit; text-decoration: underline; text-decoration-color: #40879b; text-underline-offset: 3px; }
+.community-body small { display: block; margin-top: 3px; color: #8fadbe; font-size: 10px; line-height: 1.5; overflow-wrap: anywhere; }
+.calendar-events .community-body small:first-child { margin-top: 0; margin-bottom: 2px; color: #6fc6de; }
+.community-notes { margin-top: 5px; color: #a3c1d2; font-size: 11px; line-height: 1.6; overflow-wrap: anywhere; }
+.community-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin-top: 7px; color: #8fadbe; font-size: 11px; }
+.community-controls label { display: inline-flex; align-items: center; gap: 5px; }
+.community-controls select { background: #04222eaa; border: 1px solid #2c6a80; border-radius: 5px; color: #dcecf6; font-size: 11px; padding: 2px 4px; }
+.community-controls input[type="checkbox"], .community-check input { accent-color: #39dcf8; }
+.community-link { border: none; background: none; padding: 2px 0; color: #7fdcf0; font-size: 11px; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.community-link:disabled { opacity: .45; }
+.community-danger { color: #f3a6a6; }
+.community-past { opacity: .7; }
+.community-form { max-width: 440px; }
+.community-form textarea { background: #04222eaa; border: 1px solid #2c6a80; border-radius: 6px; color: #dcecf6; font: inherit; font-size: 12px; padding: 9px 12px; resize: vertical; }
+.community-form textarea::placeholder { color: #6f95a6; }
+.community-field { display: grid; gap: 5px; min-width: 0; }
+.community-field > span { color: #7fa8bc; font: 9px/1.6 ui-monospace,monospace; letter-spacing: .14em; text-transform: uppercase; }
+.community-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.community-inline { grid-template-columns: 1fr auto; align-items: end; margin-top: 10px; }
+.community-inline .source-fix { margin: 0 0 2px; padding: 9px 14px; }
+.community-check { display: flex; align-items: center; gap: 8px; color: #a3c1d2; font-size: 12px; }
+.community-add { margin-top: 18px; padding: 14px 16px 16px; border: 1px solid #244453; border-radius: 10px; background: #041824aa; }
+.community-add > .community-form:first-child { margin-top: 0; }
+.community-add > .community-link { margin-top: 8px; }
+.community-matches { display: grid; gap: 6px; margin-top: 10px; max-width: 440px; }
+.community-matches button { width: 100%; text-align: left; padding: 7px 10px; border: 1px solid #244453; border-radius: 6px; background: none; color: #dcecf6; font-size: 11px; }
+.community-matches button.active { border-color: #39dcf8; background: #0a3446; }
+.community-picked { margin-top: 14px; max-width: 440px; }
+.community-picked .source-note { margin-top: 0; }
+.community-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; }
+.section-panel .community-actions .dashboard-chat-cta { width: fit-content; margin-top: 12px; gap: 14px; }
+.community-actions .community-link { margin-top: 12px; }
+.alert-setup { color: #dcecf6; }
+.community-photo { object-fit: cover; padding: 0; }
+.community-badge { display: inline-block; margin-left: 8px; padding: 1px 6px; border: 1px solid #2c6a80; border-radius: 4px; color: #7fdcf0; font: 9px/1.5 ui-monospace,monospace; letter-spacing: .08em; text-transform: uppercase; vertical-align: 1px; }
+.community-contact-lines { display: flex !important; flex-wrap: wrap; gap: 2px 12px; }
+.community-contact-lines a { color: #7fdcf0; text-decoration: underline; text-decoration-color: #2c6a80; text-underline-offset: 2px; }
+.community-warn { color: #f0c27f !important; }
+.community-hint { color: #8fadbe; font-size: 10px; }
+.community-contact-search { display: grid; gap: 6px; }
+.community-contact-search .community-matches { margin-top: 2px; }
+.community-matches button { display: flex; align-items: center; gap: 10px; }
+.community-matches button > span { display: grid; min-width: 0; }
+.community-matches button strong { font-size: 12px; font-weight: 500; }
+.community-matches button small { color: #8fadbe; font-size: 10px; overflow-wrap: anywhere; }
+.community-linked { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid #2c6a80; border-radius: 6px; background: #04222eaa; }
+.community-linked .community-link { margin-left: auto; align-self: flex-start; }
+.community-linked-empty .dashboard-empty { margin-top: 0; }
+.community-people { display: grid; gap: 8px; margin-top: 8px; }
+.community-person { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.community-person .memory-avatar { width: 24px; height: 24px; font-size: 10px; }
+.community-person .community-body strong { font-size: 11px; }
+.community-people-edit { margin: 2px 0 6px; padding: 8px 10px; border: 1px solid #2c6a80; border-radius: 6px; background: #04222eaa; }
+.community-people-edit .community-link { margin-left: auto; }
+.community-suggest { display: grid; gap: 4px; margin-bottom: 6px; }
+.community-matches button:disabled { opacity: .55; cursor: default; }
+.community-add-mark { margin-left: auto; color: #7fdcf0; }
+@media (max-width: 520px) {
+  .community-pair, .community-inline { grid-template-columns: 1fr; }
+}

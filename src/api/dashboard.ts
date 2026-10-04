@@ -90,7 +90,34 @@ export interface AlertTestResult {
   steps: { step: string; ok: boolean; detail: string | null }[];
 }
 
-export interface WatchPlace { uuid: string; name: string; address: string | null; latitude: number; longitude: number; radiusMiles: number; enabled: boolean }
+/** What a point of interest is to the person. Only a label — every kind is watched the same way. */
+export type PlaceKind = 'home' | 'family' | 'neighborhood' | 'church' | 'school' | 'town' | 'work' | 'business' | 'park' | 'other';
+/** A point of interest: a place watched for emergencies nearby, and part of the person's community. */
+export interface WatchPlace { uuid: string; name: string; kind: PlaceKind; address: string | null; notes: string | null; latitude: number; longitude: number; radiusMiles: number; enabled: boolean }
+/** One of the person's Google Contacts, as the page shows it. Read live from Google, never stored. */
+export interface ContactCard {
+  contactId: string; name: string; phone: string | null; email: string | null; address: string | null; photoUrl: string | null;
+  /** Already linked to this household (by uuid) — a contact lives at one household. */
+  linkedTo?: { uuid: string; label: string | null };
+}
+/** A Google contact linked to a household: the saved name, and the live card when Google could be read. */
+export interface LinkedContact { contactId: string; name: string | null; card?: ContactCard | null; status?: 'ok' | 'missing' | 'not_connected' | 'unreadable' }
+/** A neighbouring household, kept by its address, with any number of linked Google contacts. */
+export interface Neighbor {
+  uuid: string; name: string | null; address: string | null; latitude: number | null; longitude: number | null;
+  placeUuid: string | null; where: string | null; contact: string | null; notes: string | null;
+  contacts: LinkedContact[];
+}
+/** Something happening locally. `nextOn` is the date that matters now (next year's, for a yearly event well past). */
+export interface CommunityEvent { uuid: string; title: string; startsOn: string; endsOn: string | null; time: string | null; placeUuid: string | null; location: string | null; repeats: 'none' | 'yearly'; url: string | null; notes: string | null; nextOn: string; nextEndsOn: string | null }
+export type NeighborInput = Omit<Neighbor, 'uuid' | 'contacts'> & { contacts: { contactId: string; name: string | null }[] };
+export type EventInput = Omit<CommunityEvent, 'uuid' | 'nextOn' | 'nextEndsOn'>;
+/** A headline from the person's own news pages that mentions one of their places or towns. */
+export interface LocalNewsItem extends NewsItem { matched: string }
+/** "Next time I'm at Missy's, remind me to ..." — set by approving Athena's remind_at_place card. */
+export interface PlaceReminder { uuid: string; placeUuid: string | null; placeName: string; address: string | null; latitude: number; longitude: number; radiusM: number; reminder: string; repeats: boolean; status: 'armed' | 'done'; fireCount: number; lastFiredAt: string | null; doneAt: string | null; createdAt: string }
+
+export interface CommunityOverview { places: WatchPlace[]; neighbors: Neighbor[]; events: CommunityEvent[]; localNews: LocalNewsItem[] | null; kinds: PlaceKind[] }
 /** A ring on the map: where a watched place is and how far it reaches. */
 export interface AlertPlace { name: string; latitude: number; longitude: number; radiusMiles: number; live?: boolean }
 export interface AddressMatch { label: string; latitude: number; longitude: number }
@@ -273,9 +300,26 @@ export const dashboardApi = {
   /** A made-up PulsePoint call / weather warning at their own place, pushed. Writes nothing. */
   testAlert: (kind: 'pulsepoint' | 'weather') => api.post<AlertTestResult>('/api/v1/dashboard/incidents/test', { kind }),
   /** Add, or update by name (radius, on/off, a corrected position). */
-  saveWatchPlace: (place: { name: string; latitude: number; longitude: number; radiusMiles?: number; address?: string | null; enabled?: boolean }) =>
+  saveWatchPlace: (place: { name: string; latitude: number; longitude: number; radiusMiles?: number; address?: string | null; enabled?: boolean; kind?: PlaceKind; notes?: string | null }) =>
     api.put<{ places: WatchPlace[] }>('/api/v1/dashboard/incidents/places', place),
   removeWatchPlace: (uuid: string) => api.del<{ places: WatchPlace[] }>(`/api/v1/dashboard/incidents/places/${encodeURIComponent(uuid)}`),
+  /** The Community page: points of interest, neighbours, events and local headlines. */
+  community: () => api.get<CommunityOverview>('/api/v1/dashboard/community'),
+  saveNeighbor: (input: NeighborInput, uuid?: string) => uuid
+    ? api.patch<{ neighbors: Neighbor[] }>(`/api/v1/dashboard/community/neighbors/${encodeURIComponent(uuid)}`, input)
+    : api.post<{ neighbors: Neighbor[] }>('/api/v1/dashboard/community/neighbors', input),
+  /** Search the person's own Google Contacts. `linked: false` means Contacts isn't connected. */
+  searchContacts: (q: string) => api.get<{ linked: boolean; matches: ContactCard[] }>(`/api/v1/dashboard/community/contacts?q=${encodeURIComponent(q)}`),
+  /** Google contacts whose address is this street line — suggestions for a household. */
+  contactsAt: (address: string) => api.get<{ linked: boolean; matches: ContactCard[] }>(`/api/v1/dashboard/community/contacts/at?address=${encodeURIComponent(address)}`),
+  removeNeighbor: (uuid: string) => api.del<{ neighbors: Neighbor[] }>(`/api/v1/dashboard/community/neighbors/${encodeURIComponent(uuid)}`),
+  saveEvent: (input: EventInput, uuid?: string) => uuid
+    ? api.patch<{ events: CommunityEvent[] }>(`/api/v1/dashboard/community/events/${encodeURIComponent(uuid)}`, input)
+    : api.post<{ events: CommunityEvent[] }>('/api/v1/dashboard/community/events', input),
+  /** Place reminders: armed ones, then the last fortnight's finished ones. Setting one is an action, not here. */
+  placeReminders: () => api.get<{ reminders: PlaceReminder[] }>('/api/v1/place-reminders'),
+  removePlaceReminder: (uuid: string) => api.del<{ reminders: PlaceReminder[] }>(`/api/v1/place-reminders/${encodeURIComponent(uuid)}`),
+  removeEvent: (uuid: string) => api.del<{ events: CommunityEvent[] }>(`/api/v1/dashboard/community/events/${encodeURIComponent(uuid)}`),
   lookupAddress: (q: string) => api.get<{ matches: AddressMatch[] }>(`/api/v1/dashboard/incidents/geocode?q=${encodeURIComponent(q)}`),
   rightNow: async () => {
     const value = await api.cachedGet<RightNow>('/api/v1/dashboard/right-now');

@@ -17,7 +17,7 @@ import { CHAT_ACTIVITY_EVENT } from './useChat';
  */
 
 const ACTIVITY_MIN_SHOW_MS = 1800;
-const ACTIVITY_MAX_SHOW_MS = 60_000;
+const ACTIVITY_MAX_SHOW_MS = 90_000;
 
 const u = (p: string) => `${UNITY_ASSET_BASE}/${p}`;
 
@@ -157,14 +157,26 @@ export function UnityAthena({ sessionId, isThinking, onReady }: Props) {
   }, [isThinking]);
 
   // --- server -> Unity: show what she is really doing. ---
-  // The server announces an activity only while the read is happening, and a
-  // calendar read can finish in a few hundred ms — too short to see. So the
-  // avatar holds each activity for ACTIVITY_MIN_SHOW_MS after it began. That
-  // only ever extends a true moment; it never shows one that did not happen.
-  // ACTIVITY_MAX_SHOW_MS covers a lost 'end' (dropped socket) so she can't be
-  // left "working" on nothing.
+  // The server announces an activity while she is reading the data, and ends
+  // it when the read does. But she is still working with that data until the
+  // reply is composed and she starts to answer, so the avatar keeps scanning
+  // until BOTH the read has finished and the pending reply has landed
+  // (isThinking drops as the reply is revealed, in step with her voice).
+  // A calendar read can also finish in a few hundred ms — too short to see —
+  // so each activity shows for at least ACTIVITY_MIN_SHOW_MS. That only ever
+  // extends a true moment; it never shows one that did not happen.
+  // ACTIVITY_MAX_SHOW_MS covers a lost 'end' or a lost reply (dropped socket)
+  // so she can't be left "working" on nothing.
+  const thinkingRef = useRef(isThinking);
+  const settleActivityRef = useRef<() => void>(() => undefined);
+  useEffect(() => {
+    thinkingRef.current = isThinking;
+    if (!isThinking) settleActivityRef.current();
+  }, [isThinking]);
+
   useEffect(() => {
     let current = '';
+    let readOpen = false;
     let shownAt = 0;
     let clearTimer: number | undefined;
     let watchdog: number | undefined;
@@ -177,27 +189,37 @@ export function UnityAthena({ sessionId, isThinking, onReady }: Props) {
       window.clearTimeout(clearTimer);
       window.clearTimeout(watchdog);
       clearTimer = watchdog = undefined;
+      readOpen = false;
       show('');
     };
+    // Clear once the read is done AND the reply has arrived, after the minimum.
+    const settle = () => {
+      if (!current || readOpen || thinkingRef.current) return;
+      window.clearTimeout(clearTimer);
+      const wait = Math.max(0, ACTIVITY_MIN_SHOW_MS - (Date.now() - shownAt));
+      clearTimer = window.setTimeout(stop, wait);
+    };
+    settleActivityRef.current = settle;
 
     const onActivity = (event: Event) => {
       const { activity, state } = (event as CustomEvent<{ activity: string; state: string }>).detail;
       if (state === 'start') {
         window.clearTimeout(clearTimer);
         window.clearTimeout(watchdog);
+        readOpen = true;
         shownAt = Date.now();
         show(activity);
         watchdog = window.setTimeout(stop, ACTIVITY_MAX_SHOW_MS);
       } else if (state === 'end' && current === activity) {
-        window.clearTimeout(clearTimer);
-        const wait = Math.max(0, ACTIVITY_MIN_SHOW_MS - (Date.now() - shownAt));
-        clearTimer = window.setTimeout(stop, wait);
+        readOpen = false;
+        settle();
       }
     };
 
     window.addEventListener(CHAT_ACTIVITY_EVENT, onActivity);
     return () => {
       window.removeEventListener(CHAT_ACTIVITY_EVENT, onActivity);
+      settleActivityRef.current = () => undefined;
       window.clearTimeout(clearTimer);
       window.clearTimeout(watchdog);
     };
