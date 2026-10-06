@@ -26,8 +26,8 @@ const LINK_PROBLEM: Record<FamilyLink['status'], string | null> = {
 export function FamilyPeopleList({ facts, children, links, onChange, onConnect, onFactsChanged }: {
   facts: Fact[]; children: FamilyChild[]; links: FamilyLink[];
   onChange: (next: FamilyPeopleData) => void; onConnect?: () => void;
-  /** A person was merged or forgotten, so the memories list behind this one is stale. */
-  onFactsChanged?: () => void;
+  /** A person was merged away or forgotten (by uuid), so the memories list behind this one is stale. */
+  onFactsChanged?: (goneUuid: string) => void;
 }) {
   const [open, setOpen] = useState<string | null>(null);
   const [tidy, setTidy] = useState<{ uuid: string; mode: 'merge' | 'delete' } | null>(null);
@@ -70,11 +70,11 @@ export function FamilyPeopleList({ facts, children, links, onChange, onConnect, 
                 </select>
               </label>
               <small>What I know about “{fact.key}” is added to them, then “{fact.key}” is forgotten.</small>
-              <button type="button" className="community-link" disabled={!into || busy === fact.uuid} onClick={() => void run(fact.uuid, async () => { const next = await dashboardApi.mergeFamilyPeople(fact.uuid, into); onFactsChanged?.(); return next; })}>Merge</button>
+              <button type="button" className="community-link" disabled={!into || busy === fact.uuid} onClick={() => void run(fact.uuid, async () => { const next = await dashboardApi.mergeFamilyPeople(fact.uuid, into); onFactsChanged?.(fact.uuid); return next; })}>Merge</button>
             </div>}
             {tidy?.uuid === fact.uuid && tidy.mode === 'delete' && <div className="family-tidy">
               <small>Forget “{fact.key}”? I’ll stop remembering this entry.</small>
-              <button type="button" className="community-link" disabled={busy === fact.uuid} onClick={() => void run(fact.uuid, async () => { const next = await dashboardApi.removeFamilyPerson(fact.uuid); onFactsChanged?.(); return next; })}>Yes, delete</button>
+              <button type="button" className="community-link" disabled={busy === fact.uuid} onClick={() => void run(fact.uuid, async () => { const next = await dashboardApi.removeFamilyPerson(fact.uuid); onFactsChanged?.(fact.uuid); return next; })}>Yes, delete</button>
             </div>}
           </div>
           <div className="family-actions">

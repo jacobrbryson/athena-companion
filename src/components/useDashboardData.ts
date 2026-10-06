@@ -92,5 +92,9 @@ export function useDashboardData() {
   const patchCommunity = useCallback((patch: Partial<CommunityOverview>) => {
     setCommunity(previous => previous.data ? { ...previous, data: { ...previous.data, ...patch } } : previous);
   }, []);
-  return { summary, facts, actions, news, priority, rightNow, nearby, community, patchCommunity, communityCalendar, familyPeople, setFamilyPeople, refresh, loading: summary.loading || facts.loading || actions.loading || news.loading };
+  /** A memory was merged away or forgotten: drop it from the list now, without waiting on a refetch. */
+  const dropFact = useCallback((uuid: string) => {
+    setFacts(previous => previous.data ? { ...previous, data: previous.data.filter(f => f.uuid !== uuid) } : previous);
+  }, []);
+  return { dropFact, summary, facts, actions, news, priority, rightNow, nearby, community, patchCommunity, communityCalendar, familyPeople, setFamilyPeople, refresh, loading: summary.loading || facts.loading || actions.loading || news.loading };
 }
