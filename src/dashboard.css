@@ -472,6 +472,9 @@ svg.dashboard-icon-drawn .icon-fill { fill: currentColor; fill-opacity: .9; }
 .community-link { border: none; background: none; padding: 2px 0; color: #7fdcf0; font-size: 11px; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
 .community-link:disabled { opacity: .45; }
 .community-danger { color: #f3a6a6; }
+.family-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; margin-left: auto; }
+.family-tidy { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; margin-top: 8px; }
+.family-tidy select { display: block; margin-top: 4px; max-width: 100%; background: #04222e; color: inherit; border: 1px solid #2c6a80; border-radius: 6px; padding: 4px 6px; }
 .community-past { opacity: .7; }
 .community-form { max-width: 440px; }
 .community-form textarea { background: #04222eaa; border: 1px solid #2c6a80; border-radius: 6px; color: #dcecf6; font: inherit; font-size: 12px; padding: 9px 12px; resize: vertical; }

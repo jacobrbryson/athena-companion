@@ -427,6 +427,12 @@ export const dashboardApi = {
     api.put<FamilyPeople>(`/api/v1/dashboard/family/people/${encodeURIComponent(factUuid)}/contact`, contact),
   unlinkFamilyContact: (factUuid: string) =>
     api.del<FamilyPeople>(`/api/v1/dashboard/family/people/${encodeURIComponent(factUuid)}/contact`),
+  /** Forgets a remembered person or pet (and their contact link). */
+  removeFamilyPerson: (factUuid: string) =>
+    api.del<FamilyPeople>(`/api/v1/dashboard/family/people/${encodeURIComponent(factUuid)}`),
+  /** Folds one remembered person into another: details kept on the target, the duplicate forgotten. */
+  mergeFamilyPeople: (fromUuid: string, intoUuid: string) =>
+    api.post<FamilyPeople>(`/api/v1/dashboard/family/people/${encodeURIComponent(fromUuid)}/merge`, { intoUuid }),
   reportFamilyHealth: (payload: { personName: string; symptom: string; severity?: HealthSeverity; notes?: string }) =>
     api.post<{ status: FamilyHealthStatus }>('/api/v1/dashboard/health/family', payload),
   resolveFamilyHealth: (uuid: string) =>
