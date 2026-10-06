@@ -150,14 +150,6 @@ const integrations = [
     },
   },
   {
-    provider: 'strava',
-    label: 'Strava',
-    scopes: ['read', 'activity:read'],
-    requires_consent: 'health_data',
-    connected: false,
-    link: null,
-  },
-  {
     provider: 'whoop',
     label: 'Whoop',
     scopes: ['read:recovery', 'read:sleep', 'read:workout', 'read:profile', 'offline'],
@@ -291,11 +283,19 @@ function dashboardSummary() {
     calendar: ready({
       timeZone: 'America/New_York',
       days: 7,
+      // "Home 7am-4pm" as the server returns it: apart from the events. Spans
+      // now so the Work banner shows whenever the mock is opened.
+      workingLocations: [
+        { id: 'wl1', title: 'Home', start: inMinutes(-120), end: inMinutes(300), allDay: false, location: null, calendar: null, shared: false, eventType: 'workingLocation', workingLocation: 'Home' },
+      ],
       events: [
-        { id: 'c1', title: 'Design review', start: inMinutes(35), end: inMinutes(95), allDay: false, location: 'Zoom', calendar: null, shared: false },
+        { id: 'c1', title: 'Design review', start: inMinutes(35), end: inMinutes(95), allDay: false, location: 'Zoom', calendar: null, shared: false, eventType: 'default', attendees: 4 },
         { id: 'c2', title: 'School pickup', start: inMinutes(180), end: inMinutes(210), allDay: false, location: null, calendar: null, shared: true },
         { id: 'c3', title: 'Dentist', start: inMinutes(60 * 26), end: inMinutes(60 * 27), allDay: false, location: 'Davidson', calendar: null, shared: false },
         { id: 'c4', title: 'Emma visiting', start: dayStamp(-4), end: dayStamp(-6), allDay: true, location: null, calendar: null, shared: false },
+        { id: 't1', title: 'Troutman soccer practice', start: inMinutes(30 * 60), end: inMinutes(30 * 60 + 90), allDay: false, location: null, calendar: null, shared: false },
+        { id: 't2', title: 'Troutman Rec game vs Mooresville', start: inMinutes(4 * 24 * 60 - 120), end: inMinutes(4 * 24 * 60 - 120 + 60), allDay: false, location: null, calendar: null, shared: false },
+        { id: 't3', title: 'Troutman Founders Day 5K', start: inMinutes(4 * 24 * 60 + 420), end: inMinutes(4 * 24 * 60 + 420 + 90), allDay: false, location: null, calendar: null, shared: false },
       ],
     }),
     // A fortnight of heart data: a settled baseline, then a couple of days of
@@ -342,19 +342,15 @@ function dashboardSummary() {
       { date: dayStamp(12), day_strain: 15.31, average_heart_rate: 71 },
       { date: dayStamp(13), day_strain: 9.17, average_heart_rate: 66 },
     ]),
-    activity: ready({ days: 7, activities: [
-      { name: 'Morning run', type: 'Run', start: iso(DAY), distance_mi: 4.2, moving_time_s: 2280 },
-      { name: 'Lake loop ride', type: 'Ride', start: iso(DAY * 3), distance_mi: 18.6, moving_time_s: 4100 },
-    ] }),
     familyChores: ready({ name: 'Rivera family', chores: [
       { title: 'Dishes', completed: true, status: 'done', dueDate: dayStamp(0) },
       { title: 'Walk Biscuit', completed: false, status: 'open', dueDate: dayStamp(0) },
       { title: 'Homework check', completed: false, status: 'open', dueDate: dayStamp(0) },
     ] }),
-    jira: ready({ partial: false, issues: [
-      { key: 'ATH-412', title: 'Dashboard priority ordering', status: 'In Progress', project: 'Athena', updated: iso(3600_000), due: null, site: 'athena', url: 'https://example.atlassian.net/browse/ATH-412' },
-      { key: 'ATH-408', title: 'Companion menu merge', status: 'To Do', project: 'Athena', updated: iso(DAY), due: null, site: 'athena', url: 'https://example.atlassian.net/browse/ATH-408' },
-      { key: 'OPS-77', title: 'Rotate connector keys', status: 'To Do', project: 'Ops', updated: iso(DAY * 2), due: null, site: 'athena', url: 'https://example.atlassian.net/browse/OPS-77' },
+    jira: ready({ partial: false, capped: false, issues: [
+      { key: 'ATH-412', title: 'Dashboard priority ordering', status: 'In Progress', statusCategory: 'indeterminate', project: 'Athena', updated: iso(3600_000), due: null, site: 'athena', url: 'https://example.atlassian.net/browse/ATH-412' },
+      { key: 'ATH-408', title: 'Companion menu merge', status: 'To Do', statusCategory: 'new', project: 'Athena', updated: iso(DAY), due: null, site: 'athena', url: 'https://example.atlassian.net/browse/ATH-408' },
+      { key: 'OPS-77', title: 'Rotate connector keys', status: 'To Do', statusCategory: 'new', project: 'Ops', updated: iso(DAY * 2), due: null, site: 'athena', url: 'https://example.atlassian.net/browse/OPS-77' },
     ] }),
     slack: unready('not_connected'),
     emailTriage: ready(mailSummary()),
@@ -478,12 +474,11 @@ const mockRightNow = () => ({
   window: { freeMinutes: 265, busyWith: null, nextEvent: { title: 'Piano lessons', start: inMinutes(265), inMinutes: 265 } },
   lead: {
     id: 'place:place-lake-norman', kind: 'place' as const, title: 'Lake Norman State Park',
-    why: 'You ride most Sundays and haven’t this week — the trails are open and you have the afternoon.',
+    why: 'The trails are open and you have the afternoon.',
     activity: 'mountain biking', url: 'https://www.ncparks.gov/state-parks/lake-norman-state-park',
     distanceMi: 3, driveMinutes: 10, closesAt: '7:30 PM', closesInMinutes: 300, usableMinutes: 245,
     weatherDependent: true,
     weather: { outlook: 'fine' as const, now: 'Partly Sunny', temperatureF: 74, precipitationChance: 10 },
-    rhythm: { activity: 'mountain biking', perWeek: 1.1, usualDay: 'Sunday', daysSince: 8, thisWeek: 0, isUsualDayToday: true },
   },
   alternates: [{
     id: 'project:proj-shelves', kind: 'project' as const, title: 'Rehang the garage shelves',
@@ -986,6 +981,32 @@ async function route(method: string, path: string, body?: any): Promise<any> {
     if (method === 'DELETE') { list = list.filter((x) => x.uuid !== uuid); localStorage.setItem('mock_place_reminders', JSON.stringify(list)); }
     return { reminders: list };
   }
+  if (p.startsWith('/api/v1/dashboard/family/people')) {
+    // Children from the family profiles; links to Google Contacts kept in localStorage.
+    const md = (offsetDays: number) => { const d = new Date(Date.now() + offsetDays * DAY); return `2016-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+    const linkedBirthday: Record<string, string | null> = { '111': null, '222': null, '333': null, '444': '--' + md(5).slice(5) };
+    const factUuid = p.split('/')[6] ? decodeURIComponent(p.split('/')[6]) : null;
+    let stored: { factUuid: string; contactId: string; name: string }[] = JSON.parse(localStorage.getItem('mock_family_links') || '[]');
+    if (method === 'PUT' && factUuid) {
+      if (stored.some((l) => l.contactId === body.contactId && l.factUuid !== factUuid)) fail(400, 'That contact is already linked to someone else. Unlink them there first.');
+      stored = [...stored.filter((l) => l.factUuid !== factUuid), { factUuid, contactId: body.contactId, name: body.name }];
+    }
+    if (method === 'DELETE' && factUuid) stored = stored.filter((l) => l.factUuid !== factUuid);
+    localStorage.setItem('mock_family_links', JSON.stringify(stored));
+    const off = mockContactsOff();
+    return {
+      contactsLinked: stored.length ? !off : null,
+      children: [{ uuid: 'c1', name: 'Maya', birthday: md(3), grade: '3' }, { uuid: 'c2', name: 'Eli', birthday: null, grade: 'K' }],
+      links: stored.map((l) => {
+        const c = MOCK_CONTACTS.find((x) => x.contactId === l.contactId);
+        return { factUuid: l.factUuid, contactId: l.contactId, name: l.name, status: off ? 'not_connected' : c ? 'ok' : 'missing', card: !off && c ? { contactId: c.contactId, name: c.name, birthday: linkedBirthday[c.contactId] ?? null, phone: c.phone, email: c.email, photoUrl: null } : null };
+      }),
+    };
+  }
+  if (p === '/api/v1/dashboard/community/calendar') {
+    const ev = (id: string, title: string, mins: number, len: number) => ({ id, title, start: inMinutes(mins), end: inMinutes(mins + len), allDay: false, location: null, calendar: null, shared: false, eventType: 'default' });
+    return { connected: true, terms: ['Troutman'], events: [ev('t0', 'Maya softball game', 3 * 60, 90), ev('t1', 'Troutman soccer practice', 30 * 60, 90), ev('t2', 'Troutman Rec game vs Mooresville', 4 * 24 * 60 - 120, 60), ev('t3', 'Troutman Founders Day 5K', 4 * 24 * 60 + 420, 90)] };
+  }
   if (p === '/api/v1/dashboard/community') return mockCommunity();
   if (p === '/api/v1/dashboard/community/contacts') {
     if (mockContactsOff()) return { linked: false, matches: [] };
@@ -1084,24 +1105,7 @@ async function route(method: string, path: string, body?: any): Promise<any> {
     const found = dreams.find(d => p.endsWith(d.uuid));
     return { dream: found ? { ...found, steps: mockDreamSteps() } : null };
   }
-  // ?rightnow=habit shows the suggestion built from nothing but Strava and a goal.
-  if (p === '/api/v1/dashboard/right-now') {
-    if (new URLSearchParams(window.location.search).get('rightnow') !== 'habit') return mockRightNow();
-    return {
-      ...mockRightNow(),
-      headline: 'Get a ride in before piano',
-      lead: {
-        id: 'habit:cycling', kind: 'habit' as const, title: 'Cycling', activity: 'cycling',
-        why: 'You ride about twice a week and haven’t since last Tuesday. It’s dry until evening.',
-        weather: { outlook: 'fine' as const, now: 'Mostly Sunny', temperatureF: 71, precipitationChance: 10 },
-        rhythm: { activity: 'cycling', perWeek: 1.8, usualDay: null, daysSince: 8, thisWeek: 0, isUsualDayToday: false },
-      },
-      alternates: [{
-        id: 'goal:g1', kind: 'goal' as const, title: 'Learn spanish',
-        why: 'Twenty minutes of practice fits even if the ride runs long.', detail: 'Conversational by summer',
-      }],
-    };
-  }
+  if (p === '/api/v1/dashboard/right-now') return mockRightNow();
   if (p === '/api/v1/dashboard/places') {
     if (method === 'POST') {
       const place = {

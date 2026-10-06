@@ -11,7 +11,7 @@ import { androidCall, isAndroidCompanion } from '../native/android';
 import { WhoopActivityReviews } from './WhoopActivityReviews';
 
 /**
- * Connect Athena to Google (Gmail, Calendar, Contacts), Strava, Whoop and more.
+ * Connect Athena to Google (Gmail, Calendar, Contacts), Whoop and more.
  *
  * The flow leaves this app: `connect` returns an authorize URL and we navigate
  * to it, the provider sends the browser back to the origin with
@@ -44,7 +44,6 @@ const ICONS: Record<string, string> = {
   gmail: '✉️', jira: '🔷', slack: '💬',
   google_calendar: '📅',
   google_contacts: '👥',
-  strava: '🏃',
   whoop: '💤',
 };
 
@@ -55,7 +54,6 @@ const BLURBS: Record<string, string> = {
   slack: 'Reads recent mentions visible to your Slack account. Never posts or changes messages.',
   google_calendar: 'Reads your upcoming events and free/busy time.',
   google_contacts: 'Reads names, phone numbers, emails, relationships, birthdays and photos, so Athena can link them to the family and people she knows. Read-only.',
-  strava: 'Reads your recent activities: distance, time, elevation and heart rate.',
   whoop: 'Reads your recovery, sleep and strain scores.',
 };
 

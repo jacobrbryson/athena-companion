@@ -19,6 +19,9 @@ import { MiniMap } from '../components/MiniMap';
 import { useNudges } from '../athena/useNudges';
 import { ActionProposal } from '../components/ActionProposal';
 import { useActions } from '../athena/useActions';
+import { useDreamQuestions } from '../athena/useDreamQuestions';
+import { NotificationsPanel } from '../components/NotificationsPanel';
+import { KnowsPanel } from '../components/KnowsPanel';
 import { LocalServerPanel } from '../components/LocalServerPanel';
 import {
   IntegrationsPanel,
@@ -49,7 +52,7 @@ const ARRIVAL_MAX_MS = 14000;
 const MAX_VOICE_HOLD_MS = 20000;
 const MAX_MESSAGE = 2000;
 
-type Panel = 'memory' | 'photo' | 'camera' | 'brain' | 'devices' | 'local' | 'integrations' | 'actions' | 'initiative' | null;
+type Panel = 'memory' | 'photo' | 'camera' | 'brain' | 'devices' | 'local' | 'integrations' | 'actions' | 'notifications' | 'knows' | 'initiative' | null;
 
 export function CompanionConsole() {
   const { user, profile, arrival, consumeArrival, signOut } = useAuth();
@@ -85,6 +88,8 @@ export function CompanionConsole() {
   // Proposals Athena is waiting on. Gated on `arriving` being over so a card
   // cannot land on top of the arrival sequence.
   const actions = useActions(!!profile);
+  // Questions from her dreaming: the other thing the bell is for.
+  const dreamQuestions = useDreamQuestions(!!profile);
   // Things she raised without being asked. Rendered into the transcript
   // rather than as a card: she started a conversation, so it should look like
   // one.
@@ -166,7 +171,19 @@ export function CompanionConsole() {
         nudge: n,
       })),
     ];
-    return entries.sort((a, b) => a.at - b.at) as (
+    // Messages keep the order they arrived in; only nudges are placed by
+    // time. A full sort let a single message with an off timestamp (clock or
+    // timezone skew) outrank everything after it and sit at the bottom for good.
+    const messageEntries = entries.filter((e) => e.kind === 'message');
+    const nudgeEntries = entries.filter((e) => e.kind === 'nudge').sort((a, b) => a.at - b.at);
+    const merged: typeof entries = [];
+    let n = 0;
+    for (const m of messageEntries) {
+      while (n < nudgeEntries.length && nudgeEntries[n].at <= m.at) merged.push(nudgeEntries[n++]);
+      merged.push(m);
+    }
+    merged.push(...nudgeEntries.slice(n));
+    return merged as (
       | { kind: 'message'; uuid: string; at: number; message: (typeof chat.messages)[number] }
       | { kind: 'nudge'; uuid: string; at: number; nudge: (typeof nudges.nudges)[number] }
     )[];
@@ -374,9 +391,10 @@ export function CompanionConsole() {
   }
 
   const firstName = user?.full_name?.split(/\s+/)[0] || user?.email || 'You';
-  // Proposals she cannot act on until someone answers. Drives both the
-  // Notifications card's count and the bell in the top bar.
-  const waitingCount = actions.pending.length;
+  // Proposals she cannot act on until someone answers, plus the questions her
+  // dreaming left her holding. Drives the bell in the top bar and Alerts on
+  // the phone. A card already answered (done/failed) is not waiting on anyone.
+  const waitingCount = actions.pending.filter(a => a.status === 'pending').length + dreamQuestions.questions.length;
   function askAthena(text: string) {
     setBriefing(false);
     setView('chat');
@@ -417,6 +435,7 @@ export function CompanionConsole() {
     { icon: '⚡', label: 'Actions', onClick: () => openPanel('actions') },
     { icon: '💡', label: 'Initiative', onClick: () => openPanel('initiative') },
     { icon: '🔗', label: 'Connected apps', onClick: () => openPanel('integrations') },
+    { icon: '🔍', label: 'What Athena knows', onClick: () => openPanel('knows') },
     { icon: '🖥️', label: 'System', onClick: () => navigateDashboard('System') },
   ];
 
@@ -493,7 +512,7 @@ export function CompanionConsole() {
               in the app, not only from the dashboard card. */}
           <button
             className="topbar-notifications"
-            onClick={() => openPanel('actions')}
+            onClick={() => openPanel('notifications')}
             aria-label={waitingCount ? `Notifications — ${waitingCount} waiting for you` : 'Notifications'}
             title={waitingCount ? `${waitingCount} waiting for you` : 'Nothing waiting for you'}
           >
@@ -744,7 +763,7 @@ export function CompanionConsole() {
         <button className={view === 'dashboard' ? 'active' : ''} onClick={() => navigateDashboard('Home')}><DashboardIcon name="Home" /><span>Dashboard</span></button>
         <button className={view === 'chat' ? 'active' : ''} onClick={() => setView('chat')}><DashboardIcon name="Chat" /><span>Chat</span></button>
         <button className="mobile-athena" aria-label="Talk to Athena" onClick={() => setView('chat')}><AthenaAvatar /></button>
-        <button className="mobile-notifications" onClick={() => openPanel('actions')}><DashboardIcon name="Notifications" /><span>Alerts</span>{waitingCount > 0 && <i className="topbar-badge">{waitingCount > 9 ? '9+' : waitingCount}</i>}</button>
+        <button className="mobile-notifications" onClick={() => openPanel('notifications')}><DashboardIcon name="Notifications" /><span>Alerts</span>{waitingCount > 0 && <i className="topbar-badge">{waitingCount > 9 ? '9+' : waitingCount}</i>}</button>
         <button data-menu-toggle aria-expanded={menuOpen} onClick={() => setMenuOpen(v => !v)}><DashboardIcon name="More" /><span>More</span></button>
       </nav>
 
@@ -791,6 +810,17 @@ export function CompanionConsole() {
       {panel === 'brain' && <BrainPanel onClose={() => setPanel(null)} />}
       {panel === 'devices' && <DevicesPanel onClose={() => setPanel(null)} />}
       {panel === 'actions' && <ActionsPanel onClose={() => setPanel(null)} />}
+      {panel === 'notifications' && (
+        <NotificationsPanel
+          actions={actions}
+          questions={dreamQuestions.questions}
+          onAnswer={() => { setPanel(null); askAthena('You had a question for me from your dreaming — go ahead and ask.'); }}
+          onDismiss={dreamQuestions.dismiss}
+          onOpenActions={() => openPanel('actions')}
+          onClose={() => setPanel(null)}
+        />
+      )}
+      {panel === 'knows' && <KnowsPanel onClose={() => setPanel(null)} onOpen={p => openPanel(p)} />}
       {panel === 'initiative' && <InitiativePanel onClose={() => setPanel(null)} />}
       {panel === 'local' && <LocalServerPanel onClose={() => setPanel(null)} />}
       {panel === 'integrations' && (

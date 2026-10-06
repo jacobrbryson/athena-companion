@@ -5,29 +5,47 @@ export type SourceStatus = 'ready' | 'not_connected' | 'needs_reauth' | 'consent
 /** `detail` is the provider's own reason a card is blank, redacted server-side.
  *  Adult-only by construction: every dashboard route is behind requireAdultActor. */
 export interface Source<T> { status: SourceStatus; data: T | null; detail?: string | null; checkedAt: string }
-export interface CalendarEvent { id: string | null; title: string; start: string; end: string; allDay: boolean; location: string | null; calendar: string | null; shared: boolean }
+export interface CalendarEvent {
+  id: string | null; title: string; start: string; end: string; allDay: boolean; location: string | null; calendar: string | null; shared: boolean;
+  /** Google's event type: 'default', 'outOfOffice', 'focusTime', 'workingLocation'. Absent on older servers. */
+  eventType?: string;
+  /** Guests on the invite (so a meeting is told from a block of your own time). */
+  attendees?: number;
+  /** For a working-location event: "Home", "Office", or a label the person chose. */
+  workingLocation?: string | null;
+}
 /** One scored (or pending) Whoop recovery. `state` is 'SCORED' when the rest
  *  of the row can be trusted; the heart fields are null on unscored days. */
 export interface RecoveryDay {
   date: string; recovery_score: number | null; state: string;
   resting_heart_rate?: number | null; hrv_ms?: number | null; spo2_percent?: number | null;
 }
-export interface JiraIssue { key: string; title: string; status: string; project: string; updated: string; due: string | null; site: string; url: string }
+export interface JiraIssue { key: string; title: string; status: string; /** 'new' | 'indeterminate' | 'done' — Jira's own grouping, so "in progress" holds in any workflow. */ statusCategory?: string; project: string; updated: string; due: string | null; site: string; url: string }
 export interface DashboardSummary {
-  calendar: Source<{ events: CalendarEvent[]; timeZone: string; days: number }>;
+  /** `workingLocations` ("Home 7–4") are kept out of `events` on purpose. */
+  calendar: Source<{ events: CalendarEvent[]; workingLocations?: CalendarEvent[]; timeZone: string; days: number }>;
   /** Whoop's own recovery fields, straight through. The heart numbers were
    *  always in this payload; the dashboard reads them now. */
   recovery: Source<RecoveryDay[]>;
   sleep: Source<{ date: string; nap: boolean; hours_asleep: number; hours_in_bed?: number; sleep_performance_percent: number | null; sleep_efficiency_percent?: number | null; respiratory_rate?: number | null }[]>;
   strain: Source<{ date: string; day_strain: number | null; average_heart_rate?: number | null; kilojoules?: number | null }[]>;
-  activity: Source<{ days: number; activities: { name: string; type: string; start: string; distance_mi: number; moving_time_s: number }[] }>;
   familyChores: Source<{ name: string; chores: { title: string; completed: boolean; status: string | null; dueDate: string | null }[] }>;
-  jira: Source<{ issues: JiraIssue[]; partial: boolean }>;
+  jira: Source<{ issues: JiraIssue[]; partial: boolean; /** Jira has more than was read, so a count is a floor. */ capped?: boolean }>;
   slack: Source<{ workspace: string; messages: { text: string; channel: string; url: string; timestamp: string }[] }>;
   emailTriage: Source<{ newCount: number; receiptCount: number; travelCount: number; schoolCount: number; otherCount: number; pendingCount?: number; bundles?: MailBundles; preview: TriageEmail[] }>;
   familyHealth: Source<{ active: FamilyHealthStatus[] }>;
 }
 export type HealthSeverity = 'mild' | 'moderate' | 'severe';
+/** A child on the family profiles; birthday is YYYY-MM-DD. */
+export interface FamilyChild { uuid: string; name: string; birthday: string | null; grade: string | null }
+/** A Google Contact linked to a remembered family member; birthday is YYYY-MM-DD or year-less --MM-DD. */
+export interface FamilyLink {
+  factUuid: string; contactId: string; name: string | null;
+  card: { contactId: string; name: string; birthday: string | null; phone: string | null; email: string | null; photoUrl: string | null } | null;
+  status: 'ok' | 'missing' | 'not_connected' | 'unreadable';
+}
+export interface FamilyPeople { children: FamilyChild[]; links: FamilyLink[]; contactsLinked: boolean | null }
+
 /** One family member currently reported under the weather. */
 export interface FamilyHealthStatus {
   uuid: string; personName: string; symptom: string; severity: HealthSeverity;
@@ -117,6 +135,8 @@ export interface LocalNewsItem extends NewsItem { matched: string }
 /** "Next time I'm at Missy's, remind me to ..." — set by approving Athena's remind_at_place card. */
 export interface PlaceReminder { uuid: string; placeUuid: string | null; placeName: string; address: string | null; latitude: number; longitude: number; radiusM: number; reminder: string; repeats: boolean; status: 'armed' | 'done'; fireCount: number; lastFiredAt: string | null; doneAt: string | null; createdAt: string }
 
+/** Calendar events that mention the community's towns and places, read wide (not from the 25-event summary). */
+export interface CommunityCalendar { connected: boolean; terms: string[]; events: CalendarEvent[] }
 export interface CommunityOverview { places: WatchPlace[]; neighbors: Neighbor[]; events: CommunityEvent[]; localNews: LocalNewsItem[] | null; kinds: PlaceKind[] }
 /** A ring on the map: where a watched place is and how far it reaches. */
 export interface AlertPlace { name: string; latitude: number; longitude: number; radiusMiles: number; live?: boolean }
@@ -214,12 +234,11 @@ export interface HomeProject {
 export interface ProjectCounts { todo: number; inProgress: number; blocked: number; done: number; open: number }
 /** What Athena is putting in front of them, and everything it was drawn from. */
 export interface Suggestion {
-  id: string; kind: 'place' | 'habit' | 'project' | 'goal' | 'work' | 'rest'; title: string; why: string | null;
+  id: string; kind: 'place' | 'project' | 'goal' | 'work' | 'rest'; title: string; why: string | null;
   activity?: string; url?: string; distanceMi?: number | null; driveMinutes?: number | null;
   closesAt?: string | null; closesInMinutes?: number | null; todaysHours?: string[];
   usableMinutes?: number | null; weatherDependent?: boolean;
   weather?: { outlook: 'wet' | 'fine'; now: string | null; temperatureF: number | null; precipitationChance: number | null } | null;
-  rhythm?: { activity: string; perWeek: number; usualDay: string | null; daysSince: number | null; thisWeek: number; isUsualDayToday: boolean } | null;
   area?: string | null; effortMinutes?: number | null; indoor?: boolean | null;
   status?: ProjectStatus | string | null; priority?: string; fitsWindow?: boolean; dueDate?: string | null;
   /** goal: what they said about it. work: the ticket. rest: the numbers behind it. */
@@ -274,6 +293,7 @@ export const dreamsApi = {
   list: () => api.get<{ dreams: Dream[] }>('/api/v1/dreams'),
   night: (uuid: string) => api.get<{ dream: (Dream & { steps: DreamStep[] }) | null }>(`/api/v1/dreams/${encodeURIComponent(uuid)}`),
   questions: () => api.get<{ questions: DreamQuestion[] }>('/api/v1/dreams/questions'),
+  dismissQuestion: (uuid: string) => api.post<{ dismissed: boolean }>(`/api/v1/dreams/questions/${encodeURIComponent(uuid)}/dismiss`, {}),
   image: (uuid: string) => api.blob(`/api/v1/dreams/${encodeURIComponent(uuid)}/image`),
 };
 export const dashboardApi = {
@@ -305,6 +325,7 @@ export const dashboardApi = {
   removeWatchPlace: (uuid: string) => api.del<{ places: WatchPlace[] }>(`/api/v1/dashboard/incidents/places/${encodeURIComponent(uuid)}`),
   /** The Community page: points of interest, neighbours, events and local headlines. */
   community: () => api.get<CommunityOverview>('/api/v1/dashboard/community'),
+  communityCalendar: () => api.get<CommunityCalendar>('/api/v1/dashboard/community/calendar'),
   saveNeighbor: (input: NeighborInput, uuid?: string) => uuid
     ? api.patch<{ neighbors: Neighbor[] }>(`/api/v1/dashboard/community/neighbors/${encodeURIComponent(uuid)}`, input)
     : api.post<{ neighbors: Neighbor[] }>('/api/v1/dashboard/community/neighbors', input),
@@ -400,6 +421,12 @@ export const dashboardApi = {
   mailDelete: (emailTriageUuids: string[]) =>
     api.post<{ success: true; action: AthenaAction }>('/api/v1/dashboard/email/delete', { email_triage_uuids: emailTriageUuids }),
   /** Report (or update) a family member's symptom. Athena picks this up in chat and, if initiative is on, may raise it herself. */
+  /** Children's birthdays from the family profiles, and the Google Contacts linked to remembered people. */
+  familyPeople: () => api.get<FamilyPeople>("/api/v1/dashboard/family/people"),
+  linkFamilyContact: (factUuid: string, contact: { contactId: string; name: string }) =>
+    api.put<FamilyPeople>(`/api/v1/dashboard/family/people/${encodeURIComponent(factUuid)}/contact`, contact),
+  unlinkFamilyContact: (factUuid: string) =>
+    api.del<FamilyPeople>(`/api/v1/dashboard/family/people/${encodeURIComponent(factUuid)}/contact`),
   reportFamilyHealth: (payload: { personName: string; symptom: string; severity?: HealthSeverity; notes?: string }) =>
     api.post<{ status: FamilyHealthStatus }>('/api/v1/dashboard/health/family', payload),
   resolveFamilyHealth: (uuid: string) =>

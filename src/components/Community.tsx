@@ -288,7 +288,7 @@ function householdLabel(n: Pick<Neighbor, 'name' | 'address' | 'contacts'>) {
   return streetOf(n.address) || 'A household';
 }
 
-function ContactAvatar({ name, photoUrl }: { name: string; photoUrl?: string | null }) {
+export function ContactAvatar({ name, photoUrl }: { name: string; photoUrl?: string | null }) {
   const [broken, setBroken] = useState(false);
   if (photoUrl && !broken) return <img className="memory-avatar community-photo" src={photoUrl} alt="" referrerPolicy="no-referrer" onError={() => setBroken(true)} />;
   return <span className="memory-avatar" aria-hidden>{name.replace(/^the\s+/i, '').slice(0, 1).toUpperCase()}</span>;
@@ -500,7 +500,7 @@ function ContactsAtAddress({ address, exclude, household, onPick }: { address: s
  * as they type (after a pause, two letters minimum). Only the contact's id and
  * name are saved — the details shown are read from Google each time.
  */
-function ContactSearch({ exclude, household, onPick, onConnect }: { exclude: Set<string>; household?: string; onPick: (card: ContactCard) => void; onConnect?: () => void }) {
+export function ContactSearch({ exclude, household, onPick, onConnect }: { exclude: Set<string>; household?: string; onPick: (card: ContactCard) => void; onConnect?: () => void }) {
   const [q, setQ] = useState('');
   const [state, setState] = useState<{ linked: boolean; matches: ContactCard[]; searching: boolean; error: string | null }>({ linked: true, matches: [], searching: false, error: null });
   // Ask once on open whether Contacts is connected at all, so the Connect

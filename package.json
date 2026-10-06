@@ -6,6 +6,9 @@
   "description": "Athena Companion — a personal AI companion console (React), styled after the Guardians app.",
   "scripts": {
     "test:cache": "node --experimental-strip-types --test scripts/readCache.test.mjs",
+    "test:work": "node --experimental-strip-types --test scripts/workStatus.test.mjs",
+    "test:community": "node --experimental-strip-types --test scripts/communityCalendar.test.mjs",
+    "test:family": "node --experimental-strip-types --test scripts/familyRoster.test.mjs",
     "test:android": "node --test scripts/androidRegistration.test.mjs",
     "test:local": "node --test scripts/localConnection.test.mjs scripts/localUnityAssets.test.mjs",
     "dev": "vite",

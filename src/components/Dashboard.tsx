@@ -10,15 +10,23 @@ import { NewsSourcesPanel } from './NewsSourcesPanel';
 import { PlansPanel } from './PlansPanel';
 import { EmergencyBanner } from './EmergencyBanner';
 import { RightNowCard } from './RightNowCard';
+import { buildFamilyRoster, type RosterRow } from './familyRoster';
+import { FamilyPeopleList } from './FamilyPeople';
+import { communityEvents } from './communityCalendar.ts';
+import { WorkBanner } from './WorkBanner';
+import { untilLabel } from './workStatus';
 import { EmailPanel, CATEGORY_LABEL } from './EmailPanel';
 import { MailBundles } from './MailBundles';
 import { DreamCard, DreamsPage } from './Dreams';
 import { DashboardIcon } from './icons';
-import { CommunityMap, PointsOfInterest, Neighbors, LocalEvents, PlaceReminders, eventWhen, isPastEvent } from './Community';
+import { CommunityMap, PointsOfInterest, Neighbors, LocalEvents, PlaceReminders, ContactAvatar, eventWhen, isPastEvent } from './Community';
 import { EmergencyAlertSetup } from './EmergencyAlertSetup';
 
+/** Enough for a household, so nobody sorted late in the alphabet is cut off the card. */
+const FAMILY_CARD_ROWS = 7;
+
 /** Open a console panel; `consentFor` opens Connected apps on that provider's consent prompt. */
-export type OpenPanel = (panel: 'integrations' | 'memory' | 'actions' | 'photo' | 'devices', options?: { consentFor?: string }) => void;
+export type OpenPanel = (panel: 'integrations' | 'memory' | 'actions' | 'notifications' | 'knows' | 'photo' | 'devices', options?: { consentFor?: string }) => void;
 export type DashboardSection = 'Home' | 'Today' | 'Calendar' | 'Health' | 'Family' | 'Community' | 'Mail' | 'Work' | 'Projects' | 'News' | 'Dreams' | 'System';
 // Icons live in ./icons — one registry, so a drawn icon looks the same in
 // the nav, on its card and in the phone's bottom bar.
@@ -44,7 +52,7 @@ const statusText = { not_connected: 'Not connected', needs_reauth: 'Reconnect to
  */
 const SOURCE_PROVIDER: Partial<Record<keyof DashboardSummary, string>> = {
   calendar: 'google_calendar', emailTriage: 'gmail',
-  recovery: 'whoop', sleep: 'whoop', strain: 'whoop', activity: 'strava',
+  recovery: 'whoop', sleep: 'whoop', strain: 'whoop',
   jira: 'jira', slack: 'slack', familyChores: 'family_chores',
 };
 /** What a source that cannot be read offers to do about it, where it is read. */
@@ -104,6 +112,34 @@ function agoLabel(value?: string | null) {
   if (minutes < 60) return `${minutes} min ago`;
   if (minutes < 1440) return `${Math.floor(minutes / 60)}h ago`;
   return dateLabel(value);
+}
+/** A clock that re-renders its reader, so a countdown stays honest while the page is open. */
+function useNow(everyMs: number) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), everyMs);
+    return () => window.clearInterval(timer);
+  }, [everyMs]);
+  return now;
+}
+/** The soonest timed event that hasn't finished: what is on now, or what is next. */
+function nextUp(events: CalendarEvent[], now: number) {
+  for (const event of events) {
+    if (event.allDay) continue;
+    const start = Date.parse(event.start), end = Date.parse(event.end);
+    if (!Number.isFinite(start)) continue;
+    if (start <= now && Number.isFinite(end) && end > now) return { event, ongoing: true, ms: end - now };
+    if (start > now) return { event, ongoing: false, ms: start - now };
+  }
+  return null;
+}
+// Which cards a person has folded away on a phone. Remembered per browser;
+// unset means "use the default" (folded on a phone, always open on a desktop,
+// where the setting has no effect).
+const COLLAPSE_KEY = 'athena.dashboard.collapsed';
+const isPhoneWidth = () => typeof window !== 'undefined' && window.matchMedia?.('(max-width: 700px)').matches;
+function loadCollapsed(): Record<string, boolean> {
+  try { return JSON.parse(window.localStorage.getItem(COLLAPSE_KEY) || '{}') || {}; } catch { return {}; }
 }
 function incidentLine(c: NearbyIncident) {
   return <li key={c.id}><strong>{c.serious ? '● ' : ''}{c.what}</strong><small>{[c.where, `${c.miles} mi from ${c.place}`, agoLabel(c.receivedAt)].filter(Boolean).join(' · ')}</small></li>;
@@ -442,8 +478,10 @@ function readinessOf(today: RecoveryDay | undefined, prior: RecoveryDay[], sleep
   const said = notes.length ? `${notes.join(' · ')}.` : '';
 
   if (infectionShape) {
-    const oxygen = lowOxygen ? ' Blood oxygen is down too.' : '';
-    return { level: 'warning', label: 'WARNING', headline: 'Resting HR up while HRV is down', reason: `${said} Two signals moving the wrong way at once — this is often how a bug starts.${oxygen} Worth an easy day and an early night.` };
+    // `said` has already listed the numbers (blood oxygen among them when it
+    // counts), so this sentence only has to say what they add up to — plainly,
+    // and as a pattern rather than a diagnosis.
+    return { level: 'warning', label: 'WARNING', headline: 'Resting HR up while HRV is down', reason: `${said} Resting heart rate up and HRV down together often means your body is fighting something off. It’s a pattern, not a diagnosis — take it easy today and get to bed early.` };
   }
   if (lowOxygen) {
     return { level: 'warning', label: 'WARNING', headline: 'Blood oxygen is low', reason: `${said} Well under your usual overnight reading. One night can be a loose strap; if it stays low, or you feel short of breath, take it seriously.` };
@@ -624,6 +662,14 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
   const [healthError, setHealthError] = useState('');
   const [healthResolving, setHealthResolving] = useState<string | null>(null);
   const [reconnecting, setReconnecting] = useState<string | null>(null);
+  const now = useNow(30000);
+  const [collapsedMap, setCollapsedMap] = useState<Record<string, boolean>>(loadCollapsed);
+  const isCollapsed = (id: string) => collapsedMap[id] ?? isPhoneWidth();
+  const toggleCollapsed = (id: string) => {
+    const next = { ...collapsedMap, [id]: !isCollapsed(id) };
+    setCollapsedMap(next);
+    try { window.localStorage.setItem(COLLAPSE_KEY, JSON.stringify(next)); } catch { /* a per-browser nicety; the cards work without it */ }
+  };
 
   /**
    * Straight back to the provider's consent screen, the same way the Connected
@@ -755,13 +801,17 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
   // Shared derivations the section pages read from.
   const timeZone = summary?.calendar.data?.timeZone;
   const events = summary?.calendar.data?.events || [];
+  // What on the calendar mentions where they live: soccer practice, the games, the 5K.
   const today = zonedDay(new Date(), timeZone);
   const todayEvents = events.filter(e => eventDay(e, timeZone) === today);
   const nextEvent = events.find(e => !e.allDay && new Date(e.start).getTime() > Date.now()) || todayEvents[0];
   const chores = summary?.familyChores.data?.chores || [];
   const sickFamily = summary?.familyHealth.data?.active || [];
   const choresDone = chores.filter(c => c.completed).length;
-  const activities = summary?.activity.data?.activities || [];
+  const familyPeople = data.familyPeople.data;
+  const roster = buildFamilyRoster({ facts: family, sick: sickFamily, events, now: new Date(now), children: familyPeople?.children, links: familyPeople?.links });
+  // Community: what mentions where they live, plus the games and recitals of the people in their corner.
+  const communityCal = communityEvents(data.communityCalendar.data?.events ?? events, community?.places || [], new Date(now), roster.filter(r => r.relation !== 'Pet').map(r => r.name));
   const hoursMinutes = (hours: number) => `${Math.floor(hours)}h ${Math.round((hours % 1) * 60)}m`;
   /** The last `days` calendar days, oldest first, so a gap reads as a gap. */
   function week<T extends { date: string }>(rows: T[] | null | undefined, value: (row: T) => number | null) {
@@ -776,7 +826,13 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
   function calendarBody(limit: number) {
     const source = summary?.calendar;
     if (!ready(source)) return <SourceNote source={source} name="Google Calendar" fix={fixFor('calendar')} />;
-    return <><p className="source-note">Next 7 days · {source?.data?.timeZone}</p>{!events.length && <p className="dashboard-empty">No upcoming events in this window.</p>}<ul className="dashboard-data-list calendar-events">{events.slice(0, limit).map((event, index) => <li key={`${event.id}-${index}`}><span className="event-dot" /><div><small>{event.allDay ? `${dateLabel(`${event.start}T12:00:00Z`, { timeZone: 'UTC' })} · All day` : `${dateLabel(event.start, { timeZone })} · ${eventTime(event, timeZone)}`}</small><strong>{event.title}</strong>{event.location && <small>{event.location}</small>}{event.shared && <small>{event.calendar}</small>}</div></li>)}</ul></>;
+    // The lead is whatever is on now or comes next, with a countdown; it is not
+    // repeated in the list under it. Distance and drive time are not known here —
+    // an event carries only its location text — so none is claimed.
+    const lead = nextUp(events, now);
+    const rest = lead ? events.filter(e => e !== lead.event) : events;
+    return <>{lead && <div className="next-up"><small>{lead.ongoing ? 'ON NOW' : 'NEXT UP'}</small><strong>{lead.event.title}</strong><span>{lead.ongoing ? `ends in ${untilLabel(lead.ms)}` : lead.ms < 12 * 3600000 ? `in ${untilLabel(lead.ms)} · ${eventTime(lead.event, source?.data?.timeZone)}` : `${dateLabel(lead.event.start, { timeZone: source?.data?.timeZone, weekday: 'short' })} · ${eventTime(lead.event, source?.data?.timeZone)}`}{lead.event.location ? ` · ${lead.event.location}` : ''}</span></div>}
+      <p className="source-note">Next 7 days · {source?.data?.timeZone}</p>{!events.length && <p className="dashboard-empty">No upcoming events in this window.</p>}<ul className="dashboard-data-list calendar-events">{rest.slice(0, lead ? limit - 1 : limit).map((event, index) => <li key={`${event.id}-${index}`}><span className="event-dot" /><div><small>{event.allDay ? `${dateLabel(`${event.start}T12:00:00Z`, { timeZone: 'UTC' })} · All day` : `${dateLabel(event.start, { timeZone })} · ${eventTime(event, timeZone)}`}</small><strong>{event.title}</strong>{event.location && <small>{event.location}</small>}{event.shared && <small>{event.calendar}</small>}</div></li>)}</ul></>;
   }
   /** The heart tiles, in the one place the card and the Health page agree on. */
   function heartMetrics(wide = false) {
@@ -813,10 +869,7 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
       {readiness && <p className="readiness-reason">{readiness.reason}</p>}
       <div className="health-metrics">{heartMetrics()}</div></>}
       {whoopNotes()}
-      <SourceBlock source={summary?.activity} label="Strava · last 7 days" name="Strava" fix={fixFor('activity')}>
-        {activities.slice(0, 2).map((a, i) => <p className="activity-line" key={i}>{a.name} · {a.distance_mi} mi <small>{dateLabel(a.start)}</small></p>)}
-        {!activities.length && <p className="dashboard-empty">No recent activities.</p>}
-      </SourceBlock></>;
+      </>;
   }
   function workBody(limit: number) {
     return <>
@@ -848,6 +901,29 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
   }
   /** After any mail action: refetch the page list and the card's summary. */
   function mailChanged() { setMailRefresh(n => n + 1); void data.refresh(); }
+  function rosterRow(r: RosterRow) {
+    const resolving = r.signal.healthUuid && healthResolving === r.signal.healthUuid;
+    const press = () => r.signal.healthUuid ? void resolveHealthStatus(r.signal.healthUuid) : onAsk(r.signal.ask);
+    return <li key={r.id} className={`roster-row roster-${r.signal.kind}`}>
+      <ContactAvatar name={r.name} photoUrl={r.photoUrl} />
+      <div><strong>{r.name}{r.relation && <em>{r.relation}</em>}</strong><small>{r.signal.label}</small></div>
+      <button type="button" className="roster-action" disabled={!!resolving} onClick={press}>{resolving ? 'Updating…' : r.signal.action}</button>
+    </li>;
+  }
+  /** One row per person, most pressing first; the card never goes quiet — thin or stale knowledge is itself the prompt. */
+  function familyCardBody() {
+    if (data.facts.error && !roster.length) return <EmptyCta text="Memories couldn’t load." action="Retry" onClick={retryData} />;
+    if (data.facts.loading && !roster.length) return <p className="dashboard-empty">Loading…</p>;
+    if (!roster.length) return <EmptyCta text="Athena doesn’t know your people yet." action="Tell her about your family" onClick={() => onAsk('Let me tell you about my family. Ask me about each person — who they are, birthdays, what is going on in their lives.')} />;
+    return <>
+      <ul className="dashboard-data-list roster-list">{roster.slice(0, FAMILY_CARD_ROWS).map(rosterRow)}</ul>
+      {roster.length > FAMILY_CARD_ROWS && <p className="source-note">+{roster.length - FAMILY_CARD_ROWS} more on the Family page</p>}
+      <button type="button" className="source-fix" onClick={() => onAsk('I want to add someone to my family. Ask me who they are and what you should know.')}>Add someone <span>↗</span></button>
+    </>;
+  }
+  function communityEventList(list: ReturnType<typeof communityEvents>) {
+    return <ul className="dashboard-data-list calendar-events">{list.map((c, i) => <li key={`${c.event.id}-${i}`}><span className="event-dot" /><div><strong>{c.what}</strong><small>{c.when}{c.who ? ` · ${c.who}` : ''}</small></div></li>)}</ul>;
+  }
   function healthStatusLine(h: FamilyHealthStatus) {
     return <li key={h.uuid}>
       <strong>{h.personName} · {h.symptom}</strong>
@@ -884,36 +960,72 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
   // The fixed order. Every card stays, even one whose apps are all unlinked:
   // it carries the Connect buttons that would fill it.
   const ranked = DEFAULT_CARD_ORDER.map(id => ({ id }));
-  function card(id: string, name: string, title: string, body: ReactNode, action: string, click: () => void, count?: number) {
-    return <article className={`dashboard-card card-${id}`} id={`dashboard-${name.toLowerCase()}`} key={id}>
+  /**
+   * On a phone a card folds to its title and one headline — the single thing
+   * worth knowing without opening it (GO for Health, the next event for
+   * Calendar). The title toggles it; the headline opens the page. Wider than a
+   * phone the fold has no effect and every card is open, as before.
+   */
+  function card(id: string, name: string, title: string, body: ReactNode, action: string, click: () => void, count?: number, headline?: ReactNode) {
+    const folded = isCollapsed(id);
+    return <article className={`dashboard-card card-${id}${folded ? ' is-collapsed' : ''}`} id={`dashboard-${name.toLowerCase()}`} key={id}>
       <div className="dashboard-card-head">
-        <button className="dashboard-card-heading" onClick={click}><DashboardIcon name={name} /><h2>{title}</h2>{count !== undefined && <span className="card-count">{count}</span>}</button>
+        <button className="dashboard-card-heading" aria-expanded={!folded} onClick={() => (isPhoneWidth() ? toggleCollapsed(id) : click())}><DashboardIcon name={name} /><h2>{title}</h2>{count !== undefined && <span className="card-count">{count}</span>}</button>
         <button className="dashboard-card-chevron" onClick={click} aria-label={`Open ${title}`}>›</button>
+        <button className="dashboard-card-toggle" onClick={() => toggleCollapsed(id)} aria-label={`${folded ? 'Expand' : 'Collapse'} ${title}`} aria-expanded={!folded}>{folded ? '▾' : '▴'}</button>
       </div>
+      {headline && <button className="dashboard-card-headline" onClick={click} aria-label={`Open ${title}`}>{headline}</button>}
       <div className="dashboard-card-body">{body}</div>
       <button className="dashboard-card-action" onClick={click}>{action}<span>↗</span></button>
     </article>;
   }
+  // The one datum each card leads with when it is folded. Never invented: a
+  // source that can't be read says so, in its own status words.
+  const say = (value: ReactNode, note?: ReactNode) => <><strong>{value}</strong>{note && <small>{note}</small>}</>;
+  const sayStatus = (source: Source<unknown> | undefined, name: string) => say(source ? statusText[source.status] : 'Loading…', name);
+  const lead = nextUp(events, now);
+  const openMail = summary?.emailTriage.data?.newCount || 0;
+  const needReply = summary?.emailTriage.data?.bundles?.replies.count || 0;
+  const whoopDown = (['recovery', 'sleep', 'strain'] as const).every(key => summary?.[key]?.status === 'not_connected');
+  const headlines: Record<string, ReactNode> = {
+    health: whoopDown ? sayStatus(summary?.recovery, 'WHOOP')
+      : readiness ? say(<span className={`readiness readiness-${readiness.level}`}>{readiness.label}</span>, `Recovery ${recovery?.recovery_score}% · ${readiness.headline}`)
+        : recovery?.recovery_score != null ? say(`${recovery.recovery_score}%`, 'recovery') : say('—', ready(summary?.recovery) ? 'No scored recovery yet' : 'WHOOP unavailable'),
+    family: data.facts.loading && !roster.length ? say('Loading…')
+      : roster.length ? say(`${roster[0].name} · ${roster[0].signal.label}`, roster.length > 1 ? `and ${roster.length - 1} more in your corner` : 'in your corner')
+        : say('Nobody here yet', 'tell her about your family'),
+    community: nearbyWeather.length ? say(nearbyWeather[0].event, nearbyWeather[0].place)
+      : nearbyCalls.length ? say(`${nearbyCalls.length} call${nearbyCalls.length === 1 ? '' : 's'} nearby`, nearbyCalls[0].what)
+        : communityCal.length ? say(communityCal[0].what, communityCal[0].when)
+          : data.nearby.loading ? say('Checking…') : data.nearby.error ? say('Couldn’t load') : say('Quiet', 'near your places'),
+    calendar: lead ? say(lead.event.title, lead.ongoing ? `on now · ends in ${untilLabel(lead.ms)}` : `in ${untilLabel(lead.ms)}`)
+      : ready(summary?.calendar) ? say('Clear', 'nothing timed coming up') : sayStatus(summary?.calendar, 'Google Calendar'),
+    mail: ready(summary?.emailTriage) ? say(openMail, needReply ? `open · ${needReply} need you` : 'open') : sayStatus(summary?.emailTriage, 'Gmail'),
+    work: ready(summary?.jira) ? say(issues.length, 'open issues assigned to you') : sayStatus(summary?.jira, 'Jira'),
+    news: news[0] ? say(news[0].title, news[0].source) : data.news.loading ? say('Loading…') : say('No headlines yet', newsSources.length ? 'still reading' : 'add a news page'),
+    projects: ready(summary?.jira) ? say(new Set(issues.map(i => i.project)).size, `project${new Set(issues.map(i => i.project)).size === 1 ? '' : 's'} with open issues`) : sayStatus(summary?.jira, 'Jira'),
+  };
   const cards: Record<string, ReactNode> = {
     // Every card now opens its own page, including when its source is down:
     // the page says what is wrong and carries the button that fixes it, which
     // is more use than dropping someone straight into the settings panel.
-    calendar: card('calendar', 'Calendar', 'Calendar', calendarBody(3), 'View schedule', go('Calendar'), summary?.calendar.data?.events.length),
-    health: card('health', 'Health', 'Health & Performance', healthBody(), 'View health', go('Health')),
-    family: card('family', 'Family', 'Family', <>{sickFamily.length > 0 && <><p className="source-note">Family health watch</p><ul className="dashboard-data-list">{sickFamily.slice(0, 3).map(healthStatusLine)}</ul></>}<p className="source-note">From your memories</p>{data.facts.error ? <EmptyCta text="Memories couldn’t load." action="Retry" onClick={retryData} /> : data.facts.loading ? <p className="dashboard-empty">Loading memories…</p> : family.length ? <Facts facts={family.slice(0, 3)} /> : <EmptyCta text="No family memories saved yet." action="Tell her about them" onClick={() => onAsk('Let me tell you about my family.')} />}<SourceBlock source={summary?.familyChores} label="Family Chores · today" name="Family Chores" fix={fixFor('familyChores')}><ul className="dashboard-data-list">{chores.slice(0, 3).map((c, i) => <li key={i}><strong>{c.completed ? '✓' : '○'} {c.title}</strong><small>{c.completed ? 'Completed' : c.status || 'Open'}</small></li>)}</ul>{!chores.length && <p className="dashboard-empty">No chores returned for today.</p>}</SourceBlock></>, 'View family', go('Family'), sickFamily.length || undefined),
+    calendar: card('calendar', 'Calendar', 'Calendar', calendarBody(3), 'View schedule', go('Calendar'), summary?.calendar.data?.events.length, headlines.calendar),
+    health: card('health', 'Health', 'Health & Performance', healthBody(), 'View health', go('Health'), undefined, headlines.health),
+    family: card('family', 'Family', 'Family', familyCardBody(), 'View family', go('Family'), sickFamily.length || undefined, headlines.family),
     community: card('community', 'Community', 'Community', <>
       <p className="source-note">Around your points of interest</p>
       {data.nearby.loading ? <p className="dashboard-empty">Checking nearby…</p>
         : data.nearby.error ? <EmptyCta text="Nearby activity couldn’t load." action="Retry" onClick={retryData} />
           : nearbyCalls.length || nearbyWeather.length ? <ul className="dashboard-data-list">{nearbyWeather.slice(0, 1).map(weatherLine)}{nearbyCalls.slice(0, nearbyWeather.length ? 2 : 3).map(incidentLine)}</ul>
             : <p className="dashboard-empty">Quiet near your places.</p>}
+      {communityCal.length > 0 && <><p className="source-note">On your calendar</p>{communityEventList(communityCal.slice(0, 5))}{communityCal.length > 5 && <p className="source-note">+{communityCal.length - 5} more on the Community page</p>}</>}
       {nextLocalEvent && <><p className="source-note">Coming up locally</p><ul className="dashboard-data-list calendar-events"><li><span className="event-dot" /><div><small>{eventWhen(nextLocalEvent)}</small><strong>{nextLocalEvent.title}</strong></div></li></ul></>}
       {community && !community.places.length && onPlaces && <button type="button" className="source-fix" onClick={onPlaces}>Add a point of interest <span>↗</span></button>}
-    </>, 'View community', go('Community'), nearbyCalls.length + nearbyWeather.length || undefined),
-    mail: card('mail', 'Mail', 'Mail', mailBody(3), 'Review inbox', go('Mail'), summary?.emailTriage.data?.newCount),
-    work: card('work', 'Work', 'Work', workBody(1), 'View work', go('Work')),
-    news: card('news', 'News', 'News & Updates', newsBody(3), 'View news', go('News'), news.length || undefined),
-    projects: card('projects', 'Projects', 'Projects', <><SourceBlock source={summary?.jira} label="Jira projects · your assigned issues" name="Jira" fix={fixFor('jira')}>{issues.length ? <ul className="dashboard-data-list">{[...new Set(issues.map(i => i.project))].slice(0, 3).map(project => <li key={project}><strong>{project}</strong><small>{issues.filter(i => i.project === project).length} assigned issues in this snapshot</small></li>)}</ul> : <p className="dashboard-empty">No assigned issues in this snapshot.</p>}</SourceBlock><p className="source-note">Saved goals</p>{projects.length ? <Facts facts={projects.slice(0, 2)} /> : data.facts.error ? <EmptyCta text="Memories unavailable." action="Retry" onClick={retryData} /> : <EmptyCta text="No saved goals yet." action="Tell her what you’re working towards" onClick={() => onAsk('Here is what I am working towards right now.')} />}</>, 'View projects', go('Projects')),
+    </>, 'View community', go('Community'), nearbyCalls.length + nearbyWeather.length || undefined, headlines.community),
+    mail: card('mail', 'Mail', 'Mail', mailBody(3), 'Review inbox', go('Mail'), summary?.emailTriage.data?.newCount, headlines.mail),
+    work: card('work', 'Work', 'Work', workBody(1), 'View work', go('Work'), undefined, headlines.work),
+    news: card('news', 'News', 'News & Updates', newsBody(3), 'View news', go('News'), news.length || undefined, headlines.news),
+    projects: card('projects', 'Projects', 'Projects', <><SourceBlock source={summary?.jira} label="Jira projects · your assigned issues" name="Jira" fix={fixFor('jira')}>{issues.length ? <ul className="dashboard-data-list">{[...new Set(issues.map(i => i.project))].slice(0, 3).map(project => <li key={project}><strong>{project}</strong><small>{issues.filter(i => i.project === project).length} assigned issues in this snapshot</small></li>)}</ul> : <p className="dashboard-empty">No assigned issues in this snapshot.</p>}</SourceBlock><p className="source-note">Saved goals</p>{projects.length ? <Facts facts={projects.slice(0, 2)} /> : data.facts.error ? <EmptyCta text="Memories unavailable." action="Retry" onClick={retryData} /> : <EmptyCta text="No saved goals yet." action="Tell her what you’re working towards" onClick={() => onAsk('Here is what I am working towards right now.')} />}</>, 'View projects', go('Projects'), undefined, headlines.projects),
   };
 
   // --- The section pages ---------------------------------------------------
@@ -946,7 +1058,7 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
       <Panel title="Waiting on you" note={pending.length ? `${pending.length} open` : undefined}>
         {data.actions.loading ? <p className="dashboard-empty">Checking approvals…</p>
           : data.actions.error ? <EmptyCta text="Approvals couldn’t load." action="Retry" onClick={retryData} />
-            : pending.length ? <><ul className="dashboard-data-list">{pending.map(a => <li key={a.uuid}><strong>{a.label}</strong><small>{a.summary}</small></li>)}</ul><button className="dashboard-chat-cta" onClick={() => onPanel('actions')}>Review them <span>↗</span></button></>
+            : pending.length ? <><ul className="dashboard-data-list">{pending.map(a => <li key={a.uuid}><strong>{a.label}</strong><small>{a.summary}</small></li>)}</ul><button className="dashboard-chat-cta" onClick={() => onPanel('notifications')}>Review them <span>↗</span></button></>
               : <p className="dashboard-empty">Nothing waiting for your approval.</p>}
       </Panel>
       <Panel title="Chores today" note={summary?.familyChores.data?.name}>
@@ -993,14 +1105,13 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
     const avgHrWeek = week(summary?.strain.data, s => s.average_heart_rate ?? null);
     return <SectionPage ctx={ctx}
       eyebrow="HOW YOUR BODY IS DOING" title="Health & Performance"
-      blurb="A week of WHOOP recovery, sleep and strain, and what you did with it — read against the fortnight behind it, so a number that moved says so."
+      blurb="A week of WHOOP recovery, sleep and strain — read against the fortnight behind it, so a number that moved says so."
       ask="Help me review my WHOOP recovery, heart rate, HRV and sleep. Am I trending the right way?"
       stats={<>
         <Stat label="Today" value={readiness ? readiness.label : '—'} note={readiness ? readiness.headline : 'No scored recovery to judge'} tone={readiness?.level === 'go' ? 'good' : readiness?.level === 'rest' ? 'ok' : readiness?.level === 'warning' ? 'low' : 'idle'} />
         <Stat label="Recovery" value={recovery?.recovery_score ?? '—'} note={recovery ? dateLabel(`${recovery.date}T12:00:00Z`, { timeZone: 'UTC' }) : 'No scored result'} tone={recovery?.recovery_score == null ? 'idle' : recovery.recovery_score >= 67 ? 'good' : recovery.recovery_score >= 34 ? 'ok' : 'low'} />
         <Stat label="Sleep" value={sleep ? hoursMinutes(sleep.hours_asleep) : '—'} note={sleep?.sleep_performance_percent != null ? `${sleep.sleep_performance_percent}% of need` : 'No sleep recorded'} />
         <Stat label="Day strain" value={strain?.day_strain != null ? strain.day_strain.toFixed(1) : '—'} note={strain ? dateLabel(`${strain.date}T12:00:00Z`, { timeZone: 'UTC' }) : 'No strain recorded'} />
-        <Stat label="Activities" value={activities.length} note="logged in the last 7 days" />
       </>}
     >
       <Panel title="Heart" note={`goals · ${HEART_GOALS.restingHeartRate} bpm resting, ${HEART_GOALS.hrvMs} ms HRV`} wide>
@@ -1024,11 +1135,6 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
       </Panel>
       <Panel title="Day strain" note="last 7 days · 0–21">
         {ready(summary?.strain) ? <Trend rows={strainWeek} max={21} unit="day strain" format={v => v.toFixed(1)} neutral /> : unavailable('strain', 'WHOOP strain')}
-      </Panel>
-      <Panel title="Activities" note="Strava · last 7 days" wide>
-        {!ready(summary?.activity) ? unavailable('activity', 'Strava')
-          : !activities.length ? <p className="dashboard-empty">No recent activities.</p>
-            : <ul className="dashboard-data-list">{activities.map((a, i) => <li key={i}><strong>{a.name}</strong><small>{a.type} · {a.distance_mi} mi · {Math.round(a.moving_time_s / 60)} min · {dateLabel(a.start)}</small></li>)}</ul>}
       </Panel>
     </SectionPage>;
   }
@@ -1059,7 +1165,7 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
       <Panel title="People &amp; pets" note="from your memories" wide>
         {data.facts.error ? <EmptyCta text="Memories couldn’t load." action="Retry" onClick={retryData} />
           : data.facts.loading ? <p className="dashboard-empty">Loading memories…</p>
-            : family.length ? <><Facts facts={family} /><button className="dashboard-chat-cta" onClick={() => onPanel('memory')}>Explore memories <span>↗</span></button></>
+            : family.length ? <><FamilyPeopleList facts={family} children={familyPeople?.children || []} links={familyPeople?.links || []} onChange={next => data.setFamilyPeople({ data: next, loading: false, error: null })} onConnect={() => onPanel('integrations')} /><button className="dashboard-chat-cta" onClick={() => onPanel('memory')}>Explore memories <span>↗</span></button></>
               : <><p className="dashboard-empty">No family memories saved yet. Tell Athena about them and she will keep them.</p><button className="dashboard-chat-cta" onClick={() => onAsk('Let me tell you about my family.')}>Tell her <span>↗</span></button></>}
       </Panel>
     </SectionPage>;
@@ -1090,6 +1196,11 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
       <Panel id="community-places" title="Points of interest" note="watched day and night" wide>
         <p className="community-blurb">I keep watch around every place on this list, all the time. A 911 call or a severe-weather warning inside a ring reaches you straight away — here, on your phone, and by text — and I pick out news about these places from the pages I read for you. Home, your church, the kids’ school, the town square: the more you add, the more of your community I can look after.</p>
         {waiting || <><CommunityMap places={places} /><PointsOfInterest places={places} onPlaces={next => patch({ places: next })} /></>}
+      </Panel>
+      <Panel title="On your calendar" note={communityCal.length ? 'events that mention your community' : undefined} wide>
+        {waiting || (!ready(summary?.calendar) ? unavailable('calendar', 'Google Calendar')
+          : communityCal.length ? <ul className="dashboard-data-list calendar-events">{communityCal.map((c, i) => <li key={`${c.event.id}-${i}`}><span className="event-dot" /><div><strong>{c.what}</strong><small>{c.when}{c.who ? ` · ${c.who}` : ''}{c.event.location ? ` · ${c.event.location}` : ''}</small></div></li>)}</ul>
+            : <p className="dashboard-empty">{places.some(p => p.enabled) ? 'Nothing on your calendar in the next 7 days mentions your community.' : 'Add a point of interest and I’ll look for it on your calendar.'}</p>)}
       </Panel>
       <Panel title="Near your places" note={updated ? `updated ${updated}` : undefined} wide>
         {data.nearby.loading ? <p className="dashboard-empty">Checking nearby…</p>
@@ -1300,6 +1411,7 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
         leaves the banner out of its own header on this page so it shows once;
         the compact drawer skips it, the console's banner is already above it. */}
     {!compact && <EmergencyBanner onAsk={onAsk} onPlaces={onPlaces} inline />}
+    <WorkBanner events={events} workingLocations={summary?.calendar.data?.workingLocations} timeZone={timeZone} now={now} jira={summary?.jira.status === 'ready' ? summary.jira.data : null} onOpen={go('Calendar')} onOpenWork={go('Work')} />
     <RightNowCard
       data={data.rightNow.data} loading={data.rightNow.loading} error={data.rightNow.error}
       onAsk={onAsk} onManage={() => setPlansOpen(true)}

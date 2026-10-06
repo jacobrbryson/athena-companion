@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
-import { dashboardApi, type DashboardSummary, type NewsResult, type DashboardPriority, type RightNow, type EmergencyAlert, type CommunityOverview } from '../api/dashboard';
+import { dashboardApi, type DashboardSummary, type NewsResult, type DashboardPriority, type RightNow, type EmergencyAlert, type CommunityOverview, type CommunityCalendar, type FamilyPeople } from '../api/dashboard';
 import { memoryApi, actionsApi, type Fact, type AthenaAction } from '../api/companion';
 import { DASHBOARD_REFRESH_EVENT } from '../athena/useChat';
 import { invalidateReads } from '../api/readCache';
@@ -33,6 +33,11 @@ export function useDashboardData() {
   // Points of interest, neighbours and local events: the Community page and
   // the card's "coming up" line.
   const [community, setCommunity] = useState<Result<CommunityOverview>>(initial);
+  // Children's birthdays and the contacts linked to remembered family: the Family card and page.
+  const [familyPeople, setFamilyPeople] = useState<Result<FamilyPeople>>(initial);
+  // Calendar events that mention the community. The summary keeps only the 25 soonest of all
+  // calendars together, so on a busy week this is a separate, wider read.
+  const [communityCalendar, setCommunityCalendar] = useState<Result<CommunityCalendar>>(initial);
   const alive = useRef(false);
   const inFlight = useRef(false);
   const queued = useRef(false);
@@ -52,7 +57,7 @@ export function useDashboardData() {
         try { const data = await fetcher(); if (canPublish()) setter({ data, loading: false, error: null }); }
         catch (e) { if (canPublish()) setter({ data: null, loading: false, error: (e as Error).message || 'Unavailable' }); }
       }
-      await Promise.allSettled([load(dashboardApi.summary, setSummary), load(memoryApi.facts, setFacts), load(actionsApi.pending, setActions), load(dashboardApi.news, setNews), load(dashboardApi.alert, setNearby), load(dashboardApi.community, setCommunity)]);
+      await Promise.allSettled([load(dashboardApi.summary, setSummary), load(memoryApi.facts, setFacts), load(actionsApi.pending, setActions), load(dashboardApi.news, setNews), load(dashboardApi.alert, setNearby), load(dashboardApi.community, setCommunity), load(dashboardApi.familyPeople, setFamilyPeople), load(dashboardApi.communityCalendar, setCommunityCalendar)]);
       lastRefresh.current = Date.now();
       // After the data, never with it: the ordering is read from the snapshot
       // the server just built, and it must never hold up the cards themselves.
@@ -87,5 +92,5 @@ export function useDashboardData() {
   const patchCommunity = useCallback((patch: Partial<CommunityOverview>) => {
     setCommunity(previous => previous.data ? { ...previous, data: { ...previous.data, ...patch } } : previous);
   }, []);
-  return { summary, facts, actions, news, priority, rightNow, nearby, community, patchCommunity, refresh, loading: summary.loading || facts.loading || actions.loading || news.loading };
+  return { summary, facts, actions, news, priority, rightNow, nearby, community, patchCommunity, communityCalendar, familyPeople, setFamilyPeople, refresh, loading: summary.loading || facts.loading || actions.loading || news.loading };
 }

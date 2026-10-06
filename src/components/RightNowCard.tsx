@@ -9,13 +9,13 @@ import type { RightNow, Suggestion } from '../api/dashboard';
  * piano, against the fact that someone who rides most Sundays hasn't this
  * week — and the whole value of it is that the reasoning is visible. So every
  * claim here is shown with the thing it came from: the closing time, the
- * distance, the habit, the forecast. A confident sentence with nothing under
+ * distance, the forecast. A confident sentence with nothing under
  * it would be worse than the seven cards it sits above.
  *
  * It only appears when the moment is actually important (owner, 2026-09-27):
  * you're in something on the calendar, something starts within minutes, or
- * the suggestion is tied to right now — a red recovery, a place open now, the
- * day your habit usually happens, something due today. A goal worth thinking
+ * the suggestion is tied to right now — a red recovery, a place open now,
+ * something due today. A goal worth thinking
  * about on a quiet afternoon is not that, and the card stays out of the way
  * rather than filling the top of the page with the mundane. It draws nothing
  * while loading for the same reason: a placeholder that then vanishes is noise.
@@ -35,21 +35,9 @@ function evidence(option: Suggestion): string[] {
   if (option.kind === 'place') {
     if (option.distanceMi != null) bits.push(`${option.distanceMi} mi away`);
     if (option.closesAt) bits.push(`open till ${option.closesAt}`);
-    if (option.rhythm?.usualDay) {
-      bits.push(option.rhythm.isUsualDayToday ? `your ${option.rhythm.usualDay} habit` : `usually ${option.rhythm.usualDay}s`);
-    }
-    if (option.rhythm && option.rhythm.thisWeek === 0) bits.push('none yet this week');
     if (option.weather?.now) {
       bits.push(option.weather.temperatureF != null ? `${option.weather.now}, ${option.weather.temperatureF}°` : option.weather.now);
     }
-    return bits;
-  }
-  if (option.kind === 'habit') {
-    if (option.rhythm?.usualDay) bits.push(option.rhythm.isUsualDayToday ? `your ${option.rhythm.usualDay} habit` : `usually ${option.rhythm.usualDay}s`);
-    if (option.rhythm) bits.push(`about ${option.rhythm.perWeek}× a week`);
-    if (option.rhythm?.thisWeek === 0) bits.push('none yet this week');
-    else if (option.rhythm?.daysSince != null) bits.push(`${option.rhythm.daysSince} days since the last`);
-    if (option.weather?.now) bits.push(option.weather.temperatureF != null ? `${option.weather.now}, ${option.weather.temperatureF}°` : option.weather.now);
     return bits;
   }
   if (option.kind === 'rest') {
@@ -80,7 +68,6 @@ function evidence(option: Suggestion): string[] {
 function talkPrompt(option: Suggestion) {
   switch (option.kind) {
     case 'place': return `Talk me through whether to go to ${option.title} today.`;
-    case 'habit': return `Talk me through whether to fit in some ${option.activity || option.title.toLowerCase()} today.`;
     case 'rest': return 'My recovery is low today. Help me plan an easy day.';
     case 'work': return `Help me make progress on ${option.issueKey ? `${option.issueKey}: ` : ''}${option.title}.`;
     case 'goal': return `Help me pick a next step on ${option.title.toLowerCase()} I could do today.`;
@@ -112,7 +99,6 @@ function timely(option: Suggestion): boolean {
   switch (option.kind) {
     case 'rest':
     case 'place': return true;
-    case 'habit': return !!option.rhythm?.isUsualDayToday;
     case 'work': return withinDays(option.dueDate, 0);
     case 'project': return option.priority === 'high' || withinDays(option.dueDate, 0);
     default: return false;

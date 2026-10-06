@@ -261,7 +261,7 @@ export function HeartRate() {
 
       <p className="mt-3 text-xs opacity-50">
         Android shows a notification while I hold the band. A band usually takes one connection — while I have it,
-        Strava or Peloton can’t, so stop it here or from the notification to hand it back.
+        Peloton or another app can’t, so stop it here or from the notification to hand it back.
       </p>
     </section>
   );
