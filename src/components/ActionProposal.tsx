@@ -147,6 +147,24 @@ export function ActionProposal({
   );
 }
 
+/**
+ * A pending proposal once the conversation has moved past it: one line, no
+ * Approve button. Opening it shows the full card, so nothing is agreed to
+ * without the person having read what it is.
+ */
+export function ActionProposalFolded({ action, onOpen }: { action: AthenaAction; onOpen: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className="flex w-full items-center gap-2 rounded-lg border border-emerald-400/30 bg-emerald-500/[0.05] px-3 py-2 text-left text-sm hover:bg-emerald-500/10"
+    >
+      <span className="min-w-0 flex-1 truncate">{action.summary}</span>
+      <span className="shrink-0 font-mono text-[10px] uppercase opacity-50">waiting · open</span>
+    </button>
+  );
+}
+
 const GHOST =
   'rounded border border-emerald-500/20 px-2 py-0.5 font-mono text-[10px] uppercase hover:bg-white/5';
 

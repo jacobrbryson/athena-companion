@@ -17,7 +17,7 @@ import { InitiativePanel } from '../components/InitiativePanel';
 import { EmergencyBanner } from '../components/EmergencyBanner';
 import { MiniMap } from '../components/MiniMap';
 import { useNudges } from '../athena/useNudges';
-import { ActionProposal } from '../components/ActionProposal';
+import { ActionProposal, ActionProposalFolded } from '../components/ActionProposal';
 import { useActions } from '../athena/useActions';
 import { useDreamQuestions } from '../athena/useDreamQuestions';
 import { NotificationsPanel } from '../components/NotificationsPanel';
@@ -88,6 +88,7 @@ export function CompanionConsole() {
   // Proposals Athena is waiting on. Gated on `arriving` being over so a card
   // cannot land on top of the arrival sequence.
   const actions = useActions(!!profile);
+  const [arriving, setArriving] = useState(!!arrival);
   // Questions from her dreaming: the other thing the bell is for.
   const dreamQuestions = useDreamQuestions(!!profile);
   // Things she raised without being asked. Rendered into the transcript
@@ -144,13 +145,11 @@ export function CompanionConsole() {
    */
   const transcript = useMemo(() => {
     let lastAt = 0;
-    const entries: {
-      kind: 'message' | 'nudge';
-      uuid: string;
-      at: number;
-      message?: (typeof chat.messages)[number];
-      nudge?: (typeof nudges.nudges)[number];
-    }[] = [
+    type Entry =
+      | { kind: 'message'; uuid: string; at: number; message: (typeof chat.messages)[number] }
+      | { kind: 'nudge'; uuid: string; at: number; nudge: (typeof nudges.nudges)[number] }
+      | { kind: 'action'; uuid: string; at: number; action: (typeof actions.pending)[number] };
+    const entries: Entry[] = [
       // A locally injected message (the arrival greeting) carries no
       // timestamp. Falling back to 0 would fling it to the top of the
       // transcript, so it inherits the moment just after the last message
@@ -170,24 +169,58 @@ export function CompanionConsole() {
         at: new Date(n.created_at).getTime(),
         nudge: n,
       })),
+      // An approval card is part of the conversation: it sits right after the
+      // reply that proposed it, and scrolls away as the talk moves on.
+      ...(arriving ? [] : actions.pending).map((a) => ({
+        kind: 'action' as const,
+        uuid: a.uuid,
+        at: new Date(a.created_at).getTime(),
+        action: a,
+      })),
     ];
-    // Messages keep the order they arrived in; only nudges are placed by
+    // Messages keep the order they arrived in; nudges and cards are placed by
     // time. A full sort let a single message with an off timestamp (clock or
     // timezone skew) outrank everything after it and sit at the bottom for good.
     const messageEntries = entries.filter((e) => e.kind === 'message');
-    const nudgeEntries = entries.filter((e) => e.kind === 'nudge').sort((a, b) => a.at - b.at);
-    const merged: typeof entries = [];
+    const timedEntries = entries.filter((e) => e.kind !== 'message').sort((a, b) => a.at - b.at);
+    const merged: Entry[] = [];
     let n = 0;
     for (const m of messageEntries) {
-      while (n < nudgeEntries.length && nudgeEntries[n].at <= m.at) merged.push(nudgeEntries[n++]);
+      while (n < timedEntries.length && timedEntries[n].at <= m.at) merged.push(timedEntries[n++]);
       merged.push(m);
     }
-    merged.push(...nudgeEntries.slice(n));
-    return merged as (
-      | { kind: 'message'; uuid: string; at: number; message: (typeof chat.messages)[number] }
-      | { kind: 'nudge'; uuid: string; at: number; nudge: (typeof nudges.nudges)[number] }
-    )[];
-  }, [chat.messages, nudges.nudges]);
+    merged.push(...timedEntries.slice(n));
+    return merged;
+  }, [chat.messages, nudges.nudges, actions.pending, arriving]);
+
+  // Approval cards: open while nothing has been said after them, folded to a
+  // one-line summary once the conversation moves on. `openUuid` is a card the
+  // person reopened from the counter in the input; it folds again when
+  // anything new lands below it.
+  const [openUuid, setOpenUuid] = useState<string | null>(null);
+  const lastTalkIdx = useMemo(() => {
+    for (let i = transcript.length - 1; i >= 0; i--) if (transcript[i].kind !== 'action') return i;
+    return -1;
+  }, [transcript]);
+  /** Unanswered cards that are folded away, newest first. */
+  const foldedCards = useMemo(
+    () =>
+      transcript
+        .map((e, i) => ({ e, i }))
+        .filter(({ e, i }) => e.kind === 'action' && e.action.status === 'pending' && i < lastTalkIdx)
+        .map(({ e }) => e.uuid)
+        .reverse(),
+    [transcript, lastTalkIdx]
+  );
+  useEffect(() => setOpenUuid(null), [lastTalkIdx, transcript.length]);
+  useEffect(() => {
+    if (openUuid) document.getElementById(`action-${openUuid}`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }, [openUuid]);
+  const showNextCard = useCallback(() => {
+    if (!foldedCards.length) return;
+    const at = openUuid ? foldedCards.indexOf(openUuid) : -1;
+    setOpenUuid(foldedCards[(at + 1) % foldedCards.length]);
+  }, [foldedCards, openUuid]);
 
   const logRef = useRef<HTMLDivElement | null>(null);
   const spokenRef = useRef<string | null>(null);
@@ -195,7 +228,6 @@ export function CompanionConsole() {
 
   // --- Arrival (first contact of this sign-in) ---
   const arrivalRef = useRef(arrival);
-  const [arriving, setArriving] = useState(!!arrival);
   const [unityReady, setUnityReady] = useState(false);
   const [minElapsed, setMinElapsed] = useState(!arrival);
   const bridgeRef = useRef<AthenaBridge | null>(null);
@@ -557,8 +589,28 @@ export function CompanionConsole() {
               {voice.isSupported ? 'Tap the mic or type. Ask what she remembers.' : 'Type to talk to Athena. Ask what she remembers.'}
             </p>
           )}
-          {transcript.map((entry) =>
-            entry.kind === 'message' ? (
+          {transcript.map((entry, idx) =>
+            entry.kind === 'action' ? (
+              <div key={entry.uuid} id={`action-${entry.uuid}`} className="flex justify-start">
+                <div className="w-full max-w-[85%]">
+                  {/* Only an unanswered card folds. It is open at the foot of
+                      the conversation, or when reopened from the counter; a
+                      folded one cannot be approved without being opened and
+                      read first. */}
+                  {entry.action.status === 'pending' && idx < lastTalkIdx && openUuid !== entry.uuid ? (
+                    <ActionProposalFolded action={entry.action} onOpen={() => setOpenUuid(entry.uuid)} />
+                  ) : (
+                    <ActionProposal
+                      action={entry.action}
+                      busy={actions.busyUuid === entry.uuid}
+                      onConfirm={() => void actions.confirm(entry.uuid)}
+                      onDecline={() => void actions.decline(entry.uuid)}
+                      onDismiss={() => actions.dismiss(entry.uuid)}
+                    />
+                  )}
+                </div>
+              </div>
+            ) : entry.kind === 'message' ? (
               <div
                 key={entry.uuid}
                 className={`flex ${entry.message.is_human ? 'justify-end' : 'justify-start'}`}
@@ -632,25 +684,10 @@ export function CompanionConsole() {
             </div>
           )}
 
-          {/* Approval cards, at the foot of the transcript so a card reads as
-              the follow-up to what Athena just said. Inside the scroller on
-              purpose: a floating card over the input is the shape people
-              dismiss by reflex, and this is the one thing in the app that must
-              not be dismissed by reflex. */}
-          {!arriving &&
-            actions.pending.map((a) => (
-              <div key={a.uuid} className="flex justify-start">
-                <div className="w-full max-w-[85%]">
-                  <ActionProposal
-                    action={a}
-                    busy={actions.busyUuid === a.uuid}
-                    onConfirm={() => void actions.confirm(a.uuid)}
-                    onDecline={() => void actions.decline(a.uuid)}
-                    onDismiss={() => actions.dismiss(a.uuid)}
-                  />
-                </div>
-              </div>
-            ))}
+          {/* Approval cards live in the transcript above, after the reply that
+              proposed them. Inside the scroller on purpose: a floating card
+              over the input is the shape people dismiss by reflex, and this
+              is the one thing in the app that must not be dismissed by reflex. */}
         </div>
 
         <form onSubmit={onSubmit} className="flex items-center gap-2 border-t border-emerald-500/10 px-3 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
@@ -670,14 +707,32 @@ export function CompanionConsole() {
           <label htmlFor={inputId} className="sr-only">
             Message Athena
           </label>
-          <input
-            id={inputId}
-            value={draft}
-            onChange={(e) => setDraft(e.target.value.slice(0, MAX_MESSAGE))}
-            placeholder={voice.listening ? 'listening…' : 'Tell Athena…'}
-            autoComplete="off"
-            className="h-12 min-w-0 flex-1 rounded-full bg-white/5 px-4 text-base outline-none placeholder:opacity-40 focus:bg-white/10"
-          />
+          <div className="relative min-w-0 flex-1">
+            <input
+              id={inputId}
+              value={draft}
+              onChange={(e) => setDraft(e.target.value.slice(0, MAX_MESSAGE))}
+              placeholder={voice.listening ? 'listening…' : 'Tell Athena…'}
+              autoComplete="off"
+              className={`h-12 w-full rounded-full bg-white/5 pl-4 text-base outline-none placeholder:opacity-40 focus:bg-white/10 ${
+                foldedCards.length ? 'pr-16' : 'pr-4'
+              }`}
+            />
+            {/* Unanswered approvals that scrolled out of the open. Each tap
+                opens the next one up and scrolls to it; past the oldest it
+                starts again from the newest. */}
+            {foldedCards.length > 0 && (
+              <button
+                type="button"
+                onClick={showNextCard}
+                aria-label={`${foldedCards.length} approval${foldedCards.length === 1 ? '' : 's'} waiting above. Show the next one`}
+                className="absolute right-2 top-1/2 flex h-8 -translate-y-1/2 items-center gap-1 rounded-full border border-emerald-400/50 bg-emerald-500/20 px-2.5 font-mono text-xs tabular-nums text-emerald-100 active:scale-95"
+              >
+                {foldedCards.length}
+                <span aria-hidden>↑</span>
+              </button>
+            )}
+          </div>
           {/* One "show her something" control. A photo she looks at once and a
               camera she keeps looking through are the same intent from where
               the person is standing, and two separate buttons made the camera
