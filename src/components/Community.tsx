@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { MiniMap } from './MiniMap';
+import { NeighborMap } from './NeighborMap';
 import {
   dashboardApi,
   type AddressMatch,
@@ -61,11 +62,10 @@ function Problem({ text }: { text: string | null }) {
 
 // --- Points of interest ----------------------------------------------------
 
-/** The map on the Community page: every point of interest, each with its ring. */
-export function CommunityMap({ places, height = 240 }: { places: WatchPlace[]; height?: number }) {
-  const shown = places.filter(p => p.enabled);
-  if (!shown.length) return null;
-  return <MiniMap places={shown.map(p => ({ name: p.name, latitude: p.latitude, longitude: p.longitude, radiusMiles: p.radiusMiles, icon: kindOf(p.kind).icon }))} height={height} className="community-map" />;
+/** The map on the Community page: every point of interest with its ring, and every neighbor you know. Move it, zoom it. */
+const kindIcon = (kind: string) => kindOf(kind).icon;
+export function CommunityMap({ places, neighbors = [], onNeighbors, height = 320 }: { places: WatchPlace[]; neighbors?: Neighbor[]; onNeighbors?: (neighbors: Neighbor[]) => void; height?: number }) {
+  return <NeighborMap places={places} neighbors={neighbors} icon={kindIcon} onNeighbors={onNeighbors} height={height} />;
 }
 
 export function PointsOfInterest({ places, onPlaces }: { places: WatchPlace[]; onPlaces: (places: WatchPlace[]) => void }) {

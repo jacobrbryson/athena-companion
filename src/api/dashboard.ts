@@ -126,6 +126,12 @@ export interface Neighbor {
   placeUuid: string | null; where: string | null; contact: string | null; notes: string | null;
   contacts: LinkedContact[];
 }
+export type DoorStatus = 'todo' | 'safe' | 'no_answer' | 'needs_help' | 'skipped';
+/** One house on a street check; `household` is the person's own neighbour entry for it, if any. */
+export interface DoorCheck { address: string; status: DoorStatus; note: string | null; checkedAt: string | null; household: { name: string | null; contact: string | null; notes: string | null } | null }
+export interface DoorRound { uuid: string; street: string; placeUuid: string | null; source: string; createdAt: string; closedAt: string | null; doors: DoorCheck[] }
+export interface DoorRoundSummary { uuid: string; street: string; total: number; checked: number; needsHelp: number; createdAt: string; closedAt: string | null }
+export interface DoorMark { address: string; status: DoorStatus; note: string | null; at: string }
 /** Something happening locally. `nextOn` is the date that matters now (next year's, for a yearly event well past). */
 export interface CommunityEvent { uuid: string; title: string; startsOn: string; endsOn: string | null; time: string | null; placeUuid: string | null; location: string | null; repeats: 'none' | 'yearly'; url: string | null; notes: string | null; nextOn: string; nextEndsOn: string | null }
 export type NeighborInput = Omit<Neighbor, 'uuid' | 'contacts'> & { contacts: { contactId: string; name: string | null }[] };
@@ -341,6 +347,15 @@ export const dashboardApi = {
   placeReminders: () => api.get<{ reminders: PlaceReminder[] }>('/api/v1/place-reminders'),
   removePlaceReminder: (uuid: string) => api.del<{ reminders: PlaceReminder[] }>(`/api/v1/place-reminders/${encodeURIComponent(uuid)}`),
   removeEvent: (uuid: string) => api.del<{ events: CommunityEvent[] }>(`/api/v1/dashboard/community/events/${encodeURIComponent(uuid)}`),
+  /** Door-to-door street checks: list a street ahead of time, then mark each house. */
+  doorRounds: () => api.get<{ rounds: DoorRoundSummary[] }>('/api/v1/dashboard/community/door-rounds'),
+  startDoorRound: (input: { placeUuid: string; street?: string }) => api.post<{ round: DoorRound }>('/api/v1/dashboard/community/door-rounds', input),
+  doorRound: (uuid: string) => api.get<{ round: DoorRound }>(`/api/v1/dashboard/community/door-rounds/${encodeURIComponent(uuid)}`),
+  addDoor: (uuid: string, address: string) => api.post<{ round: DoorRound }>(`/api/v1/dashboard/community/door-rounds/${encodeURIComponent(uuid)}/doors`, { address }),
+  /** Marks, oldest first; sent together when the phone has signal again. */
+  syncDoors: (uuid: string, updates: DoorMark[]) => api.post<{ round: DoorRound }>(`/api/v1/dashboard/community/door-rounds/${encodeURIComponent(uuid)}/sync`, { updates }),
+  closeDoorRound: (uuid: string, closed: boolean) => api.post<{ round: DoorRound }>(`/api/v1/dashboard/community/door-rounds/${encodeURIComponent(uuid)}/close`, { closed }),
+  removeDoorRound: (uuid: string) => api.del<{ rounds: DoorRoundSummary[] }>(`/api/v1/dashboard/community/door-rounds/${encodeURIComponent(uuid)}`),
   lookupAddress: (q: string) => api.get<{ matches: AddressMatch[] }>(`/api/v1/dashboard/incidents/geocode?q=${encodeURIComponent(q)}`),
   rightNow: async () => {
     const value = await api.cachedGet<RightNow>('/api/v1/dashboard/right-now');

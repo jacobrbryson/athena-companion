@@ -8,6 +8,8 @@
     "test:cache": "node --experimental-strip-types --test scripts/readCache.test.mjs",
     "test:work": "node --experimental-strip-types --test scripts/workStatus.test.mjs",
     "test:community": "node --experimental-strip-types --test scripts/communityCalendar.test.mjs",
+    "test:doors": "node --experimental-strip-types --test scripts/doorMarks.test.mjs",
+    "test:map": "node --experimental-strip-types --test scripts/mapMath.test.mjs",
     "test:family": "node --experimental-strip-types --test scripts/familyRoster.test.mjs",
     "test:android": "node --test scripts/androidRegistration.test.mjs",
     "test:local": "node --test scripts/localConnection.test.mjs scripts/localUnityAssets.test.mjs",

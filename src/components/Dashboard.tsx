@@ -12,6 +12,7 @@ import { EmergencyBanner } from './EmergencyBanner';
 import { RightNowCard } from './RightNowCard';
 import { buildFamilyRoster, type RosterRow } from './familyRoster';
 import { FamilyPeopleList } from './FamilyPeople';
+import { DoorToDoor } from './DoorToDoor';
 import { communityEvents } from './communityCalendar.ts';
 import { WorkBanner } from './WorkBanner';
 import { untilLabel } from './workStatus';
@@ -1195,7 +1196,7 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
     >
       <Panel id="community-places" title="Points of interest" note="watched day and night" wide>
         <p className="community-blurb">I keep watch around every place on this list, all the time. A 911 call or a severe-weather warning inside a ring reaches you straight away — here, on your phone, and by text — and I pick out news about these places from the pages I read for you. Home, your church, the kids’ school, the town square: the more you add, the more of your community I can look after.</p>
-        {waiting || <><CommunityMap places={places} /><PointsOfInterest places={places} onPlaces={next => patch({ places: next })} /></>}
+        {waiting || <><CommunityMap places={places} neighbors={community!.neighbors} onNeighbors={next => patch({ neighbors: next })} /><PointsOfInterest places={places} onPlaces={next => patch({ places: next })} /></>}
       </Panel>
       <Panel title="On your calendar" note={communityCal.length ? 'events that mention your community' : undefined} wide>
         {waiting || (!ready(summary?.calendar) ? unavailable('calendar', 'Google Calendar')
@@ -1209,6 +1210,9 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
               {nearbyWeather.length > 0 && <ul className="dashboard-data-list">{nearbyWeather.map(weatherLine)}</ul>}
               {nearbyCalls.length ? <ul className="dashboard-data-list">{nearbyCalls.map(incidentLine)}</ul> : <p className="dashboard-empty">Quiet near your places.</p>}
             </>}
+      </Panel>
+      <Panel id="community-door-to-door" title="Check on your street" note="door to door, in an emergency" wide>
+        {waiting || <DoorToDoor places={places} />}
       </Panel>
       <Panel title="Place reminders" note="when you get there" wide>
         <PlaceReminders onAsk={onAsk} />

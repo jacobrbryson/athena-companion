@@ -596,3 +596,48 @@ svg.dashboard-icon-drawn .icon-fill { fill: currentColor; fill-opacity: .9; }
 .roster-list + .source-fix { margin-top: 10px; }
 .roster-sick .memory-avatar { border-color: #d46a5a; }
 .roster-birthday .memory-avatar { border-color: #3fa9c4; }
+
+/* Door-to-door street check: big tap targets, status colour, works on a phone in the dark. */
+.door-walk { display: flex; flex-direction: column; gap: 10px; }
+.door-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
+.door-head small { opacity: .75; flex-basis: 100%; }
+.door-sync { padding: 6px 8px; border: 1px dashed #c9a24a; border-radius: 6px; color: #f0d58a; }
+.door-alert { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; border: 1px solid #c25a5a; border-radius: 8px; background: #3a1414cc; }
+.door-call { display: inline-block; padding: 8px 14px; border-radius: 6px; background: #c23b3b; color: #fff; font-weight: 600; text-decoration: none; }
+.door-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.door { border: 1px solid #2c6a80; border-radius: 8px; background: #04222e88; padding: 0; }
+.door-row { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 10px; min-height: 48px; padding: 10px 12px; background: none; border: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.door-chip { font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid currentColor; white-space: nowrap; opacity: .85; }
+.door-safe { border-color: #3f8f62; } .door-safe .door-chip { color: #7fd6a0; }
+.door-no_answer { border-color: #b8923a; } .door-no_answer .door-chip { color: #f0d58a; }
+.door-needs_help { border-color: #c25a5a; background: #3a141488; } .door-needs_help .door-chip { color: #f3a6a6; opacity: 1; font-weight: 600; }
+.door-skipped { opacity: .65; }
+.door-household, .door-note { display: block; padding: 0 12px 10px; opacity: .8; }
+.door-actions { display: flex; flex-direction: column; gap: 8px; padding: 0 12px 12px; }
+.door-buttons { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+.door-btn { min-height: 48px; border-radius: 8px; border: 1px solid #2c6a80; background: #04222e; color: inherit; font: inherit; font-weight: 600; cursor: pointer; }
+.door-btn-safe { border-color: #3f8f62; color: #7fd6a0; }
+.door-btn-no_answer { border-color: #b8923a; color: #f0d58a; }
+.door-btn-needs_help { border-color: #c25a5a; color: #f3a6a6; }
+.door-actions textarea { width: 100%; box-sizing: border-box; background: #04222e; color: inherit; border: 1px solid #2c6a80; border-radius: 6px; padding: 6px 8px; font: inherit; }
+
+/* Community map you can move: tiles, a footprint per neighbor, markers, controls. */
+.community-map-wrap { display: flex; flex-direction: column; gap: 6px; }
+.neighbor-map { position: relative; overflow: hidden; border-radius: 8px; background: #1e293b; outline-offset: 2px; cursor: grab; user-select: none; }
+.neighbor-map:active { cursor: grabbing; }
+.neighbor-tile { position: absolute; max-width: none; user-select: none; -webkit-user-drag: none; }
+.neighbor-shapes { position: absolute; inset: 0; pointer-events: none; }
+.neighbor-place { position: absolute; transform: translate(-50%, -50%); pointer-events: none; }
+.neighbor-place-icon { display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 999px; border: 2px solid #fff; background: #2563eb; font-size: 12px; box-shadow: 0 1px 4px #0006; }
+.neighbor-label { position: absolute; left: 50%; top: 26px; transform: translateX(-50%); white-space: nowrap; padding: 0 4px; border-radius: 3px; background: #ffffffe6; color: #1e293b; font-size: 10px; font-weight: 600; box-shadow: 0 1px 3px #0004; }
+.neighbor-marker { position: absolute; width: 14px; height: 14px; padding: 0; border-radius: 999px; border: 2px solid #fff; transform: translate(-50%, -50%); box-shadow: 0 1px 4px #0007; cursor: pointer; }
+.neighbor-marker::after { content: ''; position: absolute; inset: -12px; } /* a finger-sized target */
+.neighbor-label-home { top: 14px; pointer-events: none; }
+.neighbor-popup { position: absolute; transform: translate(-50%, -100%); display: flex; flex-direction: column; gap: 2px; min-width: 150px; max-width: 220px; padding: 8px 10px; border-radius: 8px; background: #fffffff2; color: #1e293b; box-shadow: 0 2px 8px #0006; font-size: 12px; }
+.neighbor-popup small { opacity: .75; }
+.neighbor-popup-notes { white-space: pre-wrap; }
+.neighbor-controls { position: absolute; top: 8px; right: 8px; display: flex; flex-direction: column; gap: 4px; }
+.neighbor-controls button { width: 36px; height: 36px; border-radius: 8px; border: 1px solid #0003; background: #ffffffee; color: #1e293b; font-size: 18px; line-height: 1; cursor: pointer; }
+.neighbor-controls button:disabled { opacity: .4; }
+.neighbor-credit { position: absolute; right: 0; bottom: 0; padding: 0 4px; border-top-left-radius: 4px; background: #fffc; color: #334155; font-size: 9px; }
+.neighbor-swatch { display: inline-block; width: 10px; height: 10px; border-radius: 3px; background: #22c55e; border: 2px solid #15803d; vertical-align: -1px; }

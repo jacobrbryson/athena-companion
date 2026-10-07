@@ -245,6 +245,7 @@ function mockStored<T>(key: string, fallback: T[]): T[] {
 }
 const mockNeighbors = () => mockStored<MockNeighbor>('mock_neighbors', [
   { uuid: 'nb-1', name: 'The Hendersons', address: '152 RUSHING WATER LN, TROUTMAN, NC, 28166', latitude: 35.6747, longitude: -80.9061, placeUuid: 'wp-home', where: 'Two doors down, the blue house', contact: null, notes: 'Have a generator; Carol is a retired nurse.', contacts: [{ contactId: '111', name: 'Bill Henderson' }, { contactId: '222', name: 'Carol Henderson' }] },
+  { uuid: 'nb-2', name: 'The Parkers', address: '154 RUSHING WATER LN, TROUTMAN, NC, 28166', latitude: null, longitude: null, placeUuid: 'wp-home', where: null, contact: null, notes: 'Two dogs.', contacts: [] },
 ]);
 const mockEvents = () => mockStored<MockEvent>('mock_events', [
   { uuid: 'ev-1', title: 'Ham Day', startsOn: '2026-09-26', endsOn: null, time: '9am–3pm', placeUuid: null, location: 'Downtown Troutman', repeats: 'yearly', url: null, notes: 'Parade at 10. Park behind the depot.' },
@@ -1017,6 +1018,43 @@ async function route(method: string, path: string, body?: any): Promise<any> {
     if (mockContactsOff()) return { linked: false, matches: [] };
     const street = mockStreet(new URL(path, window.location.origin).searchParams.get('address'));
     return { linked: true, matches: MOCK_CONTACTS.filter((c) => street && mockStreet(c.address) === street).map((c) => ({ ...c, linkedTo: mockLinkedTo(c.contactId) })) };
+  }
+  if (p.startsWith('/api/v1/dashboard/community/door-rounds')) {
+    // Street checks kept in localStorage; the "map" lists a few houses on any street named.
+    type MockDoor = { address: string; status: string; note: string | null; checkedAt: string | null; household: null | { name: string | null; contact: string | null; notes: string | null } };
+    type MockRound = { uuid: string; street: string; placeUuid: string | null; source: string; createdAt: string; closedAt: string | null; doors: MockDoor[] };
+    const rounds: MockRound[] = JSON.parse(localStorage.getItem('mock_door_rounds') || '[]');
+    const save = () => localStorage.setItem('mock_door_rounds', JSON.stringify(rounds));
+    const summary = (r: MockRound) => ({ uuid: r.uuid, street: r.street, total: r.doors.length, checked: r.doors.filter((d) => d.status !== 'todo').length, needsHelp: r.doors.filter((d) => d.status === 'needs_help').length, createdAt: r.createdAt, closedAt: r.closedAt });
+    const [, , , , , , uuidRaw, sub] = p.split('/');
+    const uuid = uuidRaw ? decodeURIComponent(uuidRaw) : null;
+    const round = uuid ? rounds.find((r) => r.uuid === uuid) : null;
+    if (!uuid) {
+      if (method === 'POST') {
+        const street = String(body?.street || 'Rushing Water Lane').trim();
+        const doors = [149, 151, 153, 155, 154, 152, 150, 148].map((n): MockDoor => ({ address: `${n} ${street}`, status: 'todo', note: null, checkedAt: null, household: n === 152 ? { name: 'The Hendersons', contact: null, notes: 'the blue house; dog named Duke' } : null }));
+        const made: MockRound = { uuid: `door-${Date.now()}`, street, placeUuid: body?.placeUuid || null, source: 'osm', createdAt: new Date().toISOString(), closedAt: null, doors };
+        rounds.unshift(made); save();
+        return { round: made };
+      }
+      return { rounds: rounds.map(summary) };
+    }
+    if (!round) fail(404, 'That street check is no longer on your list.');
+    if (method === 'DELETE') { rounds.splice(rounds.indexOf(round!), 1); save(); return { rounds: rounds.map(summary) }; }
+    if (sub === 'doors') {
+      if (!/^\d+\s+\S/.test(String(body?.address || '').trim())) fail(400, 'A house needs a number and a street, like "152 Rushing Water Lane".');
+      round!.doors.push({ address: String(body.address).trim(), status: 'todo', note: null, checkedAt: null, household: null }); save();
+    }
+    if (sub === 'sync') {
+      const norm = (a: string) => a.toLowerCase().replace(/\blane\b/, 'ln');
+      for (const u of body?.updates || []) {
+        const d = round!.doors.find((x) => norm(x.address) === norm(u.address));
+        if (d && (!d.checkedAt || d.checkedAt <= u.at)) { d.status = u.status; d.note = u.note || null; d.checkedAt = u.status === 'todo' ? null : u.at; }
+      }
+      save();
+    }
+    if (sub === 'close') { round!.closedAt = body?.closed === false ? null : new Date().toISOString(); save(); }
+    return { round };
   }
   if (p.startsWith('/api/v1/dashboard/community/neighbors')) {
     const uuid = p.split('/')[6] ? decodeURIComponent(p.split('/')[6]) : null;
