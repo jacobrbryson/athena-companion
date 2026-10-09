@@ -62,7 +62,13 @@ export function workStatus(
   // day itself.
   const dayEnd = until ? until.getTime() : Infinity;
   const today = dayIn(now, timeZone);
-  const inBlock = (e: CalendarEvent) => isMeeting(e) && (until ? Date.parse(e.start) < dayEnd : dayIn(Date.parse(e.start), timeZone) === today);
+  // The working location lives on the work calendar — Google only makes them on
+  // Workspace calendars — so that calendar is what "the workday" means. A family
+  // or shared calendar's 2pm is not the next work meeting. A server too old to
+  // say which calendar an event came from leaves every calendar in.
+  const workCalendar = here.calendar ?? null;
+  const onWorkCalendar = (e: CalendarEvent) => !workCalendar || !e.calendar || e.calendar === workCalendar;
+  const inBlock = (e: CalendarEvent) => isMeeting(e) && onWorkCalendar(e) && (until ? Date.parse(e.start) < dayEnd : dayIn(Date.parse(e.start), timeZone) === today);
   const meetings = events.filter(inBlock).sort((a, b) => Date.parse(a.start) - Date.parse(b.start));
 
   const current = meetings.find(e => Date.parse(e.start) <= now && now < Date.parse(e.end));

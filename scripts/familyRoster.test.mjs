@@ -204,3 +204,23 @@ test("the family surname doesn't hand the kids' games to mom and dad", () => {
   assert.notEqual(by('Tom Bryson').signal.kind, 'calendar');
   assert.equal(by('Thomas Bryson').signal.kind, 'sick', "Thomas's report is his, not his parents'");
 });
+
+test('a household fact filed under the family is not a person', () => {
+  const rows = build([fact('children home time', '3:30pm', 1), fact("kids' bedtime", '8pm', 1), fact('family dinner', 'Sundays at 6', 1), fact('Children', 'two girls and a boy, all at Riverside', 1)]);
+  assert.deepEqual(rows.map(r => r.name), ['Children']);
+});
+
+test('a detail filed under its own key joins the person it is about', () => {
+  const rows = build([fact('aunt missy', 'Lives in Charlotte, loves gardening', 1), fact('aunt missy relation', "my dad's sister", 1), fact("aunt missy's birthday", 'October 12', 1)]);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].name, 'Aunt Missy');
+  assert.equal(rows[0].relation, "Dad's sister");
+  assert.equal(rows[0].signal.kind, 'birthday');
+  assert.match(rows[0].detail, /Charlotte.*dad's sister/);
+});
+
+test('a relation word opening the key says how they are related; a bare answer does too', () => {
+  assert.equal(build([fact('aunt missy', 'Lives in Charlotte, loves gardening', 1)])[0].relation, 'Aunt');
+  assert.equal(build([fact('Missy', 'Lives in Charlotte, loves gardening', 1), fact('missy relation', 'Aunt', 1)])[0].relation, 'Aunt');
+  assert.equal(build([fact('Joan', "Joan is my dad's sister, lives in Ohio", 1)])[0].relation, undefined, "my dad's sister is not a dad");
+});

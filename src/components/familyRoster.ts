@@ -70,17 +70,27 @@ const RELATIONS = new Set(['spouse', 'wife', 'husband', 'partner', 'mom', 'mothe
 const GROUPS = new Set(['children', 'kids', 'siblings', 'family', 'parents', 'grandkids', 'grandchildren', 'household']);
 // The person's own name is a fact about them, not someone in their corner.
 const SELF_KEY = /^(my |user'?s? |full |first |last )?name$/i;
+// "children home time", "kids bedtime", "family dinner": a group word that goes
+// on to name a thing is a fact about the household, not someone to list.
+const householdKey = (key: string) => { const [first, ...rest] = key.trim().toLowerCase().split(/\s+/); return rest.length > 0 && GROUPS.has(first.replace(/'s?$/, '')); };
 /** "Ashlynn therapy" -> "Ashlynn"; "Linda Smith, Ohio" -> "Linda Smith"; null when the value does not open with a name. */
 const leadName = (value: string | null) => /^([A-Z][a-z'\u2019-]+(?: [A-Z][a-z'\u2019-]+)?)(?=[\s,.;:\u2014\u2013-]|$)/.exec((value || '').trim())?.[1] ?? null;
 
 // Longest first, so "step mom" is found before "mom".
 const RELATION_WORDS = [...RELATIONS].sort((a, b) => b.length - a.length).join('|');
-const SAID_MY = new RegExp(`\\bmy (${RELATION_WORDS})\\b`, 'i');
+// "my dad's sister" is not a dad.
+const SAID_MY = new RegExp(`\\bmy (${RELATION_WORDS})\\b(?!['’])`, 'i');
 const SAID_AFTER_NAME = new RegExp(`^[A-Z][\\w'\u2019 -]*?\\s*(?:,|\\(|[\u2014\u2013-])\\s*(?:my |their )?(${RELATION_WORDS})\\b`, 'i');
 /** "Skylar is my daughter", "Thomas, son, 8", "Wynter (daughter)" -> the relation said outright; never inferred from "her son". */
 const relationIn = (value: string | null) => { const m = SAID_MY.exec(value || '') || SAID_AFTER_NAME.exec(value || ''); return m ? capitalize(m[1]) : undefined; };
 
-const hasToken = (text: string, tokens: string[]) => {
+/** A value that is only the relation: "aunt", "My aunt." ("she's my aunt" is relationIn's). */
+const bareRelation = (value: string | null) => { const v = (value || '').trim().toLowerCase().replace(/^(my|our)\s+/, '').replace(/[.!]$/, ''); return RELATIONS.has(v) ? capitalize(v) : undefined; };
+const KEY_RELATION = new RegExp(`^(${RELATION_WORDS})\\s+\\S`, 'i');
+/** "aunt missy" -> "Aunt"; "mom's car" never matches, being a thing of mom's rather than a person. */
+const keyRelation = (key: string) => { const m = KEY_RELATION.exec(key); return m ? capitalize(m[1].toLowerCase()) : undefined; };
+
+const hasToken =(text: string, tokens: string[]) => {
   const words = text.toLowerCase().replace(/'s\b/g, '').split(/[^a-z]+/);
   return tokens.some(t => words.includes(t));
 };
@@ -159,7 +169,26 @@ export function buildFamilyRoster({ facts, sick, events, now, children = [], lin
   const linkOf = new Map(links.map(l => [l.factUuid, l]));
   const taken = new Set<string>();
 
-  const people: Person[] = facts.filter(f => !SELF_KEY.test(f.key.trim())).map(fact => {
+  const listed = facts.filter(f => !SELF_KEY.test(f.key.trim()) && !householdKey(f.key));
+  // "aunt missy relation", "Missy's birthday" beside "aunt missy" are details of
+  // one person filed under keys of their own; they belong on her row, not beside it.
+  const keyOf = (f: Fact) => f.key.trim().toLowerCase();
+  const ownerOf = (f: Fact) => listed
+    .filter(g => g !== f && (keyOf(f).startsWith(`${keyOf(g)} `) || keyOf(f).startsWith(`${keyOf(g)}'s `)))
+    .sort((a, b) => keyOf(b).length - keyOf(a).length)[0];
+  const details = new Map<string, { what: string; value: string; updated: string }[]>();
+  const owned = new Set<Fact>();
+  for (const f of listed) {
+    const owner = ownerOf(f);
+    if (!owner) continue;
+    owned.add(f);
+    const what = keyOf(f).slice(keyOf(owner).length).replace(/^'s?\s*/, '').trim();
+    details.set(owner.uuid, [...(details.get(owner.uuid) ?? []), { what, value: f.value || '', updated: f.updated_at }]);
+  }
+
+  const people: Person[] = listed.filter(f => !owned.has(f)).map(fact => {
+    const extra = details.get(fact.uuid) ?? [];
+    const extraText = extra.map(d => `${d.what}: ${d.value}`).join('; ');
     const tokens = nameTokens(fact);
     // "dog's name" → "Biscuit": when the key only says what the value is, the value is the name.
     const keyedByName = /'s name$/i.test(fact.key) && !!fact.value;
@@ -172,17 +201,24 @@ export function buildFamilyRoster({ facts, sick, events, now, children = [], lin
     // A child profile with the same first name is this person: its birthday is theirs.
     const kid = children.find(c => !taken.has(c.uuid) && [name, ...tokens].some(t => firstName(t) === firstName(c.name)));
     if (kid) taken.add(kid.uuid);
-    const birthday = birthdayFromIso(kid?.birthday ?? card?.birthday, now) ?? birthdayIn(fact.value, now);
+    const birthday = birthdayFromIso(kid?.birthday ?? card?.birthday, now) ?? birthdayIn(fact.value, now)
+      ?? extra.map(d => birthdayIn(`${d.what} ${d.value}`, now)).find(b => b !== null) ?? null;
     const known = birthday !== null;
+    const own = keyedByName ? rest || fact.key : lead ? (fact.value || '').slice(lead.length).replace(/^[\s,.;:\u2014\u2013-]+/, '') : fact.value || '';
+    const said = keyedByName ? rest : fact.value || '';
     return {
       id: fact.uuid, name, tokens, birthday,
-      // How they are related: said by the key ("spouse"), the category (a pet), or the value ("my daughter").
-      relation: fact.category === 'pet' ? 'Pet' : RELATIONS.has(key) ? capitalize(fact.key) : relationIn(fact.value),
+      // How they are related: said by the key ("spouse", "aunt missy"), the category (a pet), or a value ("my daughter").
+      relation: fact.category === 'pet' ? 'Pet' : RELATIONS.has(key) ? capitalize(fact.key)
+        : relationIn(fact.value) ?? extra.map(d => relationIn(d.value) ?? bareRelation(d.value)).find(Boolean)
+          // An answer to "how are they related?" in words of its own ("Dad's sister") is still the answer.
+          ?? extra.filter(d => /relat/.test(d.what) && d.value.trim() && d.value.length <= 40).map(d => d.value.trim().replace(/^(my|our)\s+/i, '').replace(/^\w/, c => c.toUpperCase()))[0]
+          ?? keyRelation(key),
       group: GROUPS.has(key),
-      detail: keyedByName ? rest || fact.key : lead ? (fact.value || '').slice(lead.length).replace(/^[\s,.;:\u2014\u2013-]+/, '') : fact.value || '',
-      quiet: Math.max(0, now.getTime() - Date.parse(fact.updated_at)),
-      thin: keyedByName ? rest.length < 12 : (fact.value || '').trim().length < 12,
-      richness: (fact.value || '').length,
+      detail: [own, extraText].filter(Boolean).join('; '),
+      quiet: Math.max(0, now.getTime() - Math.max(Date.parse(fact.updated_at), ...extra.map(d => Date.parse(d.updated)))),
+      thin: `${said} ${extraText}`.trim().length < 12,
+      richness: (fact.value || '').length + extraText.length,
       photoUrl: card?.photoUrl,
       // Pets get no birthday prompt; everyone else without one does.
       missing: known || fact.category === 'pet' ? undefined : `I haven't told you ${name}'s birthday yet. Ask me when it is.`,
