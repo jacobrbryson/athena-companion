@@ -30,6 +30,11 @@ export interface Message {
    * stored message holds both, so history shows the song as plain text.
    */
   lyrics?: string;
+  /**
+   * The pages a web search grounded this reply on. Live socket replies only;
+   * they are not stored, so history and polled replies come without them.
+   */
+  sources?: { title: string; url: string }[];
 }
 
 /** Where Athena is talking from, sent with every message (see message.js). */

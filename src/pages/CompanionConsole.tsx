@@ -626,6 +626,21 @@ export function CompanionConsole() {
                   {entry.message.lyrics && (
                     <span className="mt-2 block italic text-emerald-200/90">♪ {entry.message.lyrics}</span>
                   )}
+                  {!!entry.message.sources?.length && (
+                    <span className="mt-2 flex flex-wrap gap-1.5">
+                      {entry.message.sources.map((source) => (
+                        <a
+                          key={source.url}
+                          href={source.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="max-w-[12rem] truncate rounded-full border border-emerald-400/20 bg-emerald-500/10 px-2 py-0.5 text-[11px] text-emerald-200/80 hover:bg-emerald-500/20"
+                        >
+                          {source.title}
+                        </a>
+                      ))}
+                    </span>
+                  )}
                 </p>
               </div>
             ) : (
