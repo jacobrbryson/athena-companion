@@ -22,6 +22,7 @@ import { DreamCard, DreamsPage } from './Dreams';
 import { DashboardIcon } from './icons';
 import { CommunityMap, PointsOfInterest, Neighbors, LocalEvents, PlaceReminders, ContactAvatar, eventWhen, isPastEvent } from './Community';
 import { EmergencyAlertSetup } from './EmergencyAlertSetup';
+import { Websites } from './Websites';
 
 /** Enough for a household, so nobody sorted late in the alphabet is cut off the card. */
 const FAMILY_CARD_ROWS = 7;
@@ -1326,7 +1327,7 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
     const names = [...new Set(issues.map(i => i.project))];
     return <SectionPage ctx={ctx}
       eyebrow="WHAT YOU ARE BUILDING" title="Projects"
-      blurb="Your Jira projects alongside the goals Athena is holding on to for you."
+      blurb="Your websites and Jira projects alongside the goals Athena is holding on to for you."
       ask="What do you remember about my projects? Help me choose a next step."
       stats={<>
         <Stat label="Projects" value={ready(summary?.jira) ? names.length : '—'} note="with issues assigned to you" />
@@ -1334,6 +1335,9 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
         <Stat label="Saved goals" value={projects.length} note="held in memory" />
       </>}
     >
+      <Panel title="Websites" note="Search Console and Analytics, last 7 days" wide id="websites">
+        <Websites onConnect={() => onPanel('integrations')} />
+      </Panel>
       <Panel title="Jira projects" note="your assigned issues" wide>
         {!ready(summary?.jira) ? unavailable('jira', 'Jira')
           : !names.length ? <p className="dashboard-empty">No assigned open issues returned.</p>

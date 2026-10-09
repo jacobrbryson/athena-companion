@@ -141,6 +141,37 @@ export interface LocalNewsItem extends NewsItem { matched: string }
 /** "Next time I'm at Missy's, remind me to ..." — set by approving Athena's remind_at_place card. */
 export interface PlaceReminder { uuid: string; placeUuid: string | null; placeName: string; address: string | null; latitude: number; longitude: number; radiusM: number; reminder: string; repeats: boolean; status: 'armed' | 'done'; fireCount: number; lastFiredAt: string | null; doneAt: string | null; createdAt: string }
 
+/** One week of Google Search Console numbers for a site, with the week before for comparison. */
+export interface SearchStats {
+  takenOn: string; window: { start: string; end: string };
+  clicks: number; impressions: number; ctr: number; position: number;
+  previous: { clicks: number; impressions: number };
+  /** Percent change against the week before; null when there was nothing to compare. */
+  trend: { clicks: number | null; impressions: number | null };
+  topQueries: { query: string; clicks: number; impressions: number }[];
+}
+/** One week of GA4 numbers for a site, with the week before for comparison. */
+export interface AnalyticsStats {
+  takenOn: string; users: number; sessions: number; newUsers: number;
+  previous: { users: number; sessions: number; newUsers: number };
+  trend: { users: number | null; sessions: number | null };
+  topPages: { path: string; views: number }[];
+}
+/** A website the person manages. `lastError` is Google's own account of why the last read failed. */
+export interface Website {
+  uuid: string; domain: string; label: string | null; searchSite: string | null; gaProperty: string | null;
+  notes: string | null; lastCheckedAt: string | null; lastError: string | null;
+  search: SearchStats | null; analytics: AnalyticsStats | null;
+}
+export type WebsiteInput = { domain: string; label?: string | null; searchSite?: string | null; gaProperty?: string | null; notes?: string | null };
+/** What Google says the person can see, to pick from. `linked: false` means Websites isn't connected. */
+export interface WebsiteDiscovery {
+  linked: boolean;
+  searchSites: { site: string; host: string | null; permission: string | null; suggestedProperty: string | null }[];
+  properties: { property: string; name: string; account: string | null }[];
+  propertiesError?: string | null;
+}
+
 /** Calendar events that mention the community's towns and places, read wide (not from the 25-event summary). */
 export interface CommunityCalendar { connected: boolean; terms: string[]; events: CalendarEvent[] }
 export interface CommunityOverview { places: WatchPlace[]; neighbors: Neighbor[]; events: CommunityEvent[]; localNews: LocalNewsItem[] | null; kinds: PlaceKind[] }
@@ -329,6 +360,15 @@ export const dashboardApi = {
   saveWatchPlace: (place: { name: string; latitude: number; longitude: number; radiusMiles?: number; address?: string | null; enabled?: boolean; kind?: PlaceKind; notes?: string | null }) =>
     api.put<{ places: WatchPlace[] }>('/api/v1/dashboard/incidents/places', place),
   removeWatchPlace: (uuid: string) => api.del<{ places: WatchPlace[] }>(`/api/v1/dashboard/incidents/places/${encodeURIComponent(uuid)}`),
+  /** Websites: the sites the person manages, from Search Console and Analytics. */
+  websites: () => api.get<{ sites: Website[] }>('/api/v1/dashboard/websites'),
+  websiteDiscovery: () => api.get<WebsiteDiscovery>('/api/v1/dashboard/websites/discover'),
+  saveWebsite: (input: WebsiteInput, uuid?: string) => uuid
+    ? api.patch<{ site: Website }>(`/api/v1/dashboard/websites/${encodeURIComponent(uuid)}`, input)
+    : api.post<{ site: Website }>('/api/v1/dashboard/websites', input),
+  removeWebsite: (uuid: string) => api.del<{ sites: Website[] }>(`/api/v1/dashboard/websites/${encodeURIComponent(uuid)}`),
+  /** Read Google now: one site, or all of them. Throttled server-side to one a minute. */
+  refreshWebsites: (uuid?: string) => api.post<{ sites: Website[] }>(uuid ? `/api/v1/dashboard/websites/${encodeURIComponent(uuid)}/refresh` : '/api/v1/dashboard/websites/refresh', {}),
   /** The Community page: points of interest, neighbours, events and local headlines. */
   community: () => api.get<CommunityOverview>('/api/v1/dashboard/community'),
   communityCalendar: () => api.get<CommunityCalendar>('/api/v1/dashboard/community/calendar'),

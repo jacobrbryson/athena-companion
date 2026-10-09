@@ -12,6 +12,7 @@ import { integrationsApi, memoryApi, type Fact, type IntegrationProvider } from 
 const READS: Record<string, { reads: string; writes: string }> = {
   google_calendar: { reads: 'Events on your calendars and when you’re free.', writes: 'Adds an event only when you approve a card.' },
   gmail: { reads: 'Sender, subject and date of your inbox; a message body only when you open it.', writes: 'Archive, trash, unsubscribe or save a draft only when you approve. She never sends.' },
+  websites: { reads: 'Search Console and Analytics numbers for the sites you list, checked daily and when you press Check now.', writes: 'Nothing — read-only.' },
   google_contacts: { reads: 'Names, numbers, emails, addresses, birthdays and photos, read live.', writes: 'Nothing — read-only.' },
   whoop: { reads: 'Recovery, sleep, strain, resting heart rate, HRV and blood oxygen.', writes: 'Nothing — read-only.' },
   family_chores: { reads: 'Whose chores are due, what is done, coins earned.', writes: 'Nothing — read-only.' },

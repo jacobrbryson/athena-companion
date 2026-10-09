@@ -216,6 +216,21 @@ function mockPlaceReminders() {
 type MockNeighbor = { uuid: string; name: string | null; address: string | null; latitude: number | null; longitude: number | null; placeUuid: string | null; where: string | null; contact: string | null; notes: string | null; contacts: { contactId: string; name: string | null }[] };
 // Google Contacts, as GET /dashboard/community/contacts returns them. ?contacts=off
 // in the URL plays the "not connected" case.
+const MOCK_SITES = [
+  {
+    uuid: 'site-1', domain: 'orcwood.com', label: 'Orcwood Games', searchSite: 'sc-domain:orcwood.com', gaProperty: '22', notes: null,
+    lastCheckedAt: new Date(Date.now() - 20 * 60_000).toISOString(), lastError: null,
+    search: { takenOn: '2026-10-07', window: { start: '2026-09-27', end: '2026-10-04' }, clicks: 412, impressions: 15800, ctr: 0.026, position: 11.4, previous: { clicks: 350, impressions: 14100 }, trend: { clicks: 18, impressions: 12 }, topQueries: [{ query: 'orcwood', clicks: 120, impressions: 800 }, { query: 'orc games', clicks: 45, impressions: 2100 }] },
+    analytics: { takenOn: '2026-10-07', users: 1290, sessions: 1840, newUsers: 960, previous: { users: 1410, sessions: 1900, newUsers: 1100 }, trend: { users: -9, sessions: -3 }, topPages: [{ path: '/', views: 2100 }, { path: '/games', views: 760 }] },
+  },
+  {
+    uuid: 'site-2', domain: 'rossbryson.com', label: null, searchSite: 'https://rossbryson.com/', gaProperty: null, notes: null,
+    lastCheckedAt: new Date(Date.now() - 20 * 60_000).toISOString(), lastError: 'Analytics: HTTP 403 — Google Analytics Data API has not been used in project athena-476423 before or it is disabled.',
+    search: { takenOn: '2026-10-07', window: { start: '2026-09-27', end: '2026-10-04' }, clicks: 9, impressions: 330, ctr: 0.027, position: 22.1, previous: { clicks: 9, impressions: 300 }, trend: { clicks: 0, impressions: 10 }, topQueries: [] },
+    analytics: null,
+  },
+];
+
 const MOCK_CONTACTS = [
   { contactId: '111', name: 'Bill Henderson', phone: '+1 704-555-0100', email: 'bill.henderson@example.com', address: '152 Rushing Water Ln, Troutman, NC 28166', photoUrl: null },
   { contactId: '222', name: 'Carol Henderson', phone: '+1 704-555-0101', email: null, address: '152 Rushing Water Ln, Troutman, NC 28166', photoUrl: null },
@@ -1008,6 +1023,18 @@ async function route(method: string, path: string, body?: any): Promise<any> {
     const ev = (id: string, title: string, mins: number, len: number) => ({ id, title, start: inMinutes(mins), end: inMinutes(mins + len), allDay: false, location: null, calendar: null, shared: false, eventType: 'default' });
     return { connected: true, terms: ['Troutman'], events: [ev('t0', 'Maya softball game', 3 * 60, 90), ev('t1', 'Troutman soccer practice', 30 * 60, 90), ev('t2', 'Troutman Rec game vs Mooresville', 4 * 24 * 60 - 120, 60), ev('t3', 'Troutman Founders Day 5K', 4 * 24 * 60 + 420, 90)] };
   }
+  if (p === '/api/v1/dashboard/websites' && method === 'GET') return { sites: MOCK_SITES };
+  if (p === '/api/v1/dashboard/websites/discover') {
+    return {
+      linked: true,
+      searchSites: [
+        { site: 'sc-domain:orcwood.com', host: 'orcwood.com', permission: 'siteOwner', suggestedProperty: '22' },
+        { site: 'sc-domain:family-chores.app', host: 'family-chores.app', permission: 'siteOwner', suggestedProperty: '11' },
+      ],
+      properties: [{ property: '11', name: 'Family Chores', account: 'Bryson' }, { property: '22', name: 'Orcwood Games', account: 'Bryson' }],
+    };
+  }
+  if (p.startsWith('/api/v1/dashboard/websites') && p.endsWith('/refresh')) return { sites: MOCK_SITES };
   if (p === '/api/v1/dashboard/community') return mockCommunity();
   if (p === '/api/v1/dashboard/community/contacts') {
     if (mockContactsOff()) return { linked: false, matches: [] };

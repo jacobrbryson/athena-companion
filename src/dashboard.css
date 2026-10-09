@@ -641,3 +641,14 @@ svg.dashboard-icon-drawn .icon-fill { fill: currentColor; fill-opacity: .9; }
 .neighbor-controls button:disabled { opacity: .4; }
 .neighbor-credit { position: absolute; right: 0; bottom: 0; padding: 0 4px; border-top-left-radius: 4px; background: #fffc; color: #334155; font-size: 9px; }
 .neighbor-swatch { display: inline-block; width: 10px; height: 10px; border-radius: 3px; background: #22c55e; border: 2px solid #15803d; vertical-align: -1px; }
+
+/* Websites panel (Projects) */
+.website-source { margin-top: 8px; }
+.website-source-title { display: block; opacity: .7; }
+.website-figures { display: flex; flex-wrap: wrap; gap: 4px 18px; margin-top: 4px; }
+.website-figure { display: flex; flex-direction: column; min-width: 64px; }
+.website-figure small { opacity: .65; }
+.website-figure strong { font-size: 17px; }
+.website-trend { font-size: 11px; opacity: .8; }
+.website-up { color: #8be2a8; opacity: 1; }
+.website-down { color: #f3a6a6; opacity: 1; }

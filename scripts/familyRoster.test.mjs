@@ -190,3 +190,17 @@ test('one pet remembered twice is one row, and a name does not swallow its descr
   assert.equal(rows[0].name, 'Dexter');
   assert.equal(rows[0].relation, 'Pet');
 });
+
+test("the family surname doesn't hand the kids' games to mom and dad", () => {
+  const rows = build(
+    [fact('mother', 'Cindy Bryson, lives in Troutman, birthday May 2'), fact('father', 'Tom Bryson, retired engineer, birthday June 9')],
+    [sickReport('Thomas Bryson')],
+    [event('Bryson U10 Soccer: Troutman Black vs. WISA Gold', 1), event('Cindy hair appointment', 2)],
+    { children: [child('Thomas Bryson', '2016-03-01')] },
+  );
+  const by = name => rows.find(r => r.name === name);
+  assert.equal(by('Cindy Bryson').signal.kind, 'calendar');
+  assert.match(by('Cindy Bryson').signal.label, /^Hair appointment/);
+  assert.notEqual(by('Tom Bryson').signal.kind, 'calendar');
+  assert.equal(by('Thomas Bryson').signal.kind, 'sick', "Thomas's report is his, not his parents'");
+});

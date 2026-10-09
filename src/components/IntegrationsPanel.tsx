@@ -11,7 +11,7 @@ import { androidCall, isAndroidCompanion } from '../native/android';
 import { WhoopActivityReviews } from './WhoopActivityReviews';
 
 /**
- * Connect Athena to Google (Gmail, Calendar, Contacts), Whoop and more.
+ * Connect Athena to Google (Gmail, Calendar, Contacts, Websites), Whoop and more.
  *
  * The flow leaves this app: `connect` returns an authorize URL and we navigate
  * to it, the provider sends the browser back to the origin with
@@ -44,6 +44,7 @@ const ICONS: Record<string, string> = {
   gmail: '✉️', jira: '🔷', slack: '💬',
   google_calendar: '📅',
   google_contacts: '👥',
+  websites: '🌐',
   whoop: '💤',
 };
 
@@ -53,6 +54,7 @@ const BLURBS: Record<string, string> = {
   jira: 'Reads your assigned open issues across authorized Jira Cloud sites. Never changes issues.',
   slack: 'Reads recent mentions visible to your Slack account. Never posts or changes messages.',
   google_calendar: 'Reads your upcoming events and free/busy time.',
+  websites: 'Reads Search Console and Analytics for the sites you manage, so Athena can show how each is doing. Read-only.',
   google_contacts: 'Reads names, phone numbers, emails, relationships, birthdays and photos, so Athena can link them to the family and people she knows. Read-only.',
   whoop: 'Reads your recovery, sleep and strain scores.',
 };
@@ -294,7 +296,7 @@ function ProviderRow({
 }
 
 /**
- * Gmail, Calendar and Contacts on one card. "Connect all" opens the same
+ * Gmail, Calendar, Contacts and Websites on one card. "Connect all" opens the same
  * consent screen sign-in does; each row's own button elevates just that
  * service (or links it to a different account — Gmail is often a work one).
  */
@@ -325,8 +327,8 @@ function GoogleGroupCard({
         <div className="min-w-0">
           <p className="truncate text-sm">{ICONS.google} Google</p>
           <p className="mt-1 text-[11px] leading-snug opacity-50">
-            Gmail, Calendar and Contacts share one Google approval. Signing in asks for all
-            three; connect any you skipped below.
+            Gmail, Calendar, Contacts and Websites share one Google approval. Signing in asks for
+            all of them; connect any you skipped below.
           </p>
           {accounts.length > 0 && (
             <p className="mt-1 truncate font-mono text-[10px] opacity-50">{accounts.join(' · ')}</p>

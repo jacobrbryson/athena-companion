@@ -124,6 +124,8 @@ interface Person {
   name: string;
   detail: string;
   tokens: string[];
+  /** The tokens that name only this person, for picking out their events and reports. */
+  match?: string[];
   /** Days to the next birthday, when any source knows it. */
   birthday: number | null;
   /** Ms since Athena last heard about them; null where there's no memory to age (a child profile). */
@@ -209,12 +211,23 @@ export function buildFamilyRoster({ facts, sick, events, now, children = [], lin
     if (better) best.set(k, q);
   }
   const unique = [...best.values()];
+  // A word several people share — the family surname, above all — can't say
+  // whose event "Bryson U10 Soccer" is, so it never picks one out. Nor can the
+  // person's own name, or the surname on a child's profile.
+  const seen = new Map<string, number>();
+  // A group row repeats its members' names on purpose and already yields to them.
+  for (const p of unique) if (!p.group) for (const t of new Set(p.tokens)) seen.set(t, (seen.get(t) ?? 0) + 1);
+  const shared = new Set([...seen].filter(([, n]) => n > 1).map(([t]) => t));
+  const words = (s: string | null | undefined) => (s || '').toLowerCase().split(/[^a-z']+/).map(w => w.replace(/'s$/, '')).filter(w => w.length >= 3);
+  for (const f of facts) if (SELF_KEY.test(f.key.trim())) words(f.value).forEach(w => shared.add(w));
+  for (const c of children) words(c.name).slice(1).forEach(w => shared.add(w));
+  for (const p of unique) p.match = p.tokens.filter(t => !shared.has(t));
   const coveredByNamed = (p: Person) => !!p.group && unique.some(o => o !== p && !o.group && hasToken(p.detail, [firstName(o.name)]));
   const usedEvents = new Set<CalendarEvent>();
   const rows: RosterRow[] = unique.filter(p => !coveredByNamed(p)).sort((a, b) => Number(!!a.group) - Number(!!b.group)).map(p => {
-    const mine = sick.find(h => hasToken(h.personName, p.tokens));
+    const mine = sick.find(h => hasToken(h.personName, p.match ?? p.tokens));
     if (mine) claimed.add(mine.uuid);
-    const event = soon.find(e => !usedEvents.has(e) && hasToken(e.title, p.tokens));
+    const event = soon.find(e => !usedEvents.has(e) && hasToken(e.title, p.match ?? p.tokens));
     const { name, birthday, quiet } = p;
     if (event && !mine) usedEvents.add(event);
 
