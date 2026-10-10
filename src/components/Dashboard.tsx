@@ -1215,7 +1215,7 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
       <Panel id="community-door-to-door" title="Check on your street" note="door to door, in an emergency" wide>
         {waiting || <DoorToDoor places={places} />}
       </Panel>
-      <Panel title="Place reminders" note="when you get there" wide>
+      <Panel title="Reminders" note="at a place or a time" wide>
         <PlaceReminders onAsk={onAsk} />
       </Panel>
       <Panel title="Local events" note="church, school, town">

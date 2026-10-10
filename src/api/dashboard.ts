@@ -139,7 +139,11 @@ export type EventInput = Omit<CommunityEvent, 'uuid' | 'nextOn' | 'nextEndsOn'>;
 /** A headline from the person's own news pages that mentions one of their places or towns. */
 export interface LocalNewsItem extends NewsItem { matched: string }
 /** "Next time I'm at Missy's, remind me to ..." — set by approving Athena's remind_at_place card. */
-export interface PlaceReminder { uuid: string; placeUuid: string | null; placeName: string; address: string | null; latitude: number; longitude: number; radiusM: number; reminder: string; repeats: boolean; status: 'armed' | 'done'; fireCount: number; lastFiredAt: string | null; doneAt: string | null; createdAt: string }
+/** What has to happen before a place reminder can fire ("from the gym", "after the last game"). */
+export interface ReminderCondition { kind: 'place' | 'time'; label: string | null; after: string | null; metAt: string | null }
+export interface PlaceReminder { uuid: string; placeUuid: string | null; placeName: string; address: string | null; latitude: number; longitude: number; radiusM: number; reminder: string; repeats: boolean; status: 'armed' | 'waiting' | 'done' | 'expired'; condition: ReminderCondition | null; expiresAt: string | null; fireCount: number; lastFiredAt: string | null; doneAt: string | null; createdAt: string }
+/** "Remind me at 7 to…". */
+export interface TimeReminder { uuid: string; reminder: string; fireAt: string; timeZone: string | null; status: 'armed' | 'done'; firedAt: string | null; createdAt: string }
 
 /** One week of Google Search Console numbers for a site, with the week before for comparison. */
 export interface SearchStats {
@@ -384,8 +388,8 @@ export const dashboardApi = {
     ? api.patch<{ events: CommunityEvent[] }>(`/api/v1/dashboard/community/events/${encodeURIComponent(uuid)}`, input)
     : api.post<{ events: CommunityEvent[] }>('/api/v1/dashboard/community/events', input),
   /** Place reminders: armed ones, then the last fortnight's finished ones. Setting one is an action, not here. */
-  placeReminders: () => api.get<{ reminders: PlaceReminder[] }>('/api/v1/place-reminders'),
-  removePlaceReminder: (uuid: string) => api.del<{ reminders: PlaceReminder[] }>(`/api/v1/place-reminders/${encodeURIComponent(uuid)}`),
+  placeReminders: () => api.get<{ reminders: PlaceReminder[]; timeReminders?: TimeReminder[] }>('/api/v1/place-reminders'),
+  removePlaceReminder: (uuid: string) => api.del<{ reminders: PlaceReminder[]; timeReminders?: TimeReminder[] }>(`/api/v1/place-reminders/${encodeURIComponent(uuid)}`),
   removeEvent: (uuid: string) => api.del<{ events: CommunityEvent[] }>(`/api/v1/dashboard/community/events/${encodeURIComponent(uuid)}`),
   /** Door-to-door street checks: list a street ahead of time, then mark each house. */
   doorRounds: () => api.get<{ rounds: DoorRoundSummary[] }>('/api/v1/dashboard/community/door-rounds'),

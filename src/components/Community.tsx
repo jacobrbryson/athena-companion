@@ -12,6 +12,7 @@ import {
   type NeighborInput,
   type PlaceKind,
   type PlaceReminder,
+  type TimeReminder,
   type WatchPlace,
 } from '../api/dashboard';
 import { locationApi } from '../api/companion';
@@ -653,30 +654,49 @@ function EventForm({ initial, places, busy, onSave, onCancel }: { initial: Event
 
 /**
  * "Next time I'm at Missy's, remind me to ..." — reminders that wait for a
- * place. Set only by approving Athena's card in conversation (the
- * remind_at_place action); this list is where they are seen and removed.
- * Loads its own list, so the rest of the page doesn't wait on it.
+ * place, sometimes for something first ("home from the gym"), and since
+ * 2026-10-10 reminders for a time ("at 7, remind me…"). Set only by approving
+ * Athena's card in conversation (remind_at_place / remind_at_time); this list
+ * is where they are seen and removed. Loads its own list, so the rest of the
+ * page doesn't wait on it.
  */
+function conditionText(r: PlaceReminder): string | null {
+  if (!r.condition) return null;
+  const what = r.condition.label || (r.condition.kind === 'place' ? 'the first stop' : 'that time');
+  if (r.condition.metAt) return `after ${what} ✓`;
+  return r.condition.kind === 'place' ? `after you've been at ${what}` : `after ${what}`;
+}
+
+function whenText(t: TimeReminder): string {
+  try {
+    return new Date(t.fireAt).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', ...(t.timeZone ? { timeZone: t.timeZone } : {}) });
+  } catch {
+    return new Date(t.fireAt).toLocaleString();
+  }
+}
 export function PlaceReminders({ onAsk }: { onAsk?: (text: string) => void }) {
   const [reminders, setReminders] = useState<PlaceReminder[] | null>(null);
+  const [times, setTimes] = useState<TimeReminder[]>([]);
   const [sharing, setSharing] = useState<boolean | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let live = true;
-    dashboardApi.placeReminders().then(r => live && setReminders(r.reminders)).catch(err => live && setError(errorText(err, 'Your place reminders couldn’t load.')));
+    dashboardApi.placeReminders().then(r => { if (!live) return; setReminders(r.reminders); setTimes(r.timeReminders || []); }).catch(err => live && setError(errorText(err, 'Your place reminders couldn’t load.')));
     // Unknown is not "off": only a definite "off" earns the warning.
     locationApi.status().then(r => live && setSharing(r.pref.enabled)).catch(() => undefined);
     return () => { live = false; };
   }, []);
 
-  async function remove(r: PlaceReminder) {
-    if (!window.confirm(`Stop waiting to remind you at ${r.placeName}?`)) return;
+  async function remove(uuid: string, question: string) {
+    if (!window.confirm(question)) return;
     setError(null);
-    setBusy(r.uuid);
+    setBusy(uuid);
     try {
-      setReminders((await dashboardApi.removePlaceReminder(r.uuid)).reminders);
+      const next = await dashboardApi.removePlaceReminder(uuid);
+      setReminders(next.reminders);
+      setTimes(next.timeReminders || []);
     } catch (err) {
       setError(errorText(err, 'Could not remove that reminder.'));
     } finally {
@@ -685,26 +705,39 @@ export function PlaceReminders({ onAsk }: { onAsk?: (text: string) => void }) {
   }
 
   if (!reminders) return error ? <Problem text={error} /> : <p className="dashboard-empty">Loading…</p>;
-  const armed = reminders.filter(r => r.status === 'armed');
-  const done = reminders.filter(r => r.status === 'done');
+  const armed = reminders.filter(r => r.status === 'armed' || r.status === 'waiting');
+  const done = reminders.filter(r => r.status === 'done' || r.status === 'expired');
+  const upcoming = times.filter(t => t.status === 'armed');
   return <>
     <Problem text={error} />
     {sharing === false && armed.length > 0 && <p className="dashboard-notice" role="status">Location sharing is off, so these can’t go off yet. Turn it on in the ⋯ menu → Initiative → location context, and allow Athena location “all the time” on your phone.</p>}
-    {!armed.length && <p className="dashboard-empty">Tell me “next time I’m at Missy’s, remind me to…” and I’ll send it to your phone a couple of minutes after you get there.</p>}
+    {!armed.length && !upcoming.length && <p className="dashboard-empty">Tell me “next time I’m at Missy’s, remind me to…”, “when I get home from the gym…” or “at 7, remind me…” and I’ll send it to your phone.</p>}
+    {upcoming.length > 0 && <ul className="community-list">
+      {upcoming.map(t => <li key={t.uuid}>
+        <span className="community-icon" aria-hidden>⏰</span>
+        <div className="community-body">
+          <strong>{t.reminder}</strong>
+          <small>{whenText(t)}</small>
+          <div className="community-controls">
+            <button type="button" className="community-link community-danger" disabled={busy === t.uuid} onClick={() => void remove(t.uuid, `Cancel the reminder for ${whenText(t)}?`)}>Remove</button>
+          </div>
+        </div>
+      </li>)}
+    </ul>}
     {armed.length > 0 && <ul className="community-list">
       {armed.map(r => <li key={r.uuid}>
         <span className="community-icon" aria-hidden>📍</span>
         <div className="community-body">
           <strong>{r.reminder}</strong>
-          <small>{[`at ${r.placeName}`, r.address, r.repeats ? 'every visit' : 'next visit'].filter(Boolean).join(' · ')}</small>
+          <small>{[`at ${r.placeName}`, conditionText(r), r.address, r.repeats ? 'every visit' : 'next visit'].filter(Boolean).join(' · ')}</small>
           <div className="community-controls">
-            <button type="button" className="community-link community-danger" disabled={busy === r.uuid} onClick={() => void remove(r)}>Remove</button>
+            <button type="button" className="community-link community-danger" disabled={busy === r.uuid} onClick={() => void remove(r.uuid, `Stop waiting to remind you at ${r.placeName}?`)}>Remove</button>
           </div>
         </div>
       </li>)}
     </ul>}
     {done.length > 0 && <div className="day-group"><h3>Recently reminded</h3><ul className="dashboard-data-list community-past">
-      {done.map(r => <li key={r.uuid}><div className="community-body"><strong>{r.reminder}</strong><small>at {r.placeName}{r.doneAt ? ` · ${new Date(r.doneAt).toLocaleDateString()}` : ''}</small></div></li>)}
+      {done.map(r => <li key={r.uuid}><div className="community-body"><strong>{r.reminder}</strong><small>at {r.placeName}{r.status === 'expired' ? ' · didn’t happen in time' : ''}{r.doneAt ? ` · ${new Date(r.doneAt).toLocaleDateString()}` : ''}</small></div></li>)}
     </ul></div>}
     {onAsk && <button type="button" className="dashboard-chat-cta" onClick={() => onAsk('I’d like to set a reminder for when I get somewhere.')}>Ask for one <span>↗</span></button>}
   </>;
