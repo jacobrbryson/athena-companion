@@ -264,6 +264,8 @@ export interface AthenaAction {
   created_at: string;
   expires_at: string;
   executed_at: string | null;
+  /** Live socket only: the uuid of the card this one replaced ("make it 2:00"). */
+  supersedes?: string;
 }
 
 /** Registry metadata. Lists actions the person has NOT enabled, so the panel can offer them. */

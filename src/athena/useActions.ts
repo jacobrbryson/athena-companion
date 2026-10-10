@@ -102,9 +102,18 @@ export function useActions(enabled: boolean): ActionsState {
     const onProposed = (event: Event) => {
       const action = (event as CustomEvent<AthenaAction>).detail;
       if (!action?.uuid || answeredRef.current.has(action.uuid)) return;
-      setPending((current) =>
-        current.some((a) => a.uuid === action.uuid) ? current : [...current, action]
-      );
+      // A corrected card replaces the one it supersedes in place, so "make it
+      // 2:00" doesn't leave the 7:00 card sitting there until the next poll.
+      const replaced = action.supersedes;
+      if (replaced) answeredRef.current.add(replaced);
+      setPending((current) => {
+        if (current.some((a) => a.uuid === action.uuid)) return current;
+        const at = replaced ? current.findIndex((a) => a.uuid === replaced) : -1;
+        if (at === -1) return [...current, action];
+        const next = [...current];
+        next[at] = action;
+        return next;
+      });
       // A standing approval means the server already executed it, so the card
       // arrives terminal and nobody will ever press a button on it.
       if (action.status === 'done') {
