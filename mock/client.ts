@@ -1448,6 +1448,33 @@ Sam` };
   if (method === 'DELETE' && p.startsWith('/api/v1/memory')) return { success: true };
   if (p === '/api/v1/llm/status') return status;
   if (p === '/api/v1/llm/manifest') return manifest;
+  if (p === '/api/v1/llm/monologue') {
+    const at = (min: number) => new Date(Date.now() - min * 60_000).toISOString();
+    return {
+      turns: [
+        {
+          at: at(2), message: 'who won the Braves game last night?', screen: 0.94,
+          draft: 'The Braves beat the Mets 7-2 behind a big night from Acuña.',
+          verdict: 'search', problems: ['The score and the standout player are guesses'],
+          query: 'Braves Mets score last night', sources: ['mlb.com', 'espn.com'],
+          final: 'They won, 5-3 over the Mets — Riley drove in three.', changed: true, ms: 5200,
+        },
+        {
+          at: at(9), message: 'what time does my gym open on Sunday?', screen: 0.81,
+          draft: 'Your gym opens at 7 on Sundays.',
+          verdict: 'revise', problems: ["She doesn't know which gym or its hours"],
+          query: null, sources: [], final: "I don't actually know your gym's Sunday hours — which one is it? I can look it up.",
+          changed: true, ms: 2300,
+        },
+        {
+          at: at(15), message: 'how far is the moon?', screen: 0.72,
+          draft: 'About 239,000 miles on average.', verdict: 'ok', problems: [],
+          query: null, sources: [], final: 'About 239,000 miles on average.', changed: false, ms: 1100,
+        },
+        { at: at(20), message: 'thanks!', screen: 0.03, draft: 'Anytime.', verdict: null, problems: [], query: null, sources: [], final: 'Anytime.', changed: false, ms: 280 },
+      ],
+    };
+  }
   if (p === '/api/v1/devices' && method === 'GET') return devices;
   if (p === '/api/v1/devices/pairing-code') return { code: 'K7QP-3XMV', device_uuid: 'd-new', expires_in: 600 };
   if (method === 'DELETE' && p.startsWith('/api/v1/devices/')) return { success: true };

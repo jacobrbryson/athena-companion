@@ -117,8 +117,26 @@ export interface DeviceModel {
   notes?: string;
 }
 
+/** One pass of her inner monologue: a draft reply, and what she did about it. */
+export interface MonologueTurn {
+  at: string;
+  message: string;
+  draft: string;
+  /** Jev's probability that the draft stated checkable facts. */
+  screen: number;
+  /** null when the screen let it straight through; "unavailable" when the critic failed. */
+  verdict: 'ok' | 'search' | 'revise' | 'unavailable' | null;
+  problems: string[];
+  query: string | null;
+  sources: string[];
+  final: string;
+  changed: boolean;
+  ms: number;
+}
+
 export const brainApi = {
   status: () => api.get<LlmStatus>('/api/v1/llm/status'),
+  monologue: () => api.get<{ turns: MonologueTurn[] }>('/api/v1/llm/monologue'),
   manifest: () => api.get<{ version: string; models: DeviceModel[] }>('/api/v1/llm/manifest'),
 };
 

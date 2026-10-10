@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Drawer, Label, ago } from './Drawer';
-import { brainApi, type DeviceModel, type EndpointStatus, type LlmStatus } from '../api/companion';
+import { brainApi, type DeviceModel, type EndpointStatus, type LlmStatus, type MonologueTurn } from '../api/companion';
 
 /**
  * Athena's "brain": which model tier is answering, and how each tier is doing.
@@ -76,11 +76,79 @@ function EndpointRow({ e, serving }: { e: EndpointStatus; serving: boolean }) {
   );
 }
 
+const VERDICT_LABEL: Record<string, string> = {
+  ok: 'checked, sent as written',
+  search: 'looked it up and rewrote',
+  revise: 'rewrote without the guess',
+  unavailable: 'could not check, sent as written',
+};
+
+/**
+ * "What I almost said": the drafts her inner monologue stopped to check.
+ * Replies the screen let straight through are only counted. In memory on the
+ * server, so the list starts empty after each deploy.
+ */
+function Monologue({ turns }: { turns: MonologueTurn[] }) {
+  const checked = turns.filter((t) => t.verdict);
+  const passed = turns.length - checked.length;
+  return (
+    <section>
+      <Label>what I almost said</Label>
+      {!turns.length ? (
+        <p className="text-sm opacity-60">
+          Nothing yet. Before I send a reply that states facts, I check it — and when it's a guess, I look it up or rewrite it. Those second looks show up here.
+        </p>
+      ) : (
+        <>
+          <p className="mb-2 text-xs opacity-60">
+            Of my last {turns.length} replies, I stopped to check {checked.length}
+            {passed ? `; ${passed} had nothing to check` : ''}.
+          </p>
+          <ul className="space-y-3">
+            {checked.map((t) => (
+              <li key={t.at} className="rounded border border-emerald-500/15 px-3 py-2 text-xs">
+                <p className="font-mono text-[10px] uppercase tracking-[0.15em] opacity-50">
+                  {VERDICT_LABEL[t.verdict!] || t.verdict} · {(t.ms / 1000).toFixed(1)}s · {ago(t.at)}
+                </p>
+                <p className="mt-1 opacity-60">You: {t.message}</p>
+                {t.changed ? (
+                  <>
+                    <p className="mt-1 text-amber-200/70 line-through decoration-amber-200/40">{t.draft}</p>
+                    <p className="mt-1 text-emerald-100">{t.final}</p>
+                  </>
+                ) : (
+                  <p className="mt-1 text-emerald-100">{t.draft}</p>
+                )}
+                {!!t.problems.length && (
+                  <ul className="mt-1 list-disc pl-4 opacity-70">
+                    {t.problems.map((p) => (
+                      <li key={p}>{p}</li>
+                    ))}
+                  </ul>
+                )}
+                {t.query && (
+                  <p className="mt-1 opacity-60">
+                    Searched “{t.query}”{t.sources.length ? ` · ${t.sources.join(', ')}` : ' · nothing useful'}
+                  </p>
+                )}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </section>
+  );
+}
+
 export function BrainPanel({ onClose }: { onClose: () => void }) {
   const status = useBrainStatus(15_000);
   const [manifest, setManifest] = useState<{ version: string; models: DeviceModel[] } | null>(null);
   useEffect(() => {
     brainApi.manifest().then(setManifest).catch(() => undefined);
+  }, []);
+  const [turns, setTurns] = useState<MonologueTurn[] | null>(null);
+  useEffect(() => {
+    brainApi.monologue().then((r) => setTurns(r.turns)).catch(() => setTurns(null));
   }, []);
 
   const recent = status?.recentCalls || [];
@@ -118,6 +186,8 @@ export function BrainPanel({ onClose }: { onClose: () => void }) {
               </p>
             )}
           </section>
+
+          {turns && <Monologue turns={turns} />}
 
           {status.automaticManagement && <section>
             <Label>automatic performance management</Label>
