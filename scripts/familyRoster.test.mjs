@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { familyHealthSummary } from '../src/components/familyHealthSummary.ts';
 import { buildFamilyRoster, birthdayIn, birthdayFromIso, whenWords, eventWhat } from '../src/components/familyRoster.ts';
 
 const now = new Date(2026, 9, 6, 12); // 2026-10-06 local
@@ -8,6 +9,64 @@ const fact = (key, value, age = 2) => ({ uuid: key, category: 'person', key, val
 const sickReport = (personName, extra = {}) => ({ uuid: `s-${personName}`, personName, symptom: 'fever', severity: 'mild', daysActive: 2, notes: null, ...extra });
 const event = (title, inDays) => ({ id: title, title, start: new Date(now.getTime() + inDays * 86_400_000).toISOString(), end: '', allDay: false, location: null, calendar: null, shared: false });
 const build = (facts, sick = [], events = [], extra = {}) => buildFamilyRoster({ facts, sick, events, now, ...extra });
+
+test('Family Health reflects the highest reported severity and resolves back to Good', () => {
+  const source = active => ({ status: 'ready', data: { active } });
+  assert.equal(familyHealthSummary(source([])).label, 'Good');
+  const mild = { severity: 'mild', status: 'active', updateDue: true };
+  const moderate = { severity: 'moderate', status: 'active' };
+  const severe = { severity: 'severe', status: 'active' };
+  assert.equal(familyHealthSummary(source([mild])).label, 'Watch');
+  assert.match(familyHealthSummary(source([mild])).note, /1 update due/);
+  assert.equal(familyHealthSummary(source([moderate, mild])).label, 'Warning');
+  assert.equal(familyHealthSummary(source([mild, severe, moderate])).label, 'Alert!');
+  assert.equal(familyHealthSummary(source([{ ...severe, status: 'resolved' }])).label, 'Good');
+});
+
+test('Family Health never shows Good when reports are unavailable', () => {
+  for (const source of [undefined, { status: 'error', data: null }, { status: 'ready', data: null }, { status: 'error', data: { active: [] } }]) {
+    assert.equal(familyHealthSummary(source).label, 'Unknown');
+  }
+});
+
+test('an explicit name replaces Spouse and matches the named calendar event', () => {
+  const rows = build([fact('spouse', 'works at the hospital'), fact('spouse display name', 'Ashlynn')], [], [event('Ashlynn appointment', 1)]);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].name, 'Ashlynn');
+  assert.equal(rows[0].relation, 'Spouse');
+  assert.equal(rows[0].signal.kind, 'calendar');
+});
+
+test('a linked contact supplies a name for a relationship-only memory', () => {
+  const rows = build([fact('spouse', 'works at the hospital')], [], [], { links: [{ factUuid: 'spouse', card: { name: 'Ashlynn' } }] });
+  assert.equal(rows[0].name, 'Ashlynn');
+});
+
+test('renaming a pet preserves its original description', () => {
+  const rows = build([{ ...fact("dog's name", 'Dexter (4-year-old husky mix)'), category: 'pet' }, { ...fact("dog's name display name", 'Dex'), category: 'pet' }]);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].name, 'Dex');
+  assert.match(rows[0].detail, /4-year-old husky mix/);
+});
+
+test('an edited relationship overrides a relationship key without replacing the person', () => {
+  const rows = build([fact('spouse', 'Ashlynn, therapy Tuesdays'), fact('spouse relationship', 'Partner')]);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].name, 'Ashlynn');
+  assert.equal(rows[0].relation, 'Partner');
+  assert.match(rows[0].detail, /therapy Tuesdays/);
+});
+
+test('custom relationship labels override inferred pet and named-person labels', () => {
+  const rows = build([
+    { ...fact('Dexter', 'A husky who loves walks'), category: 'pet' },
+    { ...fact('Dexter relationship', 'Best buddy'), category: 'pet' },
+    fact('Emma', 'Emma is my sister'), fact('Emma relationship', 'Family friend'),
+  ]);
+  assert.equal(rows.length, 2);
+  assert.equal(rows.find(r => r.name === 'Dexter').relation, 'Best buddy');
+  assert.equal(rows.find(r => r.name === 'Emma').relation, 'Family friend');
+});
 const child = (name, birthday, extra = {}) => ({ uuid: `c-${name}`, name, birthday, grade: null, ...extra });
 const link = (factUuid, birthday, photoUrl = null) => ({ factUuid, contactId: '111', name: 'x', status: 'ok', card: { contactId: '111', name: 'x', birthday, phone: null, email: null, photoUrl } });
 

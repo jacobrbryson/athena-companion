@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../api/client';
+import type { AthenaAction } from '../api/companion';
 import { localTimezone, wsUrl } from '../config';
 
 /**
@@ -25,14 +26,18 @@ export interface Message {
   is_human: boolean;
   text: string;
   created_at?: string | number;
+  reply_to_uuid?: string;
+  action_uuid?: string;
+  action?: AthenaAction;
+  thread_root_only?: boolean;
   /**
    * A song she sings after saying `text`. Live socket replies only; the
    * stored message holds both, so history shows the song as plain text.
    */
   lyrics?: string;
   /**
-   * The pages a web search grounded this reply on. Live socket replies only;
-   * they are not stored, so history and polled replies come without them.
+   * The pages a web search grounded this reply on, saved with the message
+   * and returned in live replies, history and polling.
    */
   sources?: { title: string; url: string }[];
 }
@@ -49,6 +54,7 @@ export interface CompanionContext {
 
 export interface SendOptions {
   companion?: Partial<CompanionContext>;
+  replyTo?: string;
 }
 
 export interface ChatOptions {
@@ -114,6 +120,7 @@ export interface ChatState {
   connected: boolean;
   ready: boolean;
   sendMessage: (text: string, opts?: SendOptions) => Promise<void>;
+  loadHistory: (thread?: string | null, earlier?: boolean) => Promise<void>;
   /**
    * Append a local Athena message (e.g. the arrival greeting). Not persisted.
    * Returns the generated uuid (or null for empty text) so callers can reconcile
@@ -178,12 +185,30 @@ export function useChat(profileUuid: string, options?: ChatOptions): ChatState {
    */
   const ingest = useCallback(
     (message: Message) => {
-      if (!message?.uuid || seenRef.current.has(message.uuid)) return;
+      if (!message?.uuid) return;
+      if (seenRef.current.has(message.uuid)) {
+        setMessages((prev) => {
+          const existing = prev.find((m) => m.uuid === message.uuid);
+          if (!existing || JSON.stringify(existing.action) === JSON.stringify(message.action)) return prev;
+          return prev.map((m) => m.uuid === message.uuid
+            ? { ...m, action: message.action, action_uuid: message.action_uuid } : m);
+        });
+        return;
+      }
       seenRef.current.add(message.uuid);
+
+      const place = (prev: Message[]) => {
+        if (message.created_at && (message.thread_root_only || message.reply_to_uuid)) {
+          const time = new Date(message.created_at).getTime();
+          const at = prev.findIndex((m) => m.created_at && new Date(m.created_at).getTime() > time);
+          if (at >= 0) return [...prev.slice(0, at), message, ...prev.slice(at)];
+        }
+        return [...prev, message];
+      };
 
       if (message.is_human) {
         gateChainRef.current = gateChainRef.current.then(() => {
-          if (!closedRef.current) setMessages((prev) => [...prev, message]);
+          if (!closedRef.current) setMessages(place);
         });
         return;
       }
@@ -198,7 +223,7 @@ export function useChat(profileUuid: string, options?: ChatOptions): ChatState {
           }
         }
         if (closedRef.current) return;
-        setMessages((prev) => [...prev, message]);
+        setMessages(place);
         setThinking(false);
       });
     },
@@ -218,6 +243,19 @@ export function useChat(profileUuid: string, options?: ChatOptions): ChatState {
       // Transient — the next poll or reconnect retries.
     }
   }, [ingest]);
+
+  // Background outcomes and reminder updates can come from jobs with no chat
+  // socket. Refresh existing cards as well as ingesting new messages.
+  useEffect(() => {
+    if (!ready) return;
+    const timer = window.setInterval(() => void syncMessages(), 20_000);
+    const changed = () => void syncMessages();
+    window.addEventListener('athena-action-updated', changed);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener('athena-action-updated', changed);
+    };
+  }, [ready, syncMessages]);
 
   // Breaks the connect <-> reconnect callback cycle.
   const connectRef = useRef<() => void>(() => {});
@@ -297,6 +335,10 @@ export function useChat(profileUuid: string, options?: ChatOptions): ChatState {
           }
           if (msg?.rpc === 'sessionStatus' && msg.session?.is_busy === true) {
             setThinking(true);
+          }
+          if (msg?.rpc === 'sessionStatus' && msg.session?.is_busy === false) {
+            setThinking(false);
+            void syncMessages();
           }
           // The line she says while she works. Arrives only while a reply is
           // pending (a hands-free turn may be the first sign of one).
@@ -488,6 +530,7 @@ export function useChat(profileUuid: string, options?: ChatOptions): ChatState {
       const body: Record<string, unknown> = {
         text: trimmed,
         sessionId: session,
+        ...(opts?.replyTo ? { replyTo: opts.replyTo } : {}),
         // Surface + timezone: lets Athena keep replies speakable when driving
         // and read "yesterday" in the person's local day during recall.
         // `filler`: ask for the "let me check…" line in the reply to this
@@ -523,6 +566,7 @@ export function useChat(profileUuid: string, options?: ChatOptions): ChatState {
               is_human: message.is_human,
               text: message.text,
               created_at: message.created_at,
+              reply_to_uuid: message.reply_to_uuid,
             };
             // Registered as seen so the polling fallback can't re-append it.
             seenRef.current.add(echoed.uuid);
@@ -536,6 +580,23 @@ export function useChat(profileUuid: string, options?: ChatOptions): ChatState {
     },
     [setThinking]
   );
+
+  const loadHistory = useCallback(async (thread?: string | null, earlier = false) => {
+    const session = sessionRef.current;
+    if (!session) return;
+    const candidates = messages.filter((m) => !m.thread_root_only && m.created_at
+      && (!thread || m.uuid === thread || m.reply_to_uuid === thread));
+    const oldest = candidates[0];
+    const query = thread ? `&thread=${encodeURIComponent(thread)}` : '';
+    const before = (!thread || earlier) && oldest ? `&before=${encodeURIComponent(oldest.uuid)}` : '';
+    const history = await api.get<Message[]>(`/api/v1/message?sessionId=${encodeURIComponent(session)}${query}${before}`);
+    history.forEach((m) => seenRef.current.add(m.uuid));
+    setMessages((prev) => {
+      const combined = new Map(prev.map((m) => [m.uuid, m]));
+      history.forEach((m) => combined.set(m.uuid, m));
+      return [...combined.values()].sort((a, b) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime());
+    });
+  }, [messages]);
 
   const injectAthenaMessage = useCallback((text: string): string | null => {
     if (!text?.trim()) return null;
@@ -562,6 +623,7 @@ export function useChat(profileUuid: string, options?: ChatOptions): ChatState {
     connected: wsConnected || (ready && transport === 'polling'),
     ready,
     sendMessage,
+    loadHistory,
     injectAthenaMessage,
   };
 }

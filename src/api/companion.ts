@@ -42,6 +42,8 @@ export interface Fact {
   key: string;
   value: string | null;
   source: string;
+  /** 'private' | 'family'; kept as it was when a fact is edited. */
+  visibility?: string;
   updated_at: string;
 }
 
@@ -58,6 +60,9 @@ export const memoryApi = {
     api.post<{ event: MemoryEvent }>('/api/v1/memory/events', { title, content }),
   deleteEvent: (uuid: string) => api.del(`/api/v1/memory/events/${uuid}`),
   deleteFact: (uuid: string) => api.del(`/api/v1/memory/${uuid}`),
+  /** Correct what a fact says. Same category and key update it in place, as the person's own word. */
+  saveFact: (fact: { category: string; key: string; value: string; visibility?: string }) =>
+    api.post<{ memory: Fact }>('/api/v1/memory', { ...fact, source: 'user' }),
   rememberPhoto: (body: {
     imageBase64: string;
     mimeType: string;

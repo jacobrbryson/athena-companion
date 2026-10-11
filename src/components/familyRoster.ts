@@ -152,6 +152,8 @@ interface Person {
   missing?: string;
 }
 
+/** "fever · day 2", and "· update due" once the check-in they asked for has come round. */
+const sickLabel = (h: FamilyHealthStatus) => `${h.symptom} · day ${h.daysActive}${h.updateDue ? ' · update due' : ''}`;
 const firstName = (name: string) => name.trim().split(/\s+/)[0].toLowerCase().replace(/[^a-z']/g, '');
 
 export function buildFamilyRoster({ facts, sick, events, now, children = [], links = [] }: {
@@ -194,10 +196,13 @@ export function buildFamilyRoster({ facts, sick, events, now, children = [], lin
     const keyedByName = /'s name$/i.test(fact.key) && !!fact.value;
     const key = fact.key.trim().toLowerCase();
     const lead = RELATIONS.has(key) ? leadName(fact.value) : null;
-    const name = keyedByName ? fact.value!.split(/\s[\u2014\u2013-]\s|\s\(|[,.;]/)[0].trim() : lead ?? capitalize(fact.key);
-    // What the value says beyond the name: "Dexter (4-year-old husky mix)" -> "4-year-old husky mix".
-    const rest = keyedByName ? fact.value!.slice(name.length).replace(/^[\s,.;:\u2014\u2013(-]+|\)\s*$/g, '') : '';
     const card = linkOf.get(fact.uuid)?.card || null;
+    const displayName = extra.find(d => d.what === 'display name' && d.value.trim())?.value.trim();
+    const valueName = keyedByName ? fact.value!.split(/\s[\u2014\u2013-]\s|\s\(|[,.;]/)[0].trim() : null;
+    const name = displayName ?? valueName ?? lead ?? (RELATIONS.has(key) ? card?.name : null) ?? capitalize(fact.key);
+    nameTokens({ ...fact, key: name, value: null }).forEach(t => { if (!tokens.includes(t)) tokens.push(t); });
+    // What the value says beyond the name: "Dexter (4-year-old husky mix)" -> "4-year-old husky mix".
+    const rest = keyedByName ? fact.value!.slice(valueName!.length).replace(/^[\s,.;:\u2014\u2013(-]+|\)\s*$/g, '') : '';
     // A child profile with the same first name is this person: its birthday is theirs.
     const kid = children.find(c => !taken.has(c.uuid) && [name, ...tokens].some(t => firstName(t) === firstName(c.name)));
     if (kid) taken.add(kid.uuid);
@@ -209,11 +214,12 @@ export function buildFamilyRoster({ facts, sick, events, now, children = [], lin
     return {
       id: fact.uuid, name, tokens, birthday,
       // How they are related: said by the key ("spouse", "aunt missy"), the category (a pet), or a value ("my daughter").
-      relation: fact.category === 'pet' ? 'Pet' : RELATIONS.has(key) ? capitalize(fact.key)
+      relation: extra.find(d => d.what === 'relationship' && d.value.trim())?.value.trim()
+        ?? (fact.category === 'pet' ? 'Pet' : RELATIONS.has(key) ? capitalize(fact.key)
         : relationIn(fact.value) ?? extra.map(d => relationIn(d.value) ?? bareRelation(d.value)).find(Boolean)
           // An answer to "how are they related?" in words of its own ("Dad's sister") is still the answer.
           ?? extra.filter(d => /relat/.test(d.what) && d.value.trim() && d.value.length <= 40).map(d => d.value.trim().replace(/^(my|our)\s+/i, '').replace(/^\w/, c => c.toUpperCase()))[0]
-          ?? keyRelation(key),
+          ?? keyRelation(key)),
       group: GROUPS.has(key),
       detail: [own, extraText].filter(Boolean).join('; '),
       quiet: Math.max(0, now.getTime() - Math.max(Date.parse(fact.updated_at), ...extra.map(d => Date.parse(d.updated)))),
@@ -269,7 +275,7 @@ export function buildFamilyRoster({ facts, sick, events, now, children = [], lin
 
     let signal: RosterSignal;
     if (mine) {
-      signal = { kind: 'sick', rank: 0, label: `${mine.symptom} · day ${mine.daysActive}`, action: 'Feeling better?', ask: '', healthUuid: mine.uuid };
+      signal = { kind: 'sick', rank: 0, label: sickLabel(mine), action: 'Feeling better?', ask: '', healthUuid: mine.uuid };
     } else if (birthday !== null && birthday <= BIRTHDAY_WINDOW_DAYS) {
       const when = birthday === 0 ? 'Birthday today' : birthday === 1 ? 'Birthday tomorrow' : `Birthday in ${birthday} days`;
       signal = { kind: 'birthday', rank: birthday <= 3 ? 1 : 4, label: when, action: 'Plan something', ask: `${name}'s birthday is ${birthday === 0 ? 'today' : `in ${birthday} days`}. Help me plan something for ${name}.` };
@@ -294,7 +300,7 @@ export function buildFamilyRoster({ facts, sick, events, now, children = [], lin
     if (claimed.has(h.uuid)) continue;
     rows.push({
       id: h.uuid, name: h.personName, initial: h.personName.slice(0, 1).toUpperCase() || '?', detail: h.notes || '',
-      signal: { kind: 'sick', rank: 0, label: `${h.symptom} · day ${h.daysActive}`, action: 'Feeling better?', ask: '', healthUuid: h.uuid },
+      signal: { kind: 'sick', rank: 0, label: sickLabel(h), action: 'Feeling better?', ask: '', healthUuid: h.uuid },
     });
   }
 

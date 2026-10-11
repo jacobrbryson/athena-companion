@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { isAndroidCompanion } from '../native/android';
-import { isEcho, mightBeHer, words } from './echo';
+import { words } from './echo';
+import { connectConversationAudio, supportsRecognitionTrack } from './conversationAudio';
+import { ConversationEcho } from './conversationEcho';
 import { EchoGate } from './echoGate';
 import { turnWaitMs } from './turnTaking';
 import type { CutOff, Speech } from './useSpeech';
@@ -47,9 +49,6 @@ const AUTO_OFF_MS = 120_000;
 const BARGE_IN_MS = 300;
 /** A song is harder to interrupt: an "aww" shouldn't end it. */
 const BARGE_IN_SONG_MS = 700;
-/** Her reply heard back after she stopped is still her (see echo.ts). */
-const AFTER_HER_MS = 2000;
-const ECHO_WINDOW_MS = 15_000;
 /** How far back her playback can still be arriving at the mic. */
 const ECHO_LAG_MS = 250;
 /** Above the learned noise floor. */
@@ -95,8 +94,10 @@ export function useConversation(
   onTurnRef.current = onTurn;
   const runRef = useRef<{ dispose: () => void } | null>(null);
   const startingRef = useRef(false);
+  const startGeneration = useRef(0);
 
   const stop = useCallback(() => {
+    startGeneration.current++;
     runRef.current?.dispose();
     runRef.current = null;
   }, []);
@@ -105,27 +106,54 @@ export function useConversation(
     const Ctor = getCtor();
     if (runRef.current || startingRef.current || !Ctor) return;
     startingRef.current = true;
+    const generation = ++startGeneration.current;
     setError(null);
+    if (!supportsRecognitionTrack(navigator.userAgent)) {
+      startingRef.current = false;
+      setError('Conversation mode with echo control needs desktop Chrome or Edge 135 or newer. You can still type or use the mic button.');
+      return;
+    }
     // Made inside the tap, or the browser keeps it suspended.
-    const audio = new AudioContext();
-    let stream: MediaStream;
+    let audio: AudioContext;
+    try { audio = new AudioContext(); } catch {
+      startingRef.current = false;
+      setError('Audio input is unavailable in this browser.');
+      return;
+    }
+    let stream: MediaStream | undefined;
     try {
       stream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+        audio: { echoCancellation: { exact: true }, noiseSuppression: true, autoGainControl: false },
       });
+      await audio.resume();
     } catch {
+      stream?.getTracks().forEach((track) => track.stop());
       void audio.close();
       startingRef.current = false;
-      setError('Microphone access was blocked.');
+      if (generation === startGeneration.current) {
+        setError('Could not start an echo-cancelled microphone. Check microphone permission and your audio device.');
+      }
       return;
     }
     startingRef.current = false;
 
-    const analyser = audio.createAnalyser();
-    analyser.fftSize = 1024;
-    audio.createMediaStreamSource(stream).connect(analyser);
+    if (generation !== startGeneration.current || document.visibilityState === 'hidden') {
+      stream.getTracks().forEach((track) => track.stop());
+      void audio.close();
+      return;
+    }
+
+    let input: ReturnType<typeof connectConversationAudio>;
+    try { input = connectConversationAudio(audio, stream); } catch {
+      stream.getTracks().forEach((track) => track.stop());
+      void audio.close();
+      setError('Could not connect the echo-controlled microphone.');
+      return;
+    }
+    const { analyser } = input;
     const samples = new Float32Array(analyser.fftSize);
     const gate = new EchoGate();
+    const echo = new ConversationEcho();
 
     let disposed = false;
     let frames = 0;
@@ -146,7 +174,6 @@ export function useConversation(
     let live = '';
     let commitTimer: number | undefined;
     let cutOff: CutOff | null = null;
-    let lastSaid = { text: '', at: 0 };
 
     const show = () => setInterim(`${finals} ${live}`.trim());
 
@@ -166,7 +193,12 @@ export function useConversation(
       // Words with no voice of yours behind them: her, or noise made into a word.
       if (!you) return;
       // Her own reply, come back through the speakers: not a turn.
-      if (Date.now() - lastSaid.at < ECHO_WINDOW_MS && isEcho(text, lastSaid.text)) return;
+      if (echo.rejects(text, Date.now(), onsetAt, !!speechRef.current.now())) return;
+      // End this recognition session before the answer starts. Late results
+      // from it must never borrow voice evidence from the next turn.
+      const old = recognition;
+      recognition = null;
+      try { old?.abort(); } catch { /* already ended */ }
       const cut = cutOff;
       cutOff = null;
       onTurnRef.current(text, cut);
@@ -186,7 +218,7 @@ export function useConversation(
       if (!her || !voiced) return;
       if (Date.now() - onsetAt < (her.singing ? BARGE_IN_SONG_MS : BARGE_IN_MS)) return;
       const heard = `${finals} ${live}`.trim();
-      if (!heard || mightBeHer(heard, her.text)) return;
+      if (!heard || echo.rejects(heard, Date.now(), onsetAt, true)) return;
       const cut = speechRef.current.interrupt();
       if (cut) cutOff = cut;
     };
@@ -205,10 +237,16 @@ export function useConversation(
         resultCount = event.results.length;
         let partial = '';
         const herNow = speechRef.current.now();
-        const herRecently = !!herNow || Date.now() - lastSaid.at < AFTER_HER_MS;
+        if (herNow) echo.observe(herNow.text, herNow.loudness(ECHO_LAG_MS), Date.now());
         for (let i = Math.max(event.resultIndex, consumed); i < event.results.length; i++) {
           const result = event.results[i];
           const text: string = result[0]?.transcript ?? '';
+          // Apply the same gate to interim words: they can be committed or
+          // interrupt her before the recognizer ever marks them final.
+          if (echo.rejects(text, Date.now(), onsetAt, !!herNow)) {
+            if (result.isFinal) consumed = i + 1;
+            continue;
+          }
           if (!result.isFinal) {
             partial += text;
             continue;
@@ -218,7 +256,6 @@ export function useConversation(
           // "okay" out of a dog's bark: short, and the recognizer itself unsure.
           if (confidence > 0 && confidence < MIN_SHORT_CONFIDENCE && words(text).length <= 2) continue;
           // Her own voice through the speakers, transcribed while she talks.
-          if (herRecently && mightBeHer(text, herNow?.text ?? lastSaid.text)) continue;
           finals = `${finals} ${text}`.trim();
         }
         live = partial.trim();
@@ -249,10 +286,13 @@ export function useConversation(
         if (voiced) listen();
       };
       try {
-        r.start();
         recognition = r;
+        r.start(input.track);
       } catch (err) {
+        recognition = null;
         console.warn('useConversation: recognizer did not start', err);
+        setError('Speech recognition could not use the echo-controlled microphone. Try current desktop Chrome or Edge.');
+        stop();
       }
     };
 
@@ -271,11 +311,12 @@ export function useConversation(
       const db = 10 * Math.log10(sum / samples.length + 1e-12);
       const now = Date.now();
       const her = speechRef.current.now();
-      if (her) lastSaid = { text: her.text, at: now };
-      const herDb = her ? her.loudness(ECHO_LAG_MS) : SILENT_DB;
+      if (her) echo.observe(her.text, her.loudness(ECHO_LAG_MS), now);
+      const herDb = Math.max(her ? her.loudness(ECHO_LAG_MS) : SILENT_DB, echo.level(now));
 
       // The first few frames only learn the room.
-      if (frames < CALIBRATION_FRAMES) {
+      if (frames < CALIBRATION_FRAMES && herDb <= SILENT_DB && !voiced) {
+        input.allowRecognition(false);
         floor = frames === 0 ? db : floor + (db - floor) / (frames + 1);
         frames++;
         return;
@@ -283,14 +324,15 @@ export function useConversation(
 
       const line = Math.max(floor + MARGIN_DB, MIN_VOICE_DB);
       const you = db > line && gate.isYou(db, herDb);
+      input.allowRecognition(herDb <= SILENT_DB || you);
       if (her && !you) gate.learn(db, herDb);
       if (you) {
         above++;
-        heardYou++;
         if (above >= ONSET_FRAMES) {
+          heardYou = Math.max(heardYou, above);
           if (!voiced) {
             voiced = true;
-            onsetAt = now - ONSET_FRAMES * FRAME_MS;
+            onsetAt = now - (ONSET_FRAMES - 1) * FRAME_MS;
             setHearing(true);
             window.clearTimeout(commitTimer);
             commitTimer = undefined;
@@ -301,7 +343,7 @@ export function useConversation(
       } else {
         above = 0;
         // Learn the room only when nobody, her included, is talking.
-        if (!voiced && !her) floor += (db - floor) * (db < floor ? 0.2 : 0.01);
+        if (!voiced && herDb <= SILENT_DB) floor += (db - floor) * (db < floor ? 0.2 : 0.01);
       }
 
       if (voiced && now - lastVoiceAt > HANGOVER_MS) {
@@ -342,6 +384,7 @@ export function useConversation(
           /* already stopped */
         }
         stream.getTracks().forEach((track) => track.stop());
+        input.dispose();
         void audio.close();
         setActive(false);
         setHearing(false);
@@ -352,7 +395,7 @@ export function useConversation(
   }, [stop]);
 
   const toggle = useCallback(() => {
-    if (runRef.current) stop();
+    if (runRef.current || startingRef.current) stop();
     else void start();
   }, [start, stop]);
 

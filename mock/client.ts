@@ -370,7 +370,7 @@ function dashboardSummary() {
     ] }),
     slack: unready('not_connected'),
     emailTriage: ready(mailSummary()),
-    familyHealth: ready({ active: [] }),
+    familyHealth: ready({ active: mockHealth() }),
   };
 }
 
@@ -897,6 +897,18 @@ function mockDreamSteps() {
   ];
 }
 
+// ------------------------------------------------------ health watch ---
+// Kept in localStorage like the server keeps rows: one active watch per name,
+// and an update moves the next check-in on.
+type MockWatch = { uuid: string; personName: string; symptom: string; severity: string; status: 'active' | 'resolved'; startedAt: string; resolvedAt: string | null; notes: string | null; checkInHours: number | null; lastUpdateAt: string };
+const storedHealth = (): MockWatch[] => JSON.parse(localStorage.getItem('mock_family_health') || '[]');
+function mockHealth() {
+  return storedHealth().filter(w => w.status === 'active').map(w => {
+    const next = w.checkInHours ? new Date(Date.parse(w.lastUpdateAt) + w.checkInHours * 3600_000).toISOString() : null;
+    return { ...w, daysActive: Math.max(1, Math.floor((Date.now() - Date.parse(w.startedAt)) / DAY) + 1), nextUpdateAt: next, updateDue: !!next && Date.parse(next) <= Date.now() };
+  });
+}
+
 async function route(method: string, path: string, body?: any): Promise<any> {
   await wait(150);
   const url = new URL(path, 'http://mock');
@@ -997,6 +1009,21 @@ async function route(method: string, path: string, body?: any): Promise<any> {
     if (method === 'DELETE') { list = list.filter((x) => x.uuid !== uuid); localStorage.setItem('mock_place_reminders', JSON.stringify(list)); }
     return { reminders: list };
   }
+  if (p === '/api/v1/dashboard/health/family' && method === 'POST') {
+    const list = storedHealth();
+    let w = list.find(x => x.status === 'active' && x.personName.toLowerCase() === String(body.personName).toLowerCase());
+    const hours = 'checkInHours' in body ? body.checkInHours : w?.checkInHours ?? null;
+    if (w) Object.assign(w, { symptom: body.symptom, severity: body.severity || 'mild', notes: body.notes || null, checkInHours: hours, lastUpdateAt: new Date().toISOString() });
+    else list.push(w = { uuid: `h${Date.now()}`, personName: body.personName, symptom: body.symptom, severity: body.severity || 'mild', status: 'active', startedAt: dayStamp(0), resolvedAt: null, notes: body.notes || null, checkInHours: hours, lastUpdateAt: new Date().toISOString() });
+    localStorage.setItem('mock_family_health', JSON.stringify(list));
+    return { status: mockHealth().find(x => x.uuid === w!.uuid) };
+  }
+  if (/^\/api\/v1\/dashboard\/health\/family\/[^/]+\/resolve$/.test(p) && method === 'PATCH') {
+    const uuid = decodeURIComponent(p.split('/')[6]);
+    const list = storedHealth().map(x => x.uuid === uuid ? { ...x, status: 'resolved' as const, resolvedAt: dayStamp(0) } : x);
+    localStorage.setItem('mock_family_health', JSON.stringify(list));
+    return { status: list.find(x => x.uuid === uuid) };
+  }
   if (p.startsWith('/api/v1/dashboard/family/people')) {
     // Children from the family profiles; links to Google Contacts kept in localStorage.
     const md = (offsetDays: number) => { const d = new Date(Date.now() + offsetDays * DAY); return `2016-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
@@ -1008,6 +1035,8 @@ async function route(method: string, path: string, body?: any): Promise<any> {
       stored = [...stored.filter((l) => l.factUuid !== factUuid), { factUuid, contactId: body.contactId, name: body.name }];
     }
     if (method === 'DELETE' && factUuid) stored = stored.filter((l) => l.factUuid !== factUuid);
+    // Without /contact on the end it is "forget this person", as on the server.
+    if (method === 'DELETE' && factUuid && !p.endsWith('/contact')) { const i = facts.findIndex((f) => f.uuid === factUuid); if (i >= 0) facts.splice(i, 1); }
     localStorage.setItem('mock_family_links', JSON.stringify(stored));
     const off = mockContactsOff();
     return {
@@ -1409,6 +1438,11 @@ Sam` };
     return { event: e };
   }
   if (p === '/api/v1/memory' && method === 'GET') return facts;
+  if (p === '/api/v1/memory' && method === 'POST') {
+    const f = facts.find((x) => x.category === body.category && x.key === body.key);
+    if (f) Object.assign(f, { value: body.value, source: 'user', updated_at: new Date().toISOString() });
+    return { success: true, memory: f };
+  }
   if (p === '/api/v1/memory/journal') return journal;
   if (p === '/api/v1/memory/photos') {
     await wait(1600);

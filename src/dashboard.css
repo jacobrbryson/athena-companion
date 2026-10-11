@@ -241,7 +241,6 @@ article.dashboard-card { display: flex; flex-direction: column; min-height: 302p
 .dashboard-form input, .dashboard-form select { background: #04222eaa; border: 1px solid #2c6a80; border-radius: 6px; color: #dcecf6; font-size: 12px; padding: 9px 12px; }
 .dashboard-form input::placeholder { color: #6f95a6; }
 .dashboard-form .dashboard-chat-cta { margin-top: 2px; justify-content: center; width: fit-content; }
-.family-health-list .dashboard-chat-cta { margin-top: 8px; padding: 6px 12px; gap: 10px; width: fit-content; }
 .dashboard-memory-list { display: grid; gap: 19px; margin-top: 19px; }.dashboard-memory-list li { display: flex; gap: 10px; align-items: flex-start; }.memory-avatar { display: grid; place-items: center; width: 30px; height: 30px; flex-shrink: 0; border: 1px solid #387585; border-radius: 50%; background: linear-gradient(140deg,#376373,#142c40); font-size: 12px; color: #d0f5ff; }.dashboard-memory-list strong { font-weight: 500; font-size: 12px; text-transform: capitalize; }.dashboard-memory-list p { color: #a3c1d2; font-size: 11px; line-height: 1.65; margin-top: 3px; overflow-wrap: anywhere; }.memory-status { display: block; color: #98afbe; font-size: 10px; margin-top: 10px; }
 /* ---- Notifications: the bell in the top bar and its waiting count ---- */
 .topbar-notifications { position: relative; display: grid; place-items: center; width: 34px; height: 30px; border: 1px solid #2c6a80; border-radius: 7px; color: #8fd6ea; }
@@ -313,6 +312,7 @@ svg.dashboard-icon-drawn .icon-fill { fill: currentColor; fill-opacity: .9; }
 .stat-ok { border-left-color: #e8c35c; } .stat-ok strong { color: #f3dc9c; }
 .stat-low { border-left-color: #ff8267; } .stat-low strong { color: #ffb1a0; }
 .stat-idle { border-left-color: #35596b; }
+.stat-alert { border-left-color: #ff4764; } .stat-alert strong { color: #ff7e93; }
 
 .section-panels { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 15px; align-items: start; }
 .section-panel { border: 1px solid #2b5a70; border-radius: 13px; background: linear-gradient(140deg,#061c2bed,#030e17f5); box-shadow: 0 8px 24px #0002,inset 0 1px 0 #d0f1ff08; padding: 6px 20px 20px; }
@@ -472,9 +472,49 @@ svg.dashboard-icon-drawn .icon-fill { fill: currentColor; fill-opacity: .9; }
 .community-link { border: none; background: none; padding: 2px 0; color: #7fdcf0; font-size: 11px; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
 .community-link:disabled { opacity: .45; }
 .community-danger { color: #f3a6a6; }
-.family-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; margin-left: auto; }
 .family-tidy { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; margin-top: 8px; }
 .family-tidy select { display: block; margin-top: 4px; max-width: 100%; background: #04222e; color: inherit; border: 1px solid #2c6a80; border-radius: 6px; padding: 4px 6px; }
+.family-edit, .family-edit label { width: 100%; }
+.family-tidy label { color: #9bb7c9; font-size: 11px; font-weight: 400; }
+.family-tidy small { color: #8fadbe; font-size: 10px; line-height: 1.5; }
+.family-edit textarea, .family-tidy-input { display: block; width: 100%; margin-top: 4px; background: #04222e; color: inherit; border: 1px solid #2c6a80; border-radius: 6px; padding: 6px 8px; font: inherit; font-size: 12px; line-height: 1.5; resize: vertical; }
+.family-tidy-buttons { display: flex; gap: 14px; }
+/* ---- People & pets: the ⋯ menu, the health-watch chip and its modal ---- */
+.options-menu { position: relative; margin-left: auto; flex-shrink: 0; }
+.options-menu-button { width: 30px; height: 26px; border: 1px solid #2c6a80; border-radius: 7px; background: transparent; color: #8fd6ea; font-size: 15px; line-height: 1; }
+.options-menu-button:hover, .options-menu-button[aria-expanded="true"] { border-color: #5ecde6; background: #042532aa; }
+.options-menu-list { position: absolute; top: calc(100% + 6px); right: 0; z-index: 20; min-width: 190px; display: grid; padding: 5px; border: 1px solid #2b5a70; border-radius: 10px; background: #051a28f7; box-shadow: 0 12px 30px #000a; }
+.options-menu-list button { padding: 8px 10px; border-radius: 6px; text-align: left; color: #c9e6f3; font-size: 12px; white-space: nowrap; }
+.options-menu-list button:hover:not(:disabled) { background: #0b3446; }
+.options-menu-list button:disabled { opacity: .45; }
+.options-menu-list .community-danger { color: #f3a6a6; }
+.dashboard-memory-list .family-watched .memory-avatar { border-color: #d46a5a; }
+.health-watch-chip { display: flex; align-items: baseline; gap: 7px; margin-top: 7px; padding: 5px 10px; border: 1px solid #7a3c36; border-radius: 8px; background: #2a0f0d80; color: #ffc9bf; font-size: 11px; line-height: 1.5; text-align: left; }
+.health-watch-chip:hover { border-color: #d46a5a; }
+.health-watch-chip strong { font-weight: 600; text-transform: none; font-size: 11px; }
+.health-watch-chip em { font-style: normal; color: #f3d58a; }
+.health-watch-dot { width: 7px; height: 7px; flex-shrink: 0; border-radius: 50%; background: #ff8a76; box-shadow: 0 0 8px #ff8a76aa; transform: translateY(-1px); }
+.health-watch-due { border-color: #c79a3a; }
+.health-watch-due .health-watch-dot { background: #f3d58a; box-shadow: 0 0 8px #f3d58aaa; animation: health-watch-pulse 1.6s ease-in-out infinite; }
+.health-watch-due-text { color: #f3d58a !important; }
+@keyframes health-watch-pulse { 50% { opacity: .35; } }
+.health-modal { position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center; padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom)); color: #eaf5ff; font-family: 'Segoe UI', system-ui, sans-serif; color-scheme: dark; }
+.health-modal-backdrop { position: absolute; inset: 0; background: #010a12cc; backdrop-filter: blur(3px); }
+.health-modal-card { position: relative; width: 100%; max-width: 420px; max-height: 100%; overflow-y: auto; padding: 6px 20px 20px; border: 1px solid #2b5a70; border-radius: 13px; background: linear-gradient(140deg,#061c2b,#030e17); box-shadow: 0 16px 50px #000c; }
+.health-modal-card > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 14px 0 12px; border-bottom: 1px solid #244453; }
+.health-modal-card > header small { color: #7fa8bc; font: 9px/1.6 ui-monospace,monospace; letter-spacing: .14em; }
+.health-modal-card > header h2 { margin-top: 2px; font-size: 17px; font-weight: 550; text-transform: capitalize; }
+.health-modal-close { width: 30px; height: 30px; border: 1px solid #2c6a80; border-radius: 50%; color: #c9e6f3; font-size: 13px; line-height: 1; }
+.health-modal-status { display: grid; gap: 3px; margin-top: 14px; padding: 10px 12px; border: 1px solid #7a3c36; border-radius: 8px; background: #2a0f0d80; }
+.health-modal-status strong { color: #ffc9bf; font-size: 12px; font-weight: 550; }
+.health-modal-status small { color: #c7a59f; font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
+.health-modal-form { max-width: none; }
+.health-modal-form label { display: grid; gap: 5px; color: #9bb7c9; font-size: 11px; }
+.health-modal-form .health-modal-custom { display: flex; align-items: center; gap: 8px; }
+.health-modal-custom input { width: 72px; }
+.health-modal-hint { color: #8fadbe; font-size: 11px; line-height: 1.5; }
+.health-modal-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; margin-top: 4px; }
+.health-modal-actions .dashboard-chat-cta { margin-top: 0; }
 .community-past { opacity: .7; }
 .community-form { max-width: 440px; }
 .community-form textarea { background: #04222eaa; border: 1px solid #2c6a80; border-radius: 6px; color: #dcecf6; font: inherit; font-size: 12px; padding: 9px 12px; resize: vertical; }

@@ -130,6 +130,7 @@ export function useActions(enabled: boolean): ActionsState {
     (uuid: string, next: AthenaAction) => {
       answeredRef.current.add(uuid);
       setPending((current) => current.map((a) => (a.uuid === uuid ? next : a)));
+      window.dispatchEvent(new Event('athena-action-updated'));
       if (next.status === 'done' || next.status === 'declined') {
         timersRef.current.push(window.setTimeout(() => dismiss(uuid), DONE_CARD_MS));
       }
@@ -156,6 +157,7 @@ export function useActions(enabled: boolean): ActionsState {
           )
         );
         answeredRef.current.add(uuid);
+        window.dispatchEvent(new Event('athena-action-updated'));
       } finally {
         setBusyUuid(null);
       }

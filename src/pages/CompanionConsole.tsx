@@ -115,13 +115,19 @@ export function CompanionConsole() {
   }, [chat.messages.length, checkLooks]);
 
   const [draft, setDraft] = useState('');
+  const [threadUuid, setThreadUuid] = useState<string | null>(null);
+  const [historyBusy, setHistoryBusy] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
   const [view, setView] = useState<'dashboard' | 'chat'>('dashboard');
   const [chatOpened, setChatOpened] = useState(false);
   useEffect(() => { if (view === 'chat') setChatOpened(true); }, [view]);
   const [briefing, setBriefing] = useState(false);
   const [activeSection, setActiveSection] = useState<DashboardSection>('Home');
   const [menuOpen, setMenuOpen] = useState(false);
-  const [attachOpen, setAttachOpen] = useState(false);
+  const [inputOpen, setInputOpen] = useState(false);
+  const inputMenuRef = useRef<HTMLDivElement | null>(null);
+  const inputToggleRef = useRef<HTMLButtonElement | null>(null);
+  const inputMenuId = useId();
   // Returning from a provider's consent screen. Read once, on the first
   // render, because it scrubs the query string as a side effect.
   const [integrationCallback, setIntegrationCallback] = useState<IntegrationCallback | null>(
@@ -165,7 +171,7 @@ export function CompanionConsole() {
           message: m,
         };
       }),
-      ...nudges.nudges.map((n) => ({
+      ...nudges.nudges.filter((n) => !chat.messages.some((m) => m.uuid === n.uuid)).map((n) => ({
         kind: 'nudge' as const,
         uuid: n.uuid,
         at: new Date(n.created_at).getTime(),
@@ -173,7 +179,7 @@ export function CompanionConsole() {
       })),
       // An approval card is part of the conversation: it sits right after the
       // reply that proposed it, and scrolls away as the talk moves on.
-      ...(arriving ? [] : actions.pending).map((a) => ({
+      ...(arriving ? [] : actions.pending.filter((a) => !chat.messages.some((m) => m.action_uuid === a.uuid))).map((a) => ({
         kind: 'action' as const,
         uuid: a.uuid,
         at: new Date(a.created_at).getTime(),
@@ -190,6 +196,11 @@ export function CompanionConsole() {
     for (const m of messageEntries) {
       while (n < timedEntries.length && timedEntries[n].at <= m.at) merged.push(timedEntries[n++]);
       merged.push(m);
+      if (m.kind === 'message' && m.message.action && !arriving) {
+        const local = actions.pending.find((a) => a.uuid === m.message.action_uuid);
+        merged.push({ kind: 'action', uuid: m.message.action.uuid, at: m.at,
+          action: local && local.status !== 'pending' ? local : m.message.action });
+      }
     }
     merged.push(...timedEntries.slice(n));
     return merged;
@@ -225,6 +236,7 @@ export function CompanionConsole() {
   }, [foldedCards, openUuid]);
 
   const logRef = useRef<HTMLDivElement | null>(null);
+  const historyAnchorRef = useRef<{ height: number; top: number } | null>(null);
   const spokenRef = useRef<string | null>(null);
   const ttsInitRef = useRef(false);
 
@@ -341,12 +353,13 @@ export function CompanionConsole() {
     (text: string) => {
       const trimmed = text.trim().slice(0, MAX_MESSAGE);
       if (!trimmed) return;
-      void chat.sendMessage(trimmed, { companion: { device: 'web' } }).catch(() => undefined);
+      void chat.sendMessage(trimmed, { companion: { device: 'web' }, replyTo: threadUuid || undefined })
+        .catch(() => setDraft(trimmed));
     },
-    [chat]
+    [chat, threadUuid]
   );
 
-  const voice = useVoiceInput(send);
+  const voice = useVoiceInput(send, () => tts.interrupt());
 
   // Conversation mode: the mic stays on and she listens for each next turn.
   const talk = useCallback(
@@ -354,11 +367,22 @@ export function CompanionConsole() {
       const trimmed = text.trim().slice(0, MAX_MESSAGE);
       if (!trimmed) return;
       const companion = { device: 'web' as const, conversation: true, ...(cutOff ? { cutOff } : {}) };
-      void chat.sendMessage(trimmed, { companion }).catch(() => undefined);
+      void chat.sendMessage(trimmed, { companion, replyTo: threadUuid || undefined }).catch(() => undefined);
     },
-    [chat]
+    [chat, threadUuid]
   );
   const conversation = useConversation(tts, talk);
+
+  useEffect(() => {
+    if (inputOpen) inputMenuRef.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus();
+  }, [inputOpen]);
+
+  useEffect(() => { if (view !== 'chat') setInputOpen(false); }, [view]);
+
+  function closeInputMenu() {
+    setInputOpen(false);
+    inputToggleRef.current?.focus();
+  }
 
   // Layout effect, and keyed on `view`: the chat page stays mounted behind
   // `hidden` while the dashboard is up, and a scrollTop written to a
@@ -369,6 +393,12 @@ export function CompanionConsole() {
   useLayoutEffect(() => {
     if (view !== 'chat') return;
     const el = logRef.current;
+    if (el && historyAnchorRef.current) {
+      const anchor = historyAnchorRef.current;
+      el.scrollTop = anchor.top + el.scrollHeight - anchor.height;
+      historyAnchorRef.current = null;
+      return;
+    }
     if (el) el.scrollTop = el.scrollHeight;
   // actions.pending too: a proposal card arrives after the reply that
   // explains it, and a card scrolled out of view is a card nobody answers.
@@ -598,12 +628,32 @@ export function CompanionConsole() {
       {/* Conversation beneath Athena */}
       <section className="flex shrink-0 flex-col border-t border-emerald-500/15 bg-black/95">
         <div ref={logRef} className="space-y-2 overflow-y-auto px-4 py-3" style={{ maxHeight: '34vh', minHeight: '18vh' }}>
+          {!threadUuid && chat.messages.length > 0 && <button type="button" disabled={historyBusy}
+            className="w-full py-1 text-xs opacity-60" onClick={() => {
+              setHistoryBusy(true); setHistoryError(null);
+              if (logRef.current) historyAnchorRef.current = { height: logRef.current.scrollHeight, top: logRef.current.scrollTop };
+              void chat.loadHistory().catch(() => { historyAnchorRef.current = null; setHistoryError('Earlier messages could not be loaded. Try again.'); }).finally(() => setHistoryBusy(false));
+            }}>{historyBusy ? 'Loading…' : 'Load earlier messages'}</button>}
+          {historyError && <p role="status" className="text-xs">{historyError}</p>}
           {chat.messages.length === 0 && chat.ready && !arriving && (
             <p className="py-6 text-center font-mono text-xs opacity-40">
               {voice.isSupported ? 'Tap the mic or type. Ask what she remembers.' : 'Type to talk to Athena. Ask what she remembers.'}
             </p>
           )}
-          {transcript.map((entry, idx) =>
+          {threadUuid && (
+            <div className="sticky top-0 z-10 flex items-center justify-between rounded-lg bg-black p-2 text-xs">
+              <span>Thread · {chat.messages.find((m) => m.uuid === threadUuid)?.action?.summary || chat.messages.find((m) => m.uuid === threadUuid)?.text.slice(0, 80)}</span>
+              <button type="button" onClick={() => setThreadUuid(null)} className="px-2 py-1">Back to chat</button>
+            </div>
+          )}
+          {threadUuid && <button type="button" className="w-full py-1 text-xs opacity-60"
+            onClick={() => void chat.loadHistory(threadUuid, true).catch(() => setHistoryError('Earlier replies could not be loaded. Try again.'))}>Load earlier replies</button>}
+          {transcript.filter((entry) => {
+            if (!threadUuid) return true;
+            if (entry.kind === 'message') return entry.uuid === threadUuid || entry.message.reply_to_uuid === threadUuid;
+            if (entry.kind === 'action') return chat.messages.some((m) => m.action_uuid === entry.uuid && (m.uuid === threadUuid || m.reply_to_uuid === threadUuid));
+            return false;
+          }).map((entry, idx) =>
             entry.kind === 'action' ? (
               <div key={entry.uuid} id={`action-${entry.uuid}`} className="flex justify-start">
                 <div className="w-full max-w-[85%]">
@@ -620,6 +670,7 @@ export function CompanionConsole() {
                       onConfirm={() => void actions.confirm(entry.uuid)}
                       onDecline={() => void actions.decline(entry.uuid)}
                       onDismiss={() => actions.dismiss(entry.uuid)}
+                      persistent={chat.messages.some((m) => m.action_uuid === entry.uuid)}
                     />
                   )}
                 </div>
@@ -627,16 +678,21 @@ export function CompanionConsole() {
             ) : entry.kind === 'message' ? (
               <div
                 key={entry.uuid}
-                className={`flex ${entry.message.is_human ? 'justify-end' : 'justify-start'}`}
+                className={`flex items-start gap-2 ${entry.message.is_human ? 'justify-end' : 'justify-start'}`}
               >
+                {!entry.message.is_human && <AthenaAvatar size={32} className="mt-1 shrink-0" />}
+                <div className="min-w-0 max-w-[85%]">
                 <p
-                  className={`max-w-[85%] whitespace-pre-line rounded-2xl px-4 py-2 text-sm leading-relaxed ${
+                  className={`whitespace-pre-line break-words rounded-2xl px-4 py-2 text-sm leading-relaxed ${
                     entry.message.is_human
                       ? 'bg-emerald-500/20 text-emerald-50'
                       : 'bg-white/5 text-emerald-100'
                   }`}
                 >
                   {entry.message.text}
+                  <span className="mt-2 block text-[10px] opacity-50">
+                    {entry.message.created_at ? new Date(entry.message.created_at).toLocaleString() : ''}
+                  </span>
                   {entry.message.lyrics && (
                     <span className="mt-2 block italic text-emerald-200/90">♪ {entry.message.lyrics}</span>
                   )}
@@ -656,13 +712,25 @@ export function CompanionConsole() {
                     </span>
                   )}
                 </p>
+                <button type="button" className="px-2 py-1 text-xs opacity-60 hover:opacity-100"
+                  onClick={() => {
+                    setThreadUuid(entry.message.reply_to_uuid || entry.uuid);
+                    setHistoryError(null);
+                    void chat.loadHistory(entry.message.reply_to_uuid || entry.uuid)
+                      .catch(() => setHistoryError('Thread history could not be loaded. Try again.'));
+                    window.setTimeout(() => document.getElementById(inputId)?.focus(), 0);
+                  }}>
+                  {entry.message.reply_to_uuid ? 'View thread' : `Reply in thread${chat.messages.filter((m) => m.reply_to_uuid === entry.uuid).length ? ` · ${chat.messages.filter((m) => m.reply_to_uuid === entry.uuid).length}` : ''}`}
+                </button>
+                </div>
               </div>
             ) : (
-              <div key={entry.uuid} className="flex justify-start">
+              <div key={entry.uuid} className="flex items-start justify-start gap-2">
+                <AthenaAvatar size={32} className="mt-1 shrink-0" />
                 {/* Marked as hers-unprompted. Without the marker the person
                     cannot tell what they asked for from what she decided to
                     raise, which is the difference they most want to see. */}
-                <div className="max-w-[85%] rounded-2xl border-l-2 border-emerald-400/50 bg-white/5 px-4 py-2">
+                <div className="min-w-0 max-w-[85%] break-words rounded-2xl border-l-2 border-emerald-400/50 bg-white/5 px-4 py-2">
                   <p className="font-mono text-[9px] uppercase tracking-[0.3em] opacity-40">
                     athena brought this up
                   </p>
@@ -725,38 +793,63 @@ export function CompanionConsole() {
         </div>
 
         <form onSubmit={onSubmit} className="flex items-center gap-2 border-t border-emerald-500/10 px-3 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-          {conversation.isSupported && (
-            <button
-              type="button"
-              onClick={() => {
-                voice.stop();
-                conversation.toggle();
-              }}
-              aria-pressed={conversation.active}
-              aria-label={conversation.active ? 'Stop conversation mode' : 'Conversation mode: keep the mic on and just talk'}
-              title={conversation.active ? 'Conversation on. Tap to stop listening' : 'Conversation mode: keep the mic on and just talk'}
-              className={`grid h-12 w-12 shrink-0 place-items-center rounded-full border text-lg transition active:scale-95 ${
-                conversation.active
-                  ? `border-emerald-300 bg-emerald-500/25 text-emerald-100 ${conversation.hearing ? 'ring-4 ring-emerald-400/40' : ''}`
-                  : 'border-emerald-500/40 text-emerald-200 hover:bg-emerald-500/10'
-              }`}
+          <div className="relative shrink-0">
+            <button ref={inputToggleRef} type="button"
+              onClick={() => setInputOpen((v) => !v)}
+              onKeyDown={(e) => { if (e.key === 'ArrowDown') { e.preventDefault(); setInputOpen(true); } }}
+              aria-haspopup="menu" aria-expanded={inputOpen} aria-controls={inputMenuId}
+              aria-label="Input options"
+              title="Choose how to share with Athena: conversation mode, click to talk, let her see through your camera, or show a photo."
+              className="grid h-12 w-12 place-items-center rounded-full border border-emerald-500/40 p-0 text-emerald-200 hover:bg-emerald-500/10 active:scale-95"
             >
-              {conversation.active ? '◉' : '∞'}
+              <svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                <circle cx="5" cy="12" r="1.5" />
+                <circle cx="12" cy="12" r="1.5" />
+                <circle cx="19" cy="12" r="1.5" />
+              </svg>
             </button>
-          )}
-          {voice.isSupported && !conversation.active && (
-            <button
-              type="button"
-              onClick={voice.toggle}
-              aria-pressed={voice.listening}
-              aria-label={voice.listening ? 'Stop listening' : 'Start voice input'}
-              className={`grid h-12 w-12 shrink-0 place-items-center rounded-full border text-lg transition active:scale-95 ${
-                voice.listening ? 'border-red-400 bg-red-500/20 text-red-200 animate-pulse' : 'border-emerald-500/40 text-emerald-200 hover:bg-emerald-500/10'
-              }`}
-            >
-              {voice.listening ? '■' : '🎤'}
-            </button>
-          )}
+            {inputOpen && <>
+              <button type="button" aria-hidden tabIndex={-1} className="fixed inset-0 z-40 cursor-default" onClick={closeInputMenu} />
+              <div ref={inputMenuRef} id={inputMenuId} role="menu" aria-label="Input options"
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeInputMenu(); }
+                  if (e.key === 'Tab') setInputOpen(false);
+                  if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) {
+                    e.preventDefault();
+                    const items = Array.from(e.currentTarget.querySelectorAll<HTMLButtonElement>('button:not(:disabled)'));
+                    const index = items.indexOf(document.activeElement as HTMLButtonElement);
+                    const next = e.key === 'Home' ? 0 : e.key === 'End' ? items.length - 1
+                      : (index + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
+                    items[next]?.focus();
+                  }
+                }}
+                className="absolute bottom-14 left-0 z-50 w-64 max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-xl border border-emerald-500/30 bg-[#06131c] shadow-2xl shadow-black"
+              >
+                <button role="menuitemcheckbox" aria-checked={conversation.active} type="button" disabled={!conversation.isSupported}
+                  onClick={() => { closeInputMenu(); voice.stop(); conversation.toggle(); }}
+                  className="w-full px-4 py-3 text-left text-sm hover:bg-emerald-500/10 focus-visible:bg-emerald-500/10 disabled:opacity-40">
+                  <span className="flex justify-between"><span className="flex items-center gap-2"><span aria-hidden className="inline-grid w-5 shrink-0 place-items-center text-lg leading-none">∞</span>Conversation mode</span><span>{conversation.active ? 'On' : 'Off'}</span></span>
+                  <span className="mt-1 block text-xs text-emerald-100/50">{conversation.isSupported ? 'Keep the mic on and talk naturally.' : 'Voice input is unavailable in this browser.'}</span>
+                </button>
+                <button role="menuitemcheckbox" aria-checked={voice.listening} type="button" disabled={!voice.isSupported}
+                  onClick={() => { closeInputMenu(); conversation.stop(); voice.toggle(); }}
+                  className="w-full border-t border-emerald-500/15 px-4 py-3 text-left text-sm hover:bg-emerald-500/10 focus-visible:bg-emerald-500/10 disabled:opacity-40">
+                  <span className="flex justify-between"><span className="flex items-center gap-2"><span aria-hidden className="inline-grid w-5 shrink-0 place-items-center">🎤</span>Click to talk</span><span>{voice.listening ? 'Listening' : ''}</span></span>
+                  <span className="mt-1 block text-xs text-emerald-100/50">{voice.isSupported ? 'Speak one message, then the mic closes.' : 'Voice input is unavailable in this browser.'}</span>
+                </button>
+                <button role="menuitem" type="button" onClick={() => { closeInputMenu(); openPanel('camera'); }}
+                  className="w-full border-t border-emerald-500/15 px-4 py-3 text-left text-sm hover:bg-emerald-500/10 focus-visible:bg-emerald-500/10">
+                  <span className="flex justify-between"><span className="flex items-center gap-2"><span aria-hidden className="inline-grid w-5 shrink-0 place-items-center">👁️</span>Let her see</span><span>{sight.enabled ? 'On' : ''}</span></span>
+                  <span className="mt-1 block text-xs text-emerald-100/50">Manage camera access and occasional looks.</span>
+                </button>
+                <button role="menuitem" type="button" onClick={() => { closeInputMenu(); openPanel('photo'); }}
+                  className="w-full border-t border-emerald-500/15 px-4 py-3 text-left text-sm hover:bg-emerald-500/10 focus-visible:bg-emerald-500/10">
+                  <span className="flex items-center gap-2"><span aria-hidden className="inline-grid w-5 shrink-0 place-items-center">🖼️</span>Show a photo</span>
+                  <span className="mt-1 block text-xs text-emerald-100/50">Choose or take a photo for Athena to look at.</span>
+                </button>
+              </div>
+            </>}
+          </div>
           <label htmlFor={inputId} className="sr-only">
             Message Athena
           </label>
@@ -765,7 +858,7 @@ export function CompanionConsole() {
               id={inputId}
               value={draft}
               onChange={(e) => setDraft(e.target.value.slice(0, MAX_MESSAGE))}
-              placeholder={conversation.active ? 'conversation on: just talk…' : voice.listening ? 'listening…' : 'Tell Athena…'}
+              placeholder={threadUuid ? 'Reply in this thread…' : conversation.active ? 'conversation on: just talk…' : voice.listening ? 'listening…' : 'Tell Athena…'}
               autoComplete="off"
               className={`h-12 w-full rounded-full bg-white/5 pl-4 text-base outline-none placeholder:opacity-40 focus:bg-white/10 ${
                 foldedCards.length ? 'pr-16' : 'pr-4'
@@ -786,59 +879,24 @@ export function CompanionConsole() {
               </button>
             )}
           </div>
-          {/* One "show her something" control. A photo she looks at once and a
-              camera she keeps looking through are the same intent from where
-              the person is standing, and two separate buttons made the camera
-              impossible to find. */}
-          <div className="relative shrink-0">
-            <button
-              type="button"
-              onClick={() => setAttachOpen((v) => !v)}
-              aria-haspopup="menu"
-              aria-expanded={attachOpen}
-              aria-label="Show Athena something"
-              className="grid h-12 w-12 place-items-center rounded-full border border-emerald-500/40 text-lg text-emerald-200 transition hover:bg-emerald-500/10 active:scale-95"
-            >
-              {sight.enabled ? '👁️' : '📷'}
-            </button>
-            {attachOpen && (
-              <>
-                <button
-                  type="button"
-                  aria-hidden
-                  tabIndex={-1}
-                  className="fixed inset-0 z-40 cursor-default"
-                  onClick={() => setAttachOpen(false)}
-                />
-                <div
-                  role="menu"
-                  className="absolute bottom-14 right-0 z-50 w-56 overflow-hidden rounded border border-emerald-500/30 bg-black/95 shadow-2xl shadow-black"
-                >
-                  <button
-                    role="menuitem"
-                    type="button"
-                    onClick={() => { setAttachOpen(false); openPanel('photo'); }}
-                    className="flex w-full items-center gap-3 px-3 py-3 text-left text-sm hover:bg-emerald-500/10"
-                  >
-                    <span aria-hidden>🖼️</span> Show a photo
-                  </button>
-                  <button
-                    role="menuitem"
-                    type="button"
-                    onClick={() => { setAttachOpen(false); openPanel('camera'); }}
-                    className="flex w-full items-center gap-3 border-t border-emerald-500/15 px-3 py-3 text-left text-sm hover:bg-emerald-500/10"
-                  >
-                    <span aria-hidden>👁️</span>
-                    {sight.enabled ? 'Camera — she can see' : 'Let her see'}
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
           <button type="submit" disabled={!draft.trim()} className="h-12 shrink-0 rounded-full bg-emerald-500/80 px-5 font-semibold text-black active:scale-95 disabled:opacity-30">
             Send
           </button>
         </form>
+        {(conversation.active || voice.listening || sight.enabled || sight.cameraLive || sight.athenaLooking) && (
+          <div role="status" aria-live="polite" className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 pb-2 text-[11px] text-emerald-200/70">
+            {conversation.active && <button type="button" onClick={conversation.stop} title="Stop conversation mode" className="flex items-center gap-1.5 hover:text-emerald-100">
+              <span aria-hidden className={conversation.hearing ? 'h-1.5 w-1.5 rounded-full bg-emerald-300 ring-2 ring-emerald-300/30' : 'h-1.5 w-1.5 rounded-full bg-emerald-300'} />
+              Conversation on <span aria-hidden>×</span>
+            </button>}
+            {voice.listening && <button type="button" onClick={voice.stop} title="Stop voice input" className="flex items-center gap-1.5 hover:text-emerald-100">
+              <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-emerald-300" /> Listening <span aria-hidden>×</span>
+            </button>}
+            {(sight.enabled || sight.cameraLive || sight.athenaLooking) && <button type="button" onClick={() => openPanel('camera')} title="Open camera controls" className="flex items-center gap-1.5 hover:text-emerald-100">
+              <span aria-hidden>👁</span> {sight.athenaLooking ? 'Athena is taking a look' : sight.enabled ? 'Let her see on' : 'Camera open'}
+            </button>}
+          </div>
+        )}
         {voice.error && <p className="px-4 pb-2 text-center text-xs text-red-300">{voice.error}</p>}
         {conversation.error && <p className="px-4 pb-2 text-center text-xs text-red-300">{conversation.error}</p>}
       </section>

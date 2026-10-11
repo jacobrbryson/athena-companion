@@ -50,6 +50,8 @@ export interface FamilyPeople { children: FamilyChild[]; links: FamilyLink[]; co
 export interface FamilyHealthStatus {
   uuid: string; personName: string; symptom: string; severity: HealthSeverity;
   status: 'active' | 'resolved'; startedAt: string; resolvedAt: string | null; notes: string | null; daysActive: number;
+  /** How often Athena should ask for an update (a fever hourly, pain medicine every 8); null for no check-ins. */
+  checkInHours: number | null; lastUpdateAt: string | null; nextUpdateAt: string | null; updateDue: boolean;
 }
 /** `pending`: new mail the sync has seen but Athena has not sorted yet. */
 export type EmailCategory = 'receipt' | 'travel' | 'school' | 'needs_reply' | 'promo' | 'notification' | 'fyi' | 'other' | 'pending';
@@ -492,7 +494,7 @@ export const dashboardApi = {
   /** Folds one remembered person into another: details kept on the target, the duplicate forgotten. */
   mergeFamilyPeople: (fromUuid: string, intoUuid: string) =>
     api.post<FamilyPeople>(`/api/v1/dashboard/family/people/${encodeURIComponent(fromUuid)}/merge`, { intoUuid }),
-  reportFamilyHealth: (payload: { personName: string; symptom: string; severity?: HealthSeverity; notes?: string }) =>
+  reportFamilyHealth: (payload: { personName: string; symptom: string; severity?: HealthSeverity; notes?: string; checkInHours?: number | null }) =>
     api.post<{ status: FamilyHealthStatus }>('/api/v1/dashboard/health/family', payload),
   resolveFamilyHealth: (uuid: string) =>
     api.patch<{ status: FamilyHealthStatus }>(`/api/v1/dashboard/health/family/${encodeURIComponent(uuid)}/resolve`, {}),

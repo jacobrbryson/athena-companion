@@ -29,12 +29,14 @@ export function ActionProposal({
   onConfirm,
   onDecline,
   onDismiss,
+  persistent = false,
 }: {
   action: AthenaAction;
   busy: boolean;
   onConfirm: () => void;
   onDecline: () => void;
   onDismiss: () => void;
+  persistent?: boolean;
 }) {
   const [remaining, setRemaining] = useState(() => secondsLeft(action.expires_at));
 
@@ -58,9 +60,9 @@ export function ActionProposal({
           <span className="opacity-50">
             done{action.approval === 'standing' ? ' · standing approval' : ''}
           </span>
-          <button onClick={onDismiss} className={GHOST}>
+          {!persistent && <button onClick={onDismiss} className={GHOST}>
             dismiss
-          </button>
+          </button>}
         </Footer>
       </Shell>
     );
@@ -77,9 +79,9 @@ export function ActionProposal({
         </p>
         <Footer>
           <span className="opacity-50">nothing was changed</span>
-          <button onClick={onDismiss} className={GHOST}>
+          {!persistent && <button onClick={onDismiss} className={GHOST}>
             dismiss
-          </button>
+          </button>}
         </Footer>
       </Shell>
     );
@@ -93,15 +95,19 @@ export function ActionProposal({
         </p>
         <Footer>
           <span />
-          <button onClick={onDismiss} className={GHOST}>
+          {!persistent && <button onClick={onDismiss} className={GHOST}>
             dismiss
-          </button>
+          </button>}
         </Footer>
       </Shell>
     );
   }
 
   // ------------------------------------------------------------ pending ---
+
+  if (action.status === 'executing') {
+    return <Shell tone="pending"><p className="text-sm">{action.summary}</p><Footer>Working…</Footer></Shell>;
+  }
 
   const expired = remaining <= 0;
 

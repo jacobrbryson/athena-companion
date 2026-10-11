@@ -1,6 +1,6 @@
-import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import type { CalendarEvent, Source, JiraIssue, RecoveryDay, DashboardSummary, GcpBilling, TimeSaved, SystemHealthStatus, TriageEmail, FamilyHealthStatus, HealthSeverity, NearbyIncident, WeatherAlert } from '../api/dashboard';
+import type { CalendarEvent, Source, JiraIssue, RecoveryDay, DashboardSummary, GcpBilling, TimeSaved, SystemHealthStatus, TriageEmail, NearbyIncident, WeatherAlert } from '../api/dashboard';
 import { dashboardApi } from '../api/dashboard';
 import { integrationsApi, type Fact } from '../api/companion';
 import { androidCall, isAndroidCompanion } from '../native/android';
@@ -12,6 +12,7 @@ import { EmergencyBanner } from './EmergencyBanner';
 import { RightNowCard } from './RightNowCard';
 import { buildFamilyRoster, type RosterRow } from './familyRoster';
 import { FamilyPeopleList } from './FamilyPeople';
+import { familyHealthSummary } from './familyHealthSummary';
 import { DoorToDoor } from './DoorToDoor';
 import { communityEvents } from './communityCalendar.ts';
 import { WorkBanner } from './WorkBanner';
@@ -162,7 +163,7 @@ function Issues({ issues }: { issues: JiraIssue[] }) {
 // Home, where the job is breadth rather than depth.
 
 /** One number worth reading at a glance, with the note that gives it meaning. */
-export function Stat({ label, value, note, tone }: { label: string; value: ReactNode; note?: ReactNode; tone?: 'good' | 'ok' | 'low' | 'idle' }) {
+export function Stat({ label, value, note, tone }: { label: string; value: ReactNode; note?: ReactNode; tone?: 'good' | 'ok' | 'low' | 'alert' | 'idle' }) {
   return <div className={`stat-tile${tone ? ` stat-${tone}` : ''}`}><span>{label}</span><strong>{value}</strong>{note && <small>{note}</small>}</div>;
 }
 export function Panel({ title, note, children, wide, id }: { title: string; note?: ReactNode; children: ReactNode; wide?: boolean; id?: string }) {
@@ -656,11 +657,6 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
   const [mailError, setMailError] = useState('');
   const [mailScanning, setMailScanning] = useState(false);
   const [mailScanNote, setMailScanNote] = useState('');
-  const [healthName, setHealthName] = useState('');
-  const [healthSymptom, setHealthSymptom] = useState('');
-  const [healthSeverity, setHealthSeverity] = useState<HealthSeverity>('mild');
-  const [healthNotes, setHealthNotes] = useState('');
-  const [healthSaving, setHealthSaving] = useState(false);
   const [healthError, setHealthError] = useState('');
   const [healthResolving, setHealthResolving] = useState<string | null>(null);
   const [reconnecting, setReconnecting] = useState<string | null>(null);
@@ -729,21 +725,6 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
       setMailError((e as Error).message);
     } finally {
       setMailScanning(false);
-    }
-  };
-  const submitHealthReport = async (e: FormEvent) => {
-    e.preventDefault();
-    if (!healthName.trim() || !healthSymptom.trim()) return;
-    setHealthSaving(true);
-    setHealthError('');
-    try {
-      await dashboardApi.reportFamilyHealth({ personName: healthName.trim(), symptom: healthSymptom.trim(), severity: healthSeverity, notes: healthNotes.trim() || undefined });
-      setHealthName(''); setHealthSymptom(''); setHealthSeverity('mild'); setHealthNotes('');
-      void data.refresh();
-    } catch (e) {
-      setHealthError((e as Error).message || 'Could not save that.');
-    } finally {
-      setHealthSaving(false);
     }
   };
   const resolveHealthStatus = async (uuid: string) => {
@@ -909,7 +890,7 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
     return <li key={r.id} className={`roster-row roster-${r.signal.kind}`}>
       <ContactAvatar name={r.name} photoUrl={r.photoUrl} />
       <div><strong>{r.name}{r.relation && <em>{r.relation}</em>}</strong><small>{r.signal.label}</small></div>
-      <button type="button" className="roster-action" disabled={!!resolving} onClick={press}>{resolving ? 'Updating…' : r.signal.action}</button>
+      {r.signal.kind !== 'calendar' && <button type="button" className="roster-action" disabled={!!resolving} onClick={press}>{resolving ? 'Updating…' : r.signal.action}</button>}
     </li>;
   }
   /** One row per person, most pressing first; the card never goes quiet — thin or stale knowledge is itself the prompt. */
@@ -919,41 +900,13 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
     if (!roster.length) return <EmptyCta text="Athena doesn’t know your people yet." action="Tell her about your family" onClick={() => onAsk('Let me tell you about my family. Ask me about each person — who they are, birthdays, what is going on in their lives.')} />;
     return <>
       <ul className="dashboard-data-list roster-list">{roster.slice(0, FAMILY_CARD_ROWS).map(rosterRow)}</ul>
+      {healthError && <p className="dashboard-notice" role="status">{healthError}</p>}
       {roster.length > FAMILY_CARD_ROWS && <p className="source-note">+{roster.length - FAMILY_CARD_ROWS} more on the Family page</p>}
       <button type="button" className="source-fix" onClick={() => onAsk('I want to add someone to my family. Ask me who they are and what you should know.')}>Add someone <span>↗</span></button>
     </>;
   }
   function communityEventList(list: ReturnType<typeof communityEvents>) {
     return <ul className="dashboard-data-list calendar-events">{list.map((c, i) => <li key={`${c.event.id}-${i}`}><span className="event-dot" /><div><strong>{c.what}</strong><small>{c.when}{c.who ? ` · ${c.who}` : ''}</small></div></li>)}</ul>;
-  }
-  function healthStatusLine(h: FamilyHealthStatus) {
-    return <li key={h.uuid}>
-      <strong>{h.personName} · {h.symptom}</strong>
-      <small>{h.severity} · day {h.daysActive}{h.notes ? ` · ${h.notes}` : ''}</small>
-    </li>;
-  }
-  function familyHealthPanel() {
-    return <>
-      {sickFamily.length > 0 && <ul className="dashboard-data-list family-health-list">{sickFamily.map(h => <li key={h.uuid}>
-        <strong>{h.personName} · {h.symptom}</strong>
-        <small>{h.severity} · day {h.daysActive}{h.notes ? ` · ${h.notes}` : ''}</small>
-        <button className="dashboard-chat-cta" disabled={healthResolving === h.uuid} onClick={() => void resolveHealthStatus(h.uuid)}>{healthResolving === h.uuid ? 'Updating…' : 'Feeling better?'}</button>
-      </li>)}</ul>}
-      {!sickFamily.length && <p className="dashboard-empty">Nobody's reported under the weather right now.</p>}
-      <form className="dashboard-form" onSubmit={submitHealthReport}>
-        <p className="source-note">Log a symptom — Athena will know, and can nudge the household about precautions.</p>
-        <input placeholder="Who (e.g. Thomas)" value={healthName} onChange={e => setHealthName(e.target.value)} maxLength={120} required />
-        <input placeholder="What you noticed (e.g. a slight cough)" value={healthSymptom} onChange={e => setHealthSymptom(e.target.value)} maxLength={200} required />
-        <select value={healthSeverity} onChange={e => setHealthSeverity(e.target.value as HealthSeverity)}>
-          <option value="mild">Mild</option>
-          <option value="moderate">Moderate</option>
-          <option value="severe">Severe</option>
-        </select>
-        <input placeholder="Notes (optional)" value={healthNotes} onChange={e => setHealthNotes(e.target.value)} maxLength={500} />
-        {healthError && <p className="dashboard-notice" role="status">{healthError}</p>}
-        <button className="dashboard-chat-cta" type="submit" disabled={healthSaving || !healthName.trim() || !healthSymptom.trim()}>{healthSaving ? 'Saving…' : 'Log it'} <span>↗</span></button>
-      </form>
-    </>;
   }
   function newsBody(limit: number) {
     const failing = newsSources.filter(s => s.lastError);
@@ -1142,6 +1095,7 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
   }
 
   function FamilyPage() {
+    const health = familyHealthSummary(summary?.familyHealth);
     return <SectionPage ctx={ctx}
       eyebrow="THE PEOPLE IN YOUR CORNER" title="Family"
       blurb="What Athena remembers about the people close to you, and how today’s chores are going."
@@ -1150,12 +1104,9 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
         <Stat label="People remembered" value={family.length} note="from your memories" />
         <Stat label="Chores today" value={chores.length ? `${choresDone}/${chores.length}` : '—'} note={chores.length ? `${chores.length - choresDone} still open` : 'Nothing for today'} tone={chores.length && choresDone === chores.length ? 'good' : undefined} />
         <Stat label="Household" value={<span className="stat-small">{summary?.familyChores.data?.name || '—'}</span>} note="Family Chores account" />
-        <Stat label="Under the weather" value={sickFamily.length || '—'} note={sickFamily.length ? 'reported to Athena' : 'Nobody right now'} tone={sickFamily.length ? 'ok' : 'idle'} />
+        <Stat label="Family Health" value={!summary && data.summary.loading ? 'Loading…' : health.label} note={!summary && data.summary.loading ? 'Reading health reports' : health.note} tone={health.tone} />
       </>}
     >
-      <Panel title="Family health watch" note="Athena stays aware of this in chat" wide>
-        {familyHealthPanel()}
-      </Panel>
       <Panel title="Chores today" note={summary?.familyChores.data?.name} wide>
         {!ready(summary?.familyChores) ? unavailable('familyChores', 'Family Chores')
           : !chores.length ? <p className="dashboard-empty">No chores returned for today.</p>
@@ -1167,7 +1118,7 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
       <Panel title="People &amp; pets" note="from your memories" wide>
         {data.facts.error ? <EmptyCta text="Memories couldn’t load." action="Retry" onClick={retryData} />
           : data.facts.loading ? <p className="dashboard-empty">Loading memories…</p>
-            : family.length ? <><FamilyPeopleList facts={family} children={familyPeople?.children || []} links={familyPeople?.links || []} onChange={next => data.setFamilyPeople({ data: next, loading: false, error: null })} onConnect={() => onPanel('integrations')} onFactsChanged={gone => { data.dropFact(gone); retryData(); }} /><button className="dashboard-chat-cta" onClick={() => onPanel('memory')}>Explore memories <span>↗</span></button></>
+            : family.length ? <><FamilyPeopleList facts={family} children={familyPeople?.children || []} links={familyPeople?.links || []} names={new Map(roster.map(r => [r.id, r.name]))} relations={new Map(roster.map(r => [r.id, r.relation]))} watches={sickFamily} watchOf={new Map(roster.flatMap(r => { const w = sickFamily.find(h => h.uuid === r.signal.healthUuid); return w ? [[r.id, w] as const] : []; }))} onHealthChanged={retryData} onFactEdited={retryData} neighbors={community?.neighbors} onNeighbors={next => data.patchCommunity({ neighbors: next })} onChange={next => data.setFamilyPeople({ data: next, loading: false, error: null })} onConnect={() => onPanel('integrations')} onFactsChanged={gone => { data.dropFact(gone); retryData(); }} /><button className="dashboard-chat-cta" onClick={() => onPanel('memory')}>Explore memories <span>↗</span></button></>
               : <><p className="dashboard-empty">No family memories saved yet. Tell Athena about them and she will keep them.</p><button className="dashboard-chat-cta" onClick={() => onAsk('Let me tell you about my family.')}>Tell her <span>↗</span></button></>}
       </Panel>
     </SectionPage>;

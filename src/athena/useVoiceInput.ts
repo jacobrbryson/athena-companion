@@ -15,7 +15,8 @@ export interface SpeechRecognitionLike {
   interimResults: boolean;
   continuous: boolean;
   maxAlternatives: number;
-  start: () => void;
+  start: (track?: MediaStreamTrack) => void;
+  abort: () => void;
   stop: () => void;
   onresult: ((event: any) => void) | null;
   onerror: ((event: any) => void) | null;
@@ -37,7 +38,7 @@ export interface VoiceInput {
   stop: () => void;
 }
 
-export function useVoiceInput(onResult: (text: string) => void): VoiceInput {
+export function useVoiceInput(onResult: (text: string) => void, onStart?: () => void): VoiceInput {
   const [isSupported] = useState(() => isAndroidCompanion() || getCtor() !== null);
   const nativeTurn = useRef(0);
   const [listening, setListening] = useState(false);
@@ -47,11 +48,15 @@ export function useVoiceInput(onResult: (text: string) => void): VoiceInput {
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const onResultRef = useRef(onResult);
   onResultRef.current = onResult;
+  const onStartRef = useRef(onStart);
+  onStartRef.current = onStart;
 
   const stop = useCallback(() => {
     nativeTurn.current += 1;
+    const recognition = recognitionRef.current;
+    recognitionRef.current = null;
     try {
-      recognitionRef.current?.stop();
+      recognition?.abort();
     } catch {
       /* already stopped */
     }
@@ -59,6 +64,7 @@ export function useVoiceInput(onResult: (text: string) => void): VoiceInput {
   }, []);
 
   const start = useCallback(() => {
+    onStartRef.current?.();
     if (isAndroidCompanion()) {
       const turn = ++nativeTurn.current;
       setError(null); setInterim(''); setListening(true);
@@ -84,6 +90,7 @@ export function useVoiceInput(onResult: (text: string) => void): VoiceInput {
     recognition.maxAlternatives = 1;
 
     recognition.onresult = (event: any) => {
+      if (recognitionRef.current !== recognition) return;
       let interimText = '';
       let finalText = '';
       for (let i = event.resultIndex; i < event.results.length; i++) {
@@ -93,12 +100,17 @@ export function useVoiceInput(onResult: (text: string) => void): VoiceInput {
       }
       if (interimText) setInterim(interimText);
       if (finalText) {
+        // One tap, one turn. Close before her answer can be heard back.
+        recognitionRef.current = null;
+        try { recognition.abort(); } catch { /* already ended */ }
+        setListening(false);
         onResultRef.current(finalText.trim());
         setInterim('');
       }
     };
 
     recognition.onerror = (event: any) => {
+      if (recognitionRef.current !== recognition) return;
       const map: Record<string, string> = {
         'not-allowed': 'Microphone access was blocked.',
         'no-speech': "I didn't catch that — try again.",
@@ -109,13 +121,18 @@ export function useVoiceInput(onResult: (text: string) => void): VoiceInput {
       setListening(false);
     };
 
-    recognition.onend = () => setListening(false);
+    recognition.onend = () => {
+      if (recognitionRef.current !== recognition) return;
+      recognitionRef.current = null;
+      setListening(false);
+    };
 
     try {
-      recognition.start();
       recognitionRef.current = recognition;
+      recognition.start();
       setListening(true);
     } catch (err) {
+      recognitionRef.current = null;
       console.error('useVoiceInput: start failed', err);
       setError('Could not start voice input.');
       setListening(false);
