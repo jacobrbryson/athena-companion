@@ -9,8 +9,8 @@ import { androidCall, isAndroidCompanion } from '../native/android';
  * handled gracefully (isSupported === false, controls hidden by the caller).
  */
 
-type SpeechRecognitionCtor = new () => SpeechRecognitionLike;
-interface SpeechRecognitionLike {
+export type SpeechRecognitionCtor = new () => SpeechRecognitionLike;
+export interface SpeechRecognitionLike {
   lang: string;
   interimResults: boolean;
   continuous: boolean;
@@ -22,7 +22,7 @@ interface SpeechRecognitionLike {
   onend: (() => void) | null;
 }
 
-function getCtor(): SpeechRecognitionCtor | null {
+export function getCtor(): SpeechRecognitionCtor | null {
   const w = window as any;
   return w.SpeechRecognition || w.webkitSpeechRecognition || null;
 }

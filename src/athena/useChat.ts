@@ -41,6 +41,10 @@ export interface Message {
 export interface CompanionContext {
   device: 'web' | 'android' | 'car';
   driving?: boolean;
+  /** Said out loud in conversation mode (useConversation): she replies like talk. */
+  conversation?: boolean;
+  /** They talked over her last reply; this is what of it they heard. */
+  cutOff?: { heard: string; singing: boolean };
 }
 
 export interface SendOptions {

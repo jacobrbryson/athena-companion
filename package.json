@@ -12,6 +12,7 @@
     "test:map": "node --experimental-strip-types --test scripts/mapMath.test.mjs",
     "test:family": "node --experimental-strip-types --test scripts/familyRoster.test.mjs",
     "test:android": "node --test scripts/androidRegistration.test.mjs",
+    "test:speech": "node --experimental-strip-types --test scripts/speechChunks.test.mjs scripts/conversation.test.mjs scripts/echoGate.test.mjs",
     "test:local": "node --test scripts/localConnection.test.mjs scripts/localUnityAssets.test.mjs",
     "dev": "vite",
     "dev:mock": "vite --config vite.mock.config.ts",

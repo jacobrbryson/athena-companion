@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CLIENT_HEADERS, proxyUrl } from '../config';
+import { speechChunks } from './speechChunks';
+import { loudestOver, voiceLevels } from './voiceLevel';
 import type { AthenaBridge } from './UnityAthena';
 import warmupHumArpeggioUrl from './voice/warmup-hum-arpeggio.json?url';
 import warmupHumScaleUrl from './voice/warmup-hum-scale.json?url';
@@ -14,6 +16,10 @@ import warmupMimiUrl from './voice/warmup-mimi.json?url';
  * lets the chat hold Athena's text reveal until the voice can start with it
  * (see AthenaConsole's voice-sync gate); `speak()` remains as the one-shot
  * prepare-then-play convenience.
+ *
+ * A longer reply is voiced a sentence or so at a time (speechChunks), every
+ * part fetched at once: she starts when the first sentence is ready, not the
+ * whole reply, and each later part is in hand before the one before it ends.
  */
 
 const STORAGE_KEY = 'companion_tts_enabled';
@@ -93,6 +99,57 @@ export interface Speech {
    */
   sayFiller: (text: string) => void;
   cancel: () => void;
+  /** What she is saying right now (for conversation mode); null when she is quiet. */
+  now: () => VoiceNow | null;
+  /**
+   * Stop her at once: the person talked over her. Returns how much of the
+   * reply they actually heard, or null when no reply was playing (a filler,
+   * or nothing at all).
+   */
+  interrupt: () => CutOff | null;
+}
+
+export interface VoiceNow {
+  /** The whole reply (and song) she is voicing — what an echo would sound like. */
+  text: string;
+  singing: boolean;
+  /**
+   * The loudest her voice was (dBFS, as played) over the last `windowMs`;
+   * very low between clips. What an echo of her would be following.
+   */
+  loudness: (windowMs: number) => number;
+}
+
+export interface CutOff {
+  /** Her words up to where she was stopped, estimated from playback time. */
+  heard: string;
+  /** Stopped during the warm-up or the song itself. */
+  singing: boolean;
+}
+
+/** The clip she is on, so an interruption knows what was heard. */
+interface Voicing {
+  owner: string;
+  text: string;
+  parts: string[];
+  part: number;
+  startedAt: number;
+  partMs: number;
+  singing: boolean;
+  filler: boolean;
+  /** Her loudness through the clip (voiceLevel.ts). */
+  levels: Float32Array;
+}
+
+// Clips are reused (fillers, warm-ups), so their levels are worked out once.
+const levelCache = new WeakMap<SpeechResponse, Float32Array>();
+function levelsOf(payload: SpeechResponse): Float32Array {
+  let levels = levelCache.get(payload);
+  if (!levels) {
+    levels = voiceLevels(payload.audioBase64, payload.sampleRate, payload.channels);
+    levelCache.set(payload, levels);
+  }
+  return levels;
 }
 
 // Filler clips, kept across app restarts: the lines are a small fixed set, and
@@ -153,6 +210,7 @@ export function useSpeech(): Speech {
   // cutting the line off mid-word.
   const fillerDoneRef = useRef<Promise<void> | null>(null);
   const fillerFetchesRef = useRef(new Set<string>());
+  const voicingRef = useRef<Voicing | null>(null);
 
   const finish = useCallback((requestId?: string) => {
     const pending = pendingRef.current;
@@ -175,8 +233,40 @@ export function useSpeech(): Speech {
 
   const cancel = useCallback(() => {
     ownerRef.current = null;
+    voicingRef.current = null;
     stopCurrent();
   }, [stopCurrent]);
+
+  const now = useCallback((): VoiceNow | null => {
+    const voicing = voicingRef.current;
+    if (!voicing || (!pendingRef.current && ownerRef.current === null)) return null;
+    // Between parts (a part still generating) the last clip has run out, so
+    // its levels end and she reads as silent, which is what she is.
+    const loudness = (windowMs: number) => loudestOver(voicing.levels, Date.now() - voicing.startedAt, windowMs);
+    return { text: voicing.text, singing: voicing.singing, loudness };
+  }, []);
+
+  const interrupt = useCallback((): CutOff | null => {
+    const voicing = voicingRef.current;
+    if (!pendingRef.current && ownerRef.current === null) return null;
+    let cut: CutOff | null = null;
+    if (voicing && !voicing.filler) {
+      const heard = voicing.parts.slice(0, voicing.part);
+      const current = voicing.parts[voicing.part];
+      if (!voicing.singing && current) {
+        // Speech is close enough to even-paced that elapsed time says roughly
+        // how many of the sentence's words were out.
+        const words = current.split(/\s+/);
+        const elapsed = voicing.partMs > 0 ? (Date.now() - voicing.startedAt) / voicing.partMs : 0;
+        const out = Math.floor(words.length * Math.min(1, Math.max(0, elapsed)));
+        if (out >= words.length) heard.push(current);
+        else if (out > 0) heard.push(`${words.slice(0, out).join(' ')}…`);
+      }
+      cut = { heard: heard.join(' '), singing: voicing.singing };
+    }
+    cancel();
+    return cut;
+  }, [cancel]);
 
   const attachUnity = useCallback((bridge: AthenaBridge) => {
     bridgeRef.current = bridge;
@@ -266,31 +356,39 @@ export function useSpeech(): Speech {
       const id = crypto.randomUUID();
       const abort = new AbortController();
       let cancelled = false;
-      let audio: SpeechResponse | null = null;
       let song: SpeechResponse | null = null;
       let songFailed = false;
 
       const active = enabledRef.current && !!trimmed;
-      const audioP = active ? fetchAudio(trimmed, false, abort.signal) : Promise.resolve(null);
+      const chunks = active ? speechChunks(trimmed) : [];
+      const partsP = chunks.map((part) => fetchAudio(part, false, abort.signal));
+      const said = lyrics ? `${trimmed} ${lyrics}` : trimmed;
       // A song generates (~15 s) while she says her lead-in and hums a
       // warm-up; the hum is what keeps the switch to singing from being abrupt.
       const songP = active && lyrics ? fetchAudio(lyrics, true, abort.signal) : Promise.resolve(null);
       const warmupsP = active && lyrics ? loadWarmups() : Promise.resolve([] as SpeechResponse[]);
       const warmupStart = Math.floor(Math.random() * WARMUP_URLS.length);
-      void audioP.then((payload) => {
-        audio = payload;
+      // The first part that voiced (normally the first): where she starts.
+      // Null until known, -1 when every part failed.
+      let first: number | null = null;
+      const firstP = (async () => {
+        for (let i = 0; i < partsP.length; i++) if (await partsP[i]) return i;
+        return -1;
+      })();
+      void firstP.then((index) => {
+        first = index;
       });
       void songP.then((payload) => {
         song = payload;
         songFailed = !!lyrics && !payload;
       });
 
-      // Ready as soon as something can start: the spoken line, or the song if
-      // the spoken line failed. False only when there is nothing to play.
+      // Ready as soon as something can start: her first sentence, or the
+      // song if the spoken line failed. False only when there is nothing to play.
       const ready = new Promise<boolean>((resolve) => {
-        void audioP.then((payload) => payload && resolve(!cancelled));
+        void firstP.then((index) => index >= 0 && resolve(!cancelled));
         void songP.then((payload) => payload && resolve(!cancelled));
-        void Promise.all([audioP, songP]).then(([a, b]) => !a && !b && resolve(false));
+        void Promise.all([firstP, songP]).then(([a, b]) => a < 0 && !b && resolve(false));
       });
 
       // Something else may take the voice while a song is still coming (a
@@ -298,8 +396,20 @@ export function useSpeech(): Speech {
       const stillOwner = () =>
         !cancelled && ownerRef.current === id && enabledRef.current && !!bridgeRef.current;
 
-      const playClip = (clipId: string, payload: SpeechResponse, onEnd?: () => void) => {
+      const playClip = (clipId: string, payload: SpeechResponse, onEnd?: () => void, part = chunks.length) => {
         stopCurrent();
+        voicingRef.current = {
+          owner: id,
+          text: said,
+          parts: chunks,
+          part,
+          startedAt: Date.now(),
+          partMs: pcmDurationMs(payload.audioBase64, payload.sampleRate, payload.channels),
+          // Every clip that isn't one of her spoken parts is a warm-up or the song.
+          singing: part >= chunks.length,
+          filler: false,
+          levels: levelsOf(payload),
+        };
         const timer = window.setTimeout(
           () => finish(clipId),
           pcmDurationMs(payload.audioBase64, payload.sampleRate, payload.channels) + 2000
@@ -309,6 +419,25 @@ export function useSpeech(): Speech {
         pendingRef.current = { id: clipId, abort: clipId === id ? abort : new AbortController(), timer, onEnd };
         const unityPayload: UnitySpeechPayload = { requestId: clipId, ...payload };
         bridgeRef.current?.sendToGameObject('AthenaBridge', 'PlaySpeech', JSON.stringify(unityPayload));
+      };
+
+      // Her spoken parts in order, each played when the one before it ends. A
+      // part that is still generating is waited for; one that failed is
+      // skipped. Something else taking the voice ends the run.
+      const speakFrom = (index: number, done: () => void) => {
+        if (index >= partsP.length) {
+          done();
+          return;
+        }
+        void partsP[index].then((clip) => {
+          if (!stillOwner()) done();
+          else if (!clip) speakFrom(index + 1, done);
+          else {
+            // Without a song the last part owns `abort`; with one, the song does.
+            const clipId = index === partsP.length - 1 && !lyrics ? id : `${id}:part${index}`;
+            playClip(clipId, clip, () => speakFrom(index + 1, done), index);
+          }
+        });
       };
 
       // After the lead-in: always one warm-up (the bridge from talking to
@@ -347,14 +476,25 @@ export function useSpeech(): Speech {
           void filler.then(() => play(onEnd));
           return;
         }
-        if (cancelled || !enabledRef.current || !bridgeRef.current || (!audio && !song)) {
+        // Nothing voiced in time (the reveal stopped waiting): stay quiet
+        // rather than start talking after the text has already landed.
+        const start = first !== null && first >= 0 ? first : -1;
+        if (cancelled || !enabledRef.current || !bridgeRef.current || (start < 0 && !song)) {
           onEnd?.();
           return;
         }
         ownerRef.current = id;
-        if (!lyrics) playClip(id, audio!, onEnd);
-        else if (audio) playClip(`${id}:lead`, audio, () => towardSong(0, onEnd));
-        else towardSong(0, onEnd);
+        // Finished (or dropped): she is quiet again unless something newer took over.
+        const ended = () => {
+          if (ownerRef.current === id) {
+            ownerRef.current = null;
+            voicingRef.current = null;
+          }
+          onEnd?.();
+        };
+        const afterSpeech = lyrics ? () => towardSong(0, ended) : ended;
+        if (start >= 0) speakFrom(start, afterSpeech);
+        else afterSpeech();
       };
 
       const cancelPrepared = () => {
@@ -402,8 +542,13 @@ export function useSpeech(): Speech {
           release = resolve;
         });
         fillerDoneRef.current = done;
+        voicingRef.current = {
+          owner: clipId, text: line, parts: [], part: 0, startedAt: Date.now(), partMs: 0, singing: false, filler: true,
+          levels: levelsOf(clip),
+        };
         const end = () => {
           if (fillerDoneRef.current === done) fillerDoneRef.current = null;
+          if (voicingRef.current?.owner === clipId) voicingRef.current = null;
           release();
         };
         const timer = window.setTimeout(
@@ -421,7 +566,7 @@ export function useSpeech(): Speech {
   const toggle = useCallback(() => setEnabled((value) => !value), []);
 
   return useMemo(
-    () => ({ isSupported, enabled, attachUnity, toggle, prepare, speak, sayFiller, cancel }),
-    [attachUnity, cancel, enabled, isSupported, prepare, sayFiller, speak, toggle]
+    () => ({ isSupported, enabled, attachUnity, toggle, prepare, speak, sayFiller, cancel, now, interrupt }),
+    [attachUnity, cancel, enabled, interrupt, isSupported, now, prepare, sayFiller, speak, toggle]
   );
 }

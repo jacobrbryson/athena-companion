@@ -3,6 +3,8 @@ import { handsFreeRunning } from '../native/handsFree';
 import { useAuth } from '../auth/AuthContext';
 import { useChat, type Message } from '../athena/useChat';
 import { useVoiceInput } from '../athena/useVoiceInput';
+import { useConversation } from '../athena/useConversation';
+import type { CutOff } from '../athena/useSpeech';
 import { useSpeech, type PreparedSpeech } from '../athena/useSpeech';
 import { UnityAthena, type AthenaBridge } from '../athena/UnityAthena';
 import { SequenceOverlay } from '../components/SequenceOverlay';
@@ -345,6 +347,18 @@ export function CompanionConsole() {
   );
 
   const voice = useVoiceInput(send);
+
+  // Conversation mode: the mic stays on and she listens for each next turn.
+  const talk = useCallback(
+    (text: string, cutOff: CutOff | null) => {
+      const trimmed = text.trim().slice(0, MAX_MESSAGE);
+      if (!trimmed) return;
+      const companion = { device: 'web' as const, conversation: true, ...(cutOff ? { cutOff } : {}) };
+      void chat.sendMessage(trimmed, { companion }).catch(() => undefined);
+    },
+    [chat]
+  );
+  const conversation = useConversation(tts, talk);
 
   // Layout effect, and keyed on `view`: the chat page stays mounted behind
   // `hidden` while the dashboard is up, and a scrollTop written to a
@@ -698,6 +712,11 @@ export function CompanionConsole() {
               <p className="max-w-[85%] rounded-2xl bg-emerald-500/10 px-4 py-2 text-sm italic opacity-70">{voice.interim}</p>
             </div>
           )}
+          {conversation.active && conversation.interim && (
+            <div className="flex justify-end">
+              <p className="max-w-[85%] rounded-2xl bg-emerald-500/10 px-4 py-2 text-sm italic opacity-70">{conversation.interim}</p>
+            </div>
+          )}
 
           {/* Approval cards live in the transcript above, after the reply that
               proposed them. Inside the scroller on purpose: a floating card
@@ -706,7 +725,26 @@ export function CompanionConsole() {
         </div>
 
         <form onSubmit={onSubmit} className="flex items-center gap-2 border-t border-emerald-500/10 px-3 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-          {voice.isSupported && (
+          {conversation.isSupported && (
+            <button
+              type="button"
+              onClick={() => {
+                voice.stop();
+                conversation.toggle();
+              }}
+              aria-pressed={conversation.active}
+              aria-label={conversation.active ? 'Stop conversation mode' : 'Conversation mode: keep the mic on and just talk'}
+              title={conversation.active ? 'Conversation on. Tap to stop listening' : 'Conversation mode: keep the mic on and just talk'}
+              className={`grid h-12 w-12 shrink-0 place-items-center rounded-full border text-lg transition active:scale-95 ${
+                conversation.active
+                  ? `border-emerald-300 bg-emerald-500/25 text-emerald-100 ${conversation.hearing ? 'ring-4 ring-emerald-400/40' : ''}`
+                  : 'border-emerald-500/40 text-emerald-200 hover:bg-emerald-500/10'
+              }`}
+            >
+              {conversation.active ? '◉' : '∞'}
+            </button>
+          )}
+          {voice.isSupported && !conversation.active && (
             <button
               type="button"
               onClick={voice.toggle}
@@ -727,7 +765,7 @@ export function CompanionConsole() {
               id={inputId}
               value={draft}
               onChange={(e) => setDraft(e.target.value.slice(0, MAX_MESSAGE))}
-              placeholder={voice.listening ? 'listening…' : 'Tell Athena…'}
+              placeholder={conversation.active ? 'conversation on: just talk…' : voice.listening ? 'listening…' : 'Tell Athena…'}
               autoComplete="off"
               className={`h-12 w-full rounded-full bg-white/5 pl-4 text-base outline-none placeholder:opacity-40 focus:bg-white/10 ${
                 foldedCards.length ? 'pr-16' : 'pr-4'
@@ -802,6 +840,7 @@ export function CompanionConsole() {
           </button>
         </form>
         {voice.error && <p className="px-4 pb-2 text-center text-xs text-red-300">{voice.error}</p>}
+        {conversation.error && <p className="px-4 pb-2 text-center text-xs text-red-300">{conversation.error}</p>}
       </section>
 
       </div>

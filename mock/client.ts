@@ -1376,7 +1376,13 @@ Sam` };
             : 'I can do that. Have a look and tell me if it’s right.'
           : remember
             ? "I don't remember you telling me that one — tell me and I'll hold onto it."
-            : 'Mm. Tell me more — is this about the trip, or something new?',
+            : /explain|tell me about/i.test(body.text)
+              // Long enough to be voiced in parts (speechChunks).
+              ? 'Sure. Your first meeting is the design review at ten, and it runs about an hour. ' +
+                'After that you are free until lunch with Sam at noon. ' +
+                'The afternoon is clear, so it would be a good time for the run you mentioned yesterday. ' +
+                'If the weather holds, the loop by the lake is dry, and sunset is just after seven.'
+              : 'Mm. Tell me more — is this about the trip, or something new?',
         created_at: new Date().toISOString(),
       });
       // Stands in for the real server's `actionProposed` WebSocket broadcast
