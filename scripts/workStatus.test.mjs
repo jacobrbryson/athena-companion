@@ -107,15 +107,36 @@ test('a count is only a floor when Jira says there is more', () => {
   assert.equal(jiraGlance({ issues: twelve }, NOON, TZ).atLeast, true); // an older server never said: assume capped at its old limit
 });
 
-test('in progress follows Jira’s own category, then the status name', () => {
-  const cat = (status, statusCategory) => ({ ...issue('E-1', null, status), statusCategory });
-  assert.equal(isInProgress(cat('Code Review', 'indeterminate')), true);
+test('in progress is Jira’s started grouping minus the hand-offs', () => {
+  const cat = (status, statusCategory, key = 'E-1') => ({ ...issue(key, null, status), statusCategory });
+  // A workflow's own name for "I'm on it" counts.
+  assert.equal(isInProgress(cat('In Progress', 'indeterminate')), true);
+  assert.equal(isInProgress(cat('Operational process', 'indeterminate')), true);
+  // Waiting on someone else doesn't, even inside the same grouping.
+  for (const s of ['Review', 'Code Review', 'QA In Progress', 'QA Approved STG', 'Pending Prod Testing']) assert.equal(isInProgress(cat(s, 'indeterminate')), false, s);
   assert.equal(isInProgress(cat('In Progress', 'new')), false); // the category wins over a misleading name
-  assert.equal(isInProgress(cat('To Do', 'new')), false);
   assert.equal(isInProgress(cat('In Progress', undefined)), true);
-  assert.equal(isInProgress(cat('Open', undefined)), false);
-  const g = jiraGlance({ issues: [cat('Open', 'new'), { ...cat('In Review', 'indeterminate'), key: 'E-2' }, { ...cat('In Progress', 'indeterminate'), key: 'E-3' }] }, NOON, TZ);
-  assert.deepEqual(g.inProgress.map(i => i.key), ['E-2', 'E-3']);
+  assert.equal(isInProgress(cat('To Do', 'new')), false);
+  const g = jiraGlance({ issues: [cat('Review', 'indeterminate', 'E-1'), cat('Ready to Start', 'new', 'E-2'), cat('In Progress', 'indeterminate', 'E-3')] }, NOON, TZ);
+  assert.deepEqual(g.inProgress.map(i => i.key), ['E-3']);
+  assert.equal(g.active.key, 'E-3');
+});
+
+test('with nothing in progress the active ticket is the latest Ready to Start, never Review', () => {
+  const s = (key, status) => issue(key, null, status);
+  assert.equal(jiraGlance({ issues: [s('F-1', 'Review'), s('F-2', 'Ready to Start'), s('F-3', 'Ready to Start')] }, NOON, TZ).active.key, 'F-2');
+  assert.equal(jiraGlance({ issues: [s('G-1', 'Review'), s('G-2', 'To Do')] }, NOON, TZ).active, null);
+});
+
+test('a real sprint: the sub-task in its workflow’s own in-progress status wins over hand-offs touched later', () => {
+  const s = (key, status, statusCategory) => ({ ...issue(key, null, status), statusCategory });
+  const g = jiraGlance({ issues: [
+    s('DRM-9483', 'Ready to Start', 'new'), s('DRM-9635', 'QA In Progress', 'indeterminate'),
+    s('VORG-1965', 'Operational process', 'indeterminate'), s('DRM-9270', 'Code Review', 'indeterminate'),
+    s('DRM-9115', 'Pending Prod Testing', 'indeterminate'),
+  ] }, NOON, TZ);
+  assert.equal(g.active.key, 'VORG-1965');
+  assert.deepEqual(g.inProgress.map(i => i.key), ['VORG-1965']);
 });
 
 test('only plain https links are followed', () => {

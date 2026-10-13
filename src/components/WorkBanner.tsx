@@ -1,6 +1,6 @@
 import { Fragment, type ReactNode } from 'react';
 import type { CalendarEvent, JiraIssue } from '../api/dashboard';
-import { jiraGlance, safeHttpsUrl, untilLabel, workStatus } from './workStatus';
+import { isInProgress, jiraGlance, safeHttpsUrl, untilLabel, workStatus } from './workStatus';
 
 /**
  * Across the top of the dashboard while the calendar says they're working:
@@ -10,7 +10,8 @@ import { jiraGlance, safeHttpsUrl, untilLabel, workStatus } from './workStatus';
  * Three blocks, in the order a day actually goes: where → the Jira ticket in
  * progress → the next meeting. In a meeting the meeting is what's happening, so
  * it moves up and the ticket follows it: where → this meeting → the ticket.
- * No ticket in progress, no ticket block.
+ * The ticket is the one In Progress, else the one Ready to Start; neither, no
+ * ticket block. Review and the like have left their hands, so never show.
  *
  * Each block is its own control rather than one big button — the ticket opens
  * in Jira, the rest open Calendar — and Jira's count rides along as a sibling
@@ -33,8 +34,8 @@ export function WorkBanner({ events, workingLocations, timeZone, now, jira, onOp
     <small className="work-label"><i aria-hidden="true" />WORKING</small><strong>{status.where}</strong><span>{status.until ? `until ${clock(status.until)}` : 'all day'}</span>
   </button>;
 
-  const ticket = glance?.inProgress[0];
-  const more = (glance?.inProgress.length ?? 0) - 1;
+  const ticket = glance?.active ?? undefined;
+  const more = ticket && glance && isInProgress(ticket) ? glance.inProgress.length - 1 : 0;
   const ticketBody = ticket && <>
     <small className="work-label">{(ticket.status || 'IN PROGRESS').toUpperCase()}</small>
     <strong>{ticket.title}</strong>

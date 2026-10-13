@@ -170,6 +170,17 @@ export interface Website {
   search: SearchStats | null; analytics: AnalyticsStats | null;
 }
 export type WebsiteInput = { domain: string; label?: string | null; searchSite?: string | null; gaProperty?: string | null; notes?: string | null };
+/** A connection (Jira, Gmail…) as a workplace sees it: metadata only. `provider: null` means it was removed since it was linked. */
+export interface WorkplaceConnection { credentialUuid: string; provider: string | null; label: string; account: string | null; status: string }
+/** A place the person works. At most one is `primary`; each link belongs to this workplace only. */
+export interface Workplace {
+  uuid: string; name: string; role: string | null; domain: string | null; primary: boolean; notes: string | null;
+  emails: { uuid: string; email: string }[];
+  connections: (WorkplaceConnection & { uuid: string })[];
+}
+/** Workplaces, and the connections not linked to any — with the one their sign-in's domain suggests. */
+export interface WorkplacesOverview { workplaces: Workplace[]; available: (WorkplaceConnection & { suggestedWorkplace: string | null })[] }
+export type WorkplaceInput = { name: string; role?: string | null; domain?: string | null; primary?: boolean; notes?: string | null };
 /** What Google says the person can see, to pick from. `linked: false` means Websites isn't connected. */
 export interface WebsiteDiscovery {
   linked: boolean;
@@ -375,6 +386,17 @@ export const dashboardApi = {
   removeWebsite: (uuid: string) => api.del<{ sites: Website[] }>(`/api/v1/dashboard/websites/${encodeURIComponent(uuid)}`),
   /** Read Google now: one site, or all of them. Throttled server-side to one a minute. */
   refreshWebsites: (uuid?: string) => api.post<{ sites: Website[] }>(uuid ? `/api/v1/dashboard/websites/${encodeURIComponent(uuid)}/refresh` : '/api/v1/dashboard/websites/refresh', {}),
+  /** Workplaces on the Work page. Every write can move the primary flag or a link, so the whole overview comes back. */
+  workplaces: () => api.get<WorkplacesOverview>('/api/v1/dashboard/workplaces'),
+  saveWorkplace: (input: WorkplaceInput, uuid?: string) => uuid
+    ? api.patch<WorkplacesOverview>(`/api/v1/dashboard/workplaces/${encodeURIComponent(uuid)}`, input)
+    : api.post<WorkplacesOverview>('/api/v1/dashboard/workplaces', input),
+  removeWorkplace: (uuid: string) => api.del<WorkplacesOverview>(`/api/v1/dashboard/workplaces/${encodeURIComponent(uuid)}`),
+  /** Give a workplace a connection or an email address. Exclusive: one already on another workplace is refused. */
+  linkWorkplace: (uuid: string, link: { credential: string } | { email: string }) =>
+    api.post<WorkplacesOverview>(`/api/v1/dashboard/workplaces/${encodeURIComponent(uuid)}/links`, link),
+  unlinkWorkplace: (uuid: string, linkUuid: string) =>
+    api.del<WorkplacesOverview>(`/api/v1/dashboard/workplaces/${encodeURIComponent(uuid)}/links/${encodeURIComponent(linkUuid)}`),
   /** The Community page: points of interest, neighbours, events and local headlines. */
   community: () => api.get<CommunityOverview>('/api/v1/dashboard/community'),
   communityCalendar: () => api.get<CommunityCalendar>('/api/v1/dashboard/community/calendar'),

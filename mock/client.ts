@@ -1052,6 +1052,50 @@ async function route(method: string, path: string, body?: any): Promise<any> {
     const ev = (id: string, title: string, mins: number, len: number) => ({ id, title, start: inMinutes(mins), end: inMinutes(mins + len), allDay: false, location: null, calendar: null, shared: false, eventType: 'default' });
     return { connected: true, terms: ['Troutman'], events: [ev('t0', 'Maya softball game', 3 * 60, 90), ev('t1', 'Troutman soccer practice', 30 * 60, 90), ev('t2', 'Troutman Rec game vs Mooresville', 4 * 24 * 60 - 120, 60), ev('t3', 'Troutman Founders Day 5K', 4 * 24 * 60 + 420, 90)] };
   }
+  if (p.startsWith('/api/v1/dashboard/workplaces')) {
+    type W = { uuid: string; name: string; role: string | null; domain: string | null; primary: boolean; notes: string | null };
+    type L = { uuid: string; workplace: string; credential?: string; email?: string };
+    const conns = [
+      { credentialUuid: 'c-jira', provider: 'jira', label: 'Jira Cloud', account: 'vivacitytech.atlassian.net · rbryson@vivacitytech.com', status: 'active' },
+      { credentialUuid: 'c-gmail', provider: 'gmail', label: 'Gmail', account: 'sam@example.com', status: 'needs_reauth' },
+    ];
+    let list: W[] = JSON.parse(localStorage.getItem('mock_workplaces') || 'null') || [
+      { uuid: 'w1', name: 'Vivacity Tech PBC', role: 'Senior Software Engineer', domain: 'vivacitytech.com', primary: true, notes: null },
+      { uuid: 'w2', name: 'Orcwood LLC', role: 'Software Engineer and Co-owner', domain: 'orcwood.com', primary: false, notes: null },
+    ];
+    let links: L[] = JSON.parse(localStorage.getItem('mock_workplace_links') || '[]');
+    const seg = p.split('/');
+    const uuid = decodeURIComponent(seg[5] || '');
+    const keep = () => {
+      localStorage.setItem('mock_workplaces', JSON.stringify(list));
+      localStorage.setItem('mock_workplace_links', JSON.stringify(links));
+      const linked = new Set(links.map(l => l.credential));
+      return {
+        workplaces: [...list].sort((x, y) => Number(y.primary) - Number(x.primary) || x.name.localeCompare(y.name)).map(w => ({
+          ...w,
+          emails: links.filter(l => l.workplace === w.uuid && l.email).map(l => ({ uuid: l.uuid, email: l.email })),
+          connections: links.filter(l => l.workplace === w.uuid && l.credential).map(l => ({ uuid: l.uuid, ...conns.find(c => c.credentialUuid === l.credential)! })),
+        })),
+        available: conns.filter(c => !linked.has(c.credentialUuid)).map(c => ({ ...c, suggestedWorkplace: c.account.includes('@vivacitytech.com') ? 'w1' : null })),
+      };
+    };
+    if (method === 'GET') return keep();
+    if (seg[6] === 'links') {
+      if (method === 'DELETE') { links = links.filter(l => l.uuid !== decodeURIComponent(seg[7] || '')); return keep(); }
+      const key = body.credential ? 'credential' : 'email';
+      const value = key === 'email' ? String(body.email).trim().toLowerCase() : body.credential;
+      const owner = links.find(l => l[key] === value);
+      if (owner && owner.workplace !== uuid) throw Object.assign(new Error(`That already belongs to ${list.find(w => w.uuid === owner.workplace)?.name}. Unlink it there first.`), { status: 400 });
+      if (!owner) links.push({ uuid: `l${Date.now()}`, workplace: uuid, [key]: value });
+      return keep();
+    }
+    if (method === 'DELETE') { list = list.filter(w => w.uuid !== uuid); links = links.filter(l => l.workplace !== uuid); return keep(); }
+    const old = list.find(w => w.uuid === uuid);
+    const next: W = { ...(old || { uuid: `w${Date.now()}`, role: null, domain: null, notes: null, primary: !list.length }), ...body };
+    if (next.primary) list = list.map(w => ({ ...w, primary: false }));
+    list = old ? list.map(w => w.uuid === uuid ? next : w) : [...list, next];
+    return { workplace: next, ...keep() };
+  }
   if (p === '/api/v1/dashboard/websites' && method === 'GET') return { sites: MOCK_SITES };
   if (p === '/api/v1/dashboard/websites/discover') {
     return {

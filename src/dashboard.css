@@ -692,3 +692,19 @@ svg.dashboard-icon-drawn .icon-fill { fill: currentColor; fill-opacity: .9; }
 .website-trend { font-size: 11px; opacity: .8; }
 .website-up { color: #8be2a8; opacity: 1; }
 .website-down { color: #f3a6a6; opacity: 1; }
+
+/* Workplace links: one chip per connected app or address. ✓ green when Athena
+   can read it, ✕ red when she can't; an address is a plain label. */
+.workplace-chips { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0 2px; }
+.workplace-chip { display: inline-flex; align-items: center; gap: 4px; height: 13px; padding: 0 7px; border-radius: 999px; border: 1px solid #2b6c85; background: #07293a; color: #cfefff; font-size: 10px; font-weight: 600; line-height: 1; cursor: pointer; }
+.workplace-chip[aria-expanded="true"] { outline: 2px solid currentColor; outline-offset: 1px; }
+.workplace-chip-ok { border-color: #2f7a4b; background: #0b2a19; color: #8be2a8; }
+.workplace-chip-bad { border-color: #8a3434; background: #2e0f0f; color: #f3a6a6; }
+.workplace-chip-mark { font-weight: 800; }
+.workplace-chip-detail { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; font-size: 12px; opacity: .9; }
+.workplace-chip-suggested { border-style: dashed; background: transparent; color: #8fd6ea; }
+/* A line between workplaces, and the panel's small Add button beside its note. */
+.workplace-list > li + li { border-top: 1px solid #244453; padding-top: 10px; margin-top: 10px; }
+.workplace-add { margin-left: 8px; padding: 0 7px; height: 16px; border: 1px solid #2b6c85; border-radius: 999px; background: transparent; color: #8fd6ea; font: 600 10px/1 inherit; letter-spacing: normal; text-transform: none; vertical-align: baseline; cursor: pointer; }
+.workplace-add:hover:not(:disabled) { background: #042532aa; border-color: #5ecde6; }
+.workplace-add:disabled { opacity: .45; cursor: default; }

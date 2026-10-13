@@ -24,6 +24,7 @@ import { DashboardIcon } from './icons';
 import { CommunityMap, PointsOfInterest, Neighbors, LocalEvents, PlaceReminders, ContactAvatar, eventWhen, isPastEvent } from './Community';
 import { EmergencyAlertSetup } from './EmergencyAlertSetup';
 import { Websites } from './Websites';
+import { Workplaces } from './Workplaces';
 
 /** Enough for a household, so nobody sorted late in the alphabet is cut off the card. */
 const FAMILY_CARD_ROWS = 7;
@@ -647,6 +648,7 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
   const data = useDashboardData();
   const summary = data.summary.data;
   const [sourcesOpen, setSourcesOpen] = useState(false);
+  const [addingWorkplace, setAddingWorkplace] = useState(false);
   const [plansOpen, setPlansOpen] = useState(false);
   const [selectedEmail, setSelectedEmail] = useState<string | null>(null);
   // Bumped after propose/confirm/decline/dismiss so MailPage's own list refetches —
@@ -1197,7 +1199,7 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
     const byStatus = [...new Set(issues.map(i => i.status))];
     return <SectionPage ctx={ctx}
       eyebrow="WHAT WORK IS ASKING FOR" title="Work"
-      blurb="Assigned Jira issues and the Slack threads that named you."
+      blurb="Where you work, your assigned Jira issues and the Slack threads that named you."
       ask="Help me review my Jira issues and Slack mentions."
       stats={<>
         <Stat label="Open issues" value={ready(summary?.jira) ? issues.length : '—'} note="assigned to you" />
@@ -1205,6 +1207,9 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
         <Stat label="Projects" value={ready(summary?.jira) ? new Set(issues.map(i => i.project)).size : '—'} note="in this snapshot" />
       </>}
     >
+      <Panel title="Workplaces" wide note={<>where you work and your role <button type="button" className="workplace-add" onClick={() => setAddingWorkplace(true)} disabled={addingWorkplace}>＋ Add</button></>}>
+        <Workplaces adding={addingWorkplace} onAdding={setAddingWorkplace} health={{ jira: summary?.jira, slack: summary?.slack, gmail: summary?.emailTriage, google_calendar: summary?.calendar }} />
+      </Panel>
       <Panel title="Jira" note={summary?.jira.data?.partial ? 'Some sites could not be included' : 'assigned open issues'} wide>
         {!ready(summary?.jira) ? unavailable('jira', 'Jira')
           : !issues.length ? <p className="dashboard-empty">No assigned open issues returned.</p>

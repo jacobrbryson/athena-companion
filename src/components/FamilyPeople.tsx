@@ -19,7 +19,7 @@ const LINK_PROBLEM: Record<FamilyLink['status'], string | null> = {
 };
 
 /** A "⋯" button and the menu it opens. Escape or a click anywhere else closes it. */
-function OptionsMenu({ label, items }: { label: string; items: { label: string; onSelect: () => void; danger?: boolean; disabled?: boolean }[] }) {
+export function OptionsMenu({ label, items }: { label: string; items: { label: string; onSelect: () => void; danger?: boolean; disabled?: boolean }[] }) {
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
   useEffect(() => {

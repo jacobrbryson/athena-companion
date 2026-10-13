@@ -94,9 +94,20 @@ export function untilLabel(ms: number) {
 /** Older servers don't say whether Jira had more; this is what they read per site. */
 const LEGACY_READ_LIMIT = 10;
 
-/** In progress by Jira's own grouping; by the status name only when the server didn't send one. */
-export const isInProgress = (issue: JiraIssue) =>
-  issue.statusCategory ? issue.statusCategory === 'indeterminate' : /progress/i.test(issue.status || '');
+/**
+ * Started and still in your hands. Jira's "indeterminate" grouping says
+ * started — whatever a workflow calls it ("In Progress", "Operational
+ * process") — but it also holds the hand-offs: Code Review, QA In Progress,
+ * QA Approved STG, Pending Prod Testing. Those wait on someone else, so they
+ * aren't what you're working on.
+ */
+const HANDED_OFF = /review|\bqa\b|test|approv|pending|waiting|blocked|deploy|\bstg\b|staging|\buat\b|verif|release/i;
+export const isInProgress = (issue: JiraIssue) => {
+  const name = issue.status || '';
+  const started = issue.statusCategory ? issue.statusCategory === 'indeterminate' : /progress/i.test(name);
+  return started && !HANDED_OFF.test(name);
+};
+export const isReadyToStart = (issue: JiraIssue) => /^\s*ready\s+to\s+start\s*$/i.test(issue.status || '');
 
 /** An https link with no embedded credentials, or nothing. */
 export function safeHttpsUrl(url?: string | null) {
@@ -111,6 +122,8 @@ export interface JiraGlance {
   latest: JiraIssue | null;
   /** What you're working on, most recently touched first. */
   inProgress: JiraIssue[];
+  /** The ticket to show: the latest In Progress, else the latest Ready to Start. */
+  active: JiraIssue | null;
   overdue: number;
   dueToday: number;
 }
@@ -124,11 +137,13 @@ export function jiraGlance(data: { issues: JiraIssue[]; partial?: boolean; cappe
   if (!data) return null;
   const today = dayIn(now, timeZone);
   const due = data.issues.map(i => (i.due || '').slice(0, 10)).filter(Boolean);
+  const inProgress = data.issues.filter(isInProgress);
   return {
     count: data.issues.length,
     atLeast: !!data.partial || (data.capped ?? data.issues.length >= LEGACY_READ_LIMIT),
     latest: data.issues[0] ?? null,
-    inProgress: data.issues.filter(isInProgress),
+    inProgress,
+    active: inProgress[0] ?? data.issues.find(isReadyToStart) ?? null,
     overdue: due.filter(d => d < today).length,
     dueToday: due.filter(d => d === today).length,
   };
