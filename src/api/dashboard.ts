@@ -34,6 +34,33 @@ export interface DashboardSummary {
   slack: Source<{ workspace: string; messages: { text: string; channel: string; url: string; timestamp: string }[] }>;
   emailTriage: Source<{ newCount: number; receiptCount: number; travelCount: number; schoolCount: number; otherCount: number; pendingCount?: number; bundles?: MailBundles; preview: TriageEmail[] }>;
   familyHealth: Source<{ active: FamilyHealthStatus[] }>;
+  /** VeSync scale, 90 days newest first. Optional so an older server's
+   *  payload (no `body`) still renders. */
+  body?: Source<{ latest: WeighIn | null; weighIns: WeighIn[]; calibration?: BodyCalibrationState; references?: BodyReference[] }>;
+}
+/** One weigh-in, metric; null where the scale didn't measure it. */
+export interface WeighIn {
+  at: string; weight_kg: number; bmi: number | null; body_fat_percent: number | null;
+  muscle_mass_kg: number | null; skeletal_muscle_percent: number | null; fat_free_mass_kg: number | null;
+  body_water_percent: number | null; bone_mass_kg: number | null; protein_percent: number | null;
+  subcutaneous_fat_percent: number | null; visceral_fat: number | null; bmr_kcal: number | null;
+  metabolic_age: number | null; heart_rate?: number | null; manual: boolean;
+  skeletal_muscle_kg?: number | null;
+  /** Fields Athena worked out from impedance (published equations), not the scale. */
+  estimated?: string[];
+  /** Fields corrected against a lab reference. */
+  calibrated?: string[];
+}
+/** A lab or clinic measurement that corrects the scale. Metric. */
+export interface BodyReference {
+  uuid: string; measured_on: string; source: string | null; height_cm: number | null; body_fat_percent: number | null;
+  skeletal_muscle_kg: number | null; fat_free_mass_kg: number | null; body_water_percent: number | null;
+}
+export interface BodyCalibrationState {
+  heightCm: number | null;
+  corrections: Record<string, { kind: 'shift' | 'scale'; amount: number; uuid: string; source: string | null; measured_on: string }>;
+  /** Measures a reference gave but no weigh-in sat within a week of. */
+  unmatched: string[];
 }
 export type HealthSeverity = 'mild' | 'moderate' | 'severe';
 /** A child on the family profiles; birthday is YYYY-MM-DD. */
@@ -520,4 +547,8 @@ export const dashboardApi = {
     api.post<{ status: FamilyHealthStatus }>('/api/v1/dashboard/health/family', payload),
   resolveFamilyHealth: (uuid: string) =>
     api.patch<{ status: FamilyHealthStatus }>(`/api/v1/dashboard/health/family/${encodeURIComponent(uuid)}/resolve`, {}),
+  addBodyCalibration: (payload: Omit<BodyReference, 'uuid' | 'source'> & { source?: string }) =>
+    api.post<{ reference: BodyReference }>('/api/v1/dashboard/health/body/calibration', payload),
+  removeBodyCalibration: (uuid: string) =>
+    api.del<{ removed: boolean }>(`/api/v1/dashboard/health/body/calibration/${encodeURIComponent(uuid)}`),
 };

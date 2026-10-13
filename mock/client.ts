@@ -180,6 +180,10 @@ const devices = [
 // can be worked on without every provider connected. Deliberately mixed: two
 // sources are ready, one needs re-auth and one was never connected, because
 // those three states are what the layout has to hold at once.
+/** Calibration references the mock keeps across reloads. */
+function mockBodyReferences(): { uuid: string; measured_on: string; source: string | null; height_cm: number | null; body_fat_percent: number | null; skeletal_muscle_kg: number | null; fat_free_mass_kg: number | null; body_water_percent: number | null }[] {
+  try { return JSON.parse(localStorage.getItem('mock_body_references') || '[]'); } catch { return []; }
+}
 const ready = <T,>(data: T) => ({ status: 'ready' as const, data, checkedAt: new Date().toISOString() });
 const unready = (status: 'not_connected' | 'needs_reauth' | 'consent_required' | 'error') =>
   ({ status, data: null, checkedAt: new Date().toISOString() });
@@ -358,6 +362,32 @@ function dashboardSummary() {
       { date: dayStamp(12), day_strain: 15.31, average_heart_rate: 71 },
       { date: dayStamp(13), day_strain: 9.17, average_heart_rate: 66 },
     ]),
+    // A weigh-in most mornings for eight weeks, drifting down ~2 lb a month;
+    // every fifth one in socks, so weight alone. Shaped like the real ESF
+    // scale: weight, body fat and heart rate from VeSync, the rest Athena's
+    // estimates, body fat corrected to a stored DEXA reference.
+    body: (() => {
+      const references = mockBodyReferences();
+      const weighIns = Array.from({ length: 56 }, (_, i) => i).filter(i => i % 7 !== 3).map(i => {
+        const kg = 82 + i * 0.03 + Math.sin(i) * 0.3; // i is days ago
+        const socks = i % 5 === 4;
+        const fat = socks ? null : Math.round((15 + i * 0.02 + Math.cos(i) * 0.4 + (references.length ? 2.1 : 0)) * 10) / 10;
+        const ffm = fat === null ? null : Math.round(kg * (1 - fat / 100) * 10) / 10;
+        return {
+          at: iso(i * DAY + 3 * 3600_000), weight_kg: Math.round(kg * 100) / 100, bmi: Math.round(kg / 1.91 ** 2 * 10) / 10,
+          body_fat_percent: fat, muscle_mass_kg: null, skeletal_muscle_percent: socks ? null : 45.1, skeletal_muscle_kg: socks ? null : 37,
+          fat_free_mass_kg: ffm, body_water_percent: socks ? null : 59.2, bone_mass_kg: null, protein_percent: null,
+          subcutaneous_fat_percent: null, visceral_fat: null, bmr_kcal: ffm === null ? null : Math.round(370 + 21.6 * ffm),
+          metabolic_age: null, heart_rate: socks ? null : 58 + (i % 6), manual: false,
+          estimated: socks ? [] : ['skeletal_muscle_kg', 'body_water_percent', 'fat_free_mass_kg', 'bmr_kcal'],
+          calibrated: !socks && references.length ? ['body_fat_percent'] : [],
+        };
+      });
+      const calibration = references.length
+        ? { heightCm: null, unmatched: [], corrections: { body_fat_percent: { kind: 'shift' as const, amount: 2.1, uuid: references[0].uuid, source: references[0].source, measured_on: references[0].measured_on } } }
+        : { heightCm: null, corrections: {}, unmatched: [] };
+      return ready({ latest: weighIns[0], weighIns, calibration, references });
+    })(),
     familyChores: ready({ name: 'Rivera family', chores: [
       { title: 'Dishes', completed: true, status: 'done', dueDate: dayStamp(0) },
       { title: 'Walk Biscuit', completed: false, status: 'open', dueDate: dayStamp(0) },
@@ -1029,6 +1059,16 @@ async function route(method: string, path: string, body?: any): Promise<any> {
     let list = mockPlaceReminders();
     if (method === 'DELETE') { list = list.filter((x) => x.uuid !== uuid); localStorage.setItem('mock_place_reminders', JSON.stringify(list)); }
     return { reminders: list };
+  }
+  if (p === '/api/v1/dashboard/health/body/calibration' && method === 'POST') {
+    const reference = { uuid: `c${Date.now()}`, measured_on: body.measured_on, source: body.source || null, height_cm: body.height_cm ?? null, body_fat_percent: body.body_fat_percent ?? null, skeletal_muscle_kg: body.skeletal_muscle_kg ?? null, fat_free_mass_kg: body.fat_free_mass_kg ?? null, body_water_percent: body.body_water_percent ?? null };
+    localStorage.setItem('mock_body_references', JSON.stringify([reference, ...mockBodyReferences()]));
+    return { reference };
+  }
+  if (p.startsWith('/api/v1/dashboard/health/body/calibration/') && method === 'DELETE') {
+    const uuid = decodeURIComponent(p.split('/').pop() || '');
+    localStorage.setItem('mock_body_references', JSON.stringify(mockBodyReferences().filter(r => r.uuid !== uuid)));
+    return { removed: true };
   }
   if (p === '/api/v1/dashboard/health/family' && method === 'POST') {
     const list = storedHealth();

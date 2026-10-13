@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import type { CalendarEvent, Source, JiraIssue, RecoveryDay, DashboardSummary, GcpBilling, TimeSaved, SystemHealthStatus, TriageEmail, NearbyIncident, WeatherAlert } from '../api/dashboard';
+import type { CalendarEvent, Source, JiraIssue, RecoveryDay, WeighIn, DashboardSummary, GcpBilling, TimeSaved, SystemHealthStatus, TriageEmail, NearbyIncident, WeatherAlert } from '../api/dashboard';
 import { dashboardApi } from '../api/dashboard';
 import { integrationsApi, type Fact } from '../api/companion';
 import { androidCall, isAndroidCompanion } from '../native/android';
@@ -8,6 +8,7 @@ import type { ApiError } from '../api/client';
 import { useDashboardData } from './useDashboardData';
 import { NewsSourcesPanel } from './NewsSourcesPanel';
 import { PlansPanel } from './PlansPanel';
+import { BodyCalibrationDialog } from './BodyCalibration';
 import { EmergencyBanner } from './EmergencyBanner';
 import { RightNowCard } from './RightNowCard';
 import { buildFamilyRoster, type RosterRow } from './familyRoster';
@@ -61,7 +62,7 @@ const SOURCE_PROVIDER: Partial<Record<keyof DashboardSummary, string>> = {
   jira: 'jira', slack: 'slack', familyChores: 'family_chores',
 };
 /** What a source that cannot be read offers to do about it, where it is read. */
-interface SourceFix { reconnect: () => void; panel: () => void; retry: () => void; busy?: boolean }
+interface SourceFix { reconnect?: () => void; panel: () => void; retry: () => void; busy?: boolean }
 /**
  * The one button that fixes an unreadable source, right beside the line that
  * says so: a missing or expired link goes straight to the provider, consent
@@ -201,17 +202,17 @@ function Unavailable({ source, name, fix }: { source?: Source<unknown>; name: st
  * scale in their note, because a chart that does not start at zero has to say
  * so. `goal` draws the line the person is aiming at.
  */
-function Trend({ rows, max, min = 0, goal, unit, format, neutral }: { rows: { date: string; value: number | null }[]; max: number; min?: number; goal?: number; unit: string; format?: (value: number) => string; neutral?: boolean }) {
+function Trend({ rows, max, min = 0, goal, unit, format, neutral, label, span = 'days' }: { rows: { date: string; value: number | null }[]; max: number; min?: number; goal?: number; unit: string; format?: (value: number) => string; neutral?: boolean; label?: (date: string) => string; span?: string }) {
   if (!rows.some(row => row.value !== null)) return <p className="dashboard-empty">No scored days in this window.</p>;
   const place = (value: number) => Math.max(4, Math.min(100, ((value - min) / (max - min)) * 100));
-  return <ul className="trend-bars" aria-label={`Last ${rows.length} days, ${unit}`}>{rows.map(row => {
+  return <ul className="trend-bars" aria-label={`Last ${rows.length} ${span}, ${unit}`}>{rows.map(row => {
     const pct = row.value === null ? 0 : place(row.value);
     const share = row.value === null ? 0 : (row.value - min) / (max - min);
     const tone = row.value === null ? 'idle' : neutral ? 'plain' : share >= .66 ? 'good' : share >= .34 ? 'ok' : 'low';
     return <li key={row.date}>
       <b>{row.value === null ? '—' : format ? format(row.value) : Math.round(row.value)}</b>
       <span className="trend-track">{goal !== undefined && <span className="trend-goal" style={{ bottom: `${place(goal)}%` }} title={`Goal ${goal}`} />}<span className={`trend-bar trend-${tone}`} style={{ height: `${pct}%` }} /></span>
-      <small>{new Date(`${row.date}T12:00:00Z`).toLocaleDateString(undefined, { timeZone: 'UTC', weekday: 'narrow' })}</small>
+      <small>{label ? label(row.date) : new Date(`${row.date}T12:00:00Z`).toLocaleDateString(undefined, { timeZone: 'UTC', weekday: 'narrow' })}</small>
     </li>;
   })}</ul>;
 }
@@ -498,6 +499,35 @@ function readinessOf(today: RecoveryDay | undefined, prior: RecoveryDay[], sleep
 }
 /** A number and its unit, spaced the way that unit wants to be read. */
 const withUnit = (value: string, unit: string) => (unit === '%' || !unit ? `${value}${unit}` : `${value} ${unit}`);
+const lbOf = (kg: number) => kg * 2.20462;
+/** The last weigh-in of each local day, newest first. */
+function weighInDays(weighIns?: WeighIn[] | null) {
+  const byDay = new Map<string, WeighIn>();
+  for (const w of [...(weighIns || [])].sort((a, b) => b.at.localeCompare(a.at))) {
+    const day = new Date(w.at).toLocaleDateString('en-CA');
+    if (!byDay.has(day)) byDay.set(day, w);
+  }
+  return [...byDay.values()];
+}
+/**
+ * Eight weeks, oldest first, each the average of that week's weigh-ins (null
+ * for a week with none). `date` is the week's Monday, YYYY-MM-DD.
+ */
+function weeklyAverage(days: WeighIn[], pick: (w: WeighIn) => number | null) {
+  const monday = new Date();
+  monday.setHours(0, 0, 0, 0);
+  monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
+  return Array.from({ length: 8 }, (_, i) => {
+    const start = new Date(monday);
+    start.setDate(start.getDate() - (7 - i) * 7);
+    const end = new Date(start);
+    end.setDate(end.getDate() + 7);
+    const values = days
+      .filter(w => { const t = Date.parse(w.at); return t >= start.getTime() && t < end.getTime(); })
+      .flatMap(w => { const v = pick(w); return v === null ? [] : [v]; });
+    return { date: start.toLocaleDateString('en-CA'), value: values.length ? values.reduce((a, b) => a + b, 0) / values.length : null };
+  });
+}
 /** Which way is the good way for this number — or neither, for the ones that
  *  are only ever a fact about the day. */
 type Better = 'lower' | 'higher' | 'flat';
@@ -662,6 +692,7 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
   const [mailScanNote, setMailScanNote] = useState('');
   const [healthError, setHealthError] = useState('');
   const [healthResolving, setHealthResolving] = useState<string | null>(null);
+  const [calibrating, setCalibrating] = useState(false);
   const [reconnecting, setReconnecting] = useState<string | null>(null);
   const now = useNow(30000);
   const [collapsedMap, setCollapsedMap] = useState<Record<string, boolean>>(loadCollapsed);
@@ -779,6 +810,14 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
   const sleepTrend = trendOf(sleepDays, s => s.hours_asleep, .25);
   const strain = strainDays[0];
   const readiness = readinessOf(recovery, scoredDays.slice(1), sleep?.sleep_performance_percent ?? null);
+  // The scale: one reading per day (the last of the day), newest first. A
+  // second step-on is a correction, not a second data point.
+  const weighDays = weighInDays(summary?.body?.data?.weighIns);
+  const weighIn = weighDays[0];
+  const lastMonth = weighDays.filter(w => Date.now() - Date.parse(w.at) < 30 * 86400000);
+  // Half a pound either way is water and breakfast, not a direction.
+  const weightTrend = trendOf(lastMonth, w => lbOf(w.weight_kg), .5);
+  const fatTrend = trendOf(lastMonth, w => w.body_fat_percent, .3);
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
   const ready = (source?: Source<unknown>) => source?.status === 'ready';
@@ -855,7 +894,48 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
       {readiness && <p className="readiness-reason">{readiness.reason}</p>}
       <div className="health-metrics">{heartMetrics()}</div></>}
       {whoopNotes()}
+      {weighIn && <div className="health-metrics">{bodyMetrics(false)}</div>}
       </>;
+  }
+  /**
+   * The scale's tiles. Weight and body fat carry no goal and no good/bad
+   * colour: which way someone wants them to move is theirs to say, not ours.
+   */
+  function bodyMetrics(wide: boolean) {
+    if (!weighIn) return null;
+    const on = dateLabel(weighIn.at, { timeZone });
+    // Where a number came from, said on the tile: the scale's own reading,
+    // Athena's estimate from impedance, or either corrected to a lab result.
+    const origin = (field: string) => weighIn.calibrated?.includes(field) ? ' · cal.' : weighIn.estimated?.includes(field) ? ' · est.' : '';
+    const howCome = (field: string) => weighIn.calibrated?.includes(field) ? ' Corrected to your lab reference.'
+      : weighIn.estimated?.includes(field) ? " Athena's estimate from the scale's impedance reading, using published equations — not the VeSync app's number." : '';
+    const tiles: ReactNode[] = [
+      <HeartMetric key="weight" label="Weight" value={lbOf(weighIn.weight_kg)} unit="lb" better="flat" trend={weightTrend} decimals={1}
+        note={`${weighIn.weight_kg.toFixed(1)} kg, weighed ${on}${weighIn.manual ? ' (entered by hand)' : ''}.`} />,
+      <HeartMetric key="fat" label={`Body fat${origin('body_fat_percent')}`} value={weighIn.body_fat_percent} unit="%" better="flat" trend={fatTrend} decimals={1}
+        note={weighIn.body_fat_percent == null ? 'Not measured on the last weigh-in. Body fat needs bare feet on the scale.' : `From your scale, ${on}. Scales estimate this from a small current, so the trend is more trustworthy than any one reading.${howCome('body_fat_percent')}`} />,
+    ];
+    if (wide) {
+      const lbOrNull = (kg: number | null) => (kg === null ? null : lbOf(kg));
+      const extra: [string, number | null, string, number, string, string?][] = [
+        ['Muscle mass', lbOrNull(weighIn.muscle_mass_kg), 'lb', 1, 'Everything that is muscle, including the heart and gut.'],
+        ['Skeletal muscle', lbOrNull(weighIn.skeletal_muscle_kg ?? null), 'lb', 1, `The muscle you move with${weighIn.skeletal_muscle_percent != null ? `, ${weighIn.skeletal_muscle_percent}% of body weight` : ''}.`, 'skeletal_muscle_kg'],
+        ['Fat-free mass', lbOrNull(weighIn.fat_free_mass_kg), 'lb', 1, 'Everything that is not fat.', 'fat_free_mass_kg'],
+        ['BMI', weighIn.bmi, '', 1, 'Weight against height. It cannot tell muscle from fat.'],
+        ['Body water', weighIn.body_water_percent, '%', 1, 'Swings with what you drank and when you weighed.', 'body_water_percent'],
+        ['Visceral fat', weighIn.visceral_fat, '', 0, "The scale's index for fat around the organs."],
+        ['Subcutaneous fat', weighIn.subcutaneous_fat_percent, '%', 1, 'Fat under the skin.'],
+        ['Bone mass', lbOrNull(weighIn.bone_mass_kg), 'lb', 1, 'An estimate; it barely moves.'],
+        ['Protein', weighIn.protein_percent, '%', 1, 'Estimated protein share of body weight.'],
+        ['BMR', weighIn.bmr_kcal, 'kcal', 0, 'Calories your body burns at rest in a day.', 'bmr_kcal'],
+        ['Metabolic age', weighIn.metabolic_age, 'yr', 0, "The scale's comparison of your BMR with typical ages."],
+        ['Heart rate', weighIn.heart_rate ?? null, 'bpm', 0, 'Measured through your feet while you stood on the scale.'],
+      ];
+      for (const [label, value, unit, decimals, note, field] of extra) {
+        if (value !== null) tiles.push(<HeartMetric key={label} label={`${label}${field ? origin(field) : ''}`} value={value} unit={unit} better="flat" decimals={decimals} note={`${note} From ${on}.${field ? howCome(field) : ''}`} />);
+      }
+    }
+    return tiles;
   }
   function workBody(limit: number) {
     return <>
@@ -1061,15 +1141,28 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
     const rhrWeek = week(summary?.recovery.data?.filter(r => r.state === 'SCORED'), r => r.resting_heart_rate ?? null);
     const hrvWeek = week(summary?.recovery.data?.filter(r => r.state === 'SCORED'), r => r.hrv_ms ?? null);
     const avgHrWeek = week(summary?.strain.data, s => s.average_heart_rate ?? null);
+    const weightWeeks = weeklyAverage(weighDays, w => lbOf(w.weight_kg));
+    const fatWeeks = weeklyAverage(weighDays, w => w.body_fat_percent);
+    const range = (rows: { value: number | null }[], pad: number) => {
+      const values = rows.flatMap(r => (r.value === null ? [] : [r.value]));
+      return values.length ? { min: Math.floor(Math.min(...values) - pad), max: Math.ceil(Math.max(...values) + pad) } : { min: 0, max: 1 };
+    };
+    const weekOf = (date: string) => new Date(`${date}T12:00:00Z`).toLocaleDateString(undefined, { timeZone: 'UTC', month: 'numeric', day: 'numeric' });
+    const body = summary?.body;
+    // VeSync has no Connect button in the app (the owner links it), so a
+    // missing link is said, not offered.
+    const bodyFix: SourceFix = { panel: () => onPanel('integrations'), retry: retryData };
+    const bodyUnavailable = <Unavailable source={body ?? { status: 'not_connected', data: null, detail: null, checkedAt: '' }} name="VeSync scale" fix={bodyFix} />;
     return <SectionPage ctx={ctx}
       eyebrow="HOW YOUR BODY IS DOING" title="Health & Performance"
-      blurb="A week of WHOOP recovery, sleep and strain — read against the fortnight behind it, so a number that moved says so."
-      ask="Help me review my WHOOP recovery, heart rate, HRV and sleep. Am I trending the right way?"
+      blurb="A week of WHOOP recovery, sleep and strain — read against the fortnight behind it, so a number that moved says so — and what your scale says about your body."
+      ask="Help me review my WHOOP recovery, heart rate, HRV, sleep and weigh-ins. Am I trending the right way?"
       stats={<>
         <Stat label="Today" value={readiness ? readiness.label : '—'} note={readiness ? readiness.headline : 'No scored recovery to judge'} tone={readiness?.level === 'go' ? 'good' : readiness?.level === 'rest' ? 'ok' : readiness?.level === 'warning' ? 'low' : 'idle'} />
         <Stat label="Recovery" value={recovery?.recovery_score ?? '—'} note={recovery ? dateLabel(`${recovery.date}T12:00:00Z`, { timeZone: 'UTC' }) : 'No scored result'} tone={recovery?.recovery_score == null ? 'idle' : recovery.recovery_score >= 67 ? 'good' : recovery.recovery_score >= 34 ? 'ok' : 'low'} />
         <Stat label="Sleep" value={sleep ? hoursMinutes(sleep.hours_asleep) : '—'} note={sleep?.sleep_performance_percent != null ? `${sleep.sleep_performance_percent}% of need` : 'No sleep recorded'} />
         <Stat label="Day strain" value={strain?.day_strain != null ? strain.day_strain.toFixed(1) : '—'} note={strain ? dateLabel(`${strain.date}T12:00:00Z`, { timeZone: 'UTC' }) : 'No strain recorded'} />
+        {weighIn && <Stat label="Weight" value={`${lbOf(weighIn.weight_kg).toFixed(1)} lb`} note={dateLabel(weighIn.at, { timeZone })} />}
       </>}
     >
       <Panel title="Heart" note={`goals · ${HEART_GOALS.restingHeartRate} bpm resting, ${HEART_GOALS.hrvMs} ms HRV`} wide>
@@ -1095,6 +1188,20 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
         {ready(summary?.strain) ? <Trend rows={strainWeek} max={21} unit="day strain" format={v => v.toFixed(1)} neutral /> : unavailable('strain', 'WHOOP strain')}
       </Panel>
       <WorkoutsPanel onAsk={onAsk} />
+      <Panel title="Body composition" note={weighIn ? `last weigh-in · ${dateLabel(weighIn.at, { timeZone })}` : 'VeSync scale'} wide>
+        {!ready(body) ? bodyUnavailable
+          : weighIn ? <><div className="health-metrics health-metrics-wide">{bodyMetrics(true)}</div>
+              <p className="source-note">est. = Athena's estimate from your scale's impedance · cal. = corrected to a lab result</p>
+              <button type="button" className="source-fix" onClick={() => setCalibrating(true)}>{body?.data?.references?.length ? `Calibration · ${body.data.references.length} reference${body.data.references.length === 1 ? '' : 's'}` : 'Calibrate with a lab result'} <span>↗</span></button></>
+            : <p className="dashboard-empty">No weigh-ins in the last 90 days.</p>}
+        {calibrating && <BodyCalibrationDialog references={body?.data?.references || []} calibration={body?.data?.calibration} onClose={() => setCalibrating(false)} onSaved={retryData} />}
+      </Panel>
+      <Panel title="Weight" note="weekly average · lb">
+        {!ready(body) ? bodyUnavailable : <Trend rows={weightWeeks} {...range(weightWeeks, 2)} unit="pounds, weekly average" format={v => v.toFixed(1)} neutral label={weekOf} span="weeks" />}
+      </Panel>
+      <Panel title="Body fat" note="weekly average · %">
+        {!ready(body) ? bodyUnavailable : <Trend rows={fatWeeks} {...range(fatWeeks, 1)} unit="percent body fat, weekly average" format={v => v.toFixed(1)} neutral label={weekOf} span="weeks" />}
+      </Panel>
     </SectionPage>;
   }
 
