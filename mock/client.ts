@@ -909,6 +909,26 @@ function mockHealth() {
   });
 }
 
+/** A year and a half of plausible WHOOP workouts, newest first, stable per load. */
+function mockWorkouts() {
+  const sports = ['weightlifting_msk', 'cycling', 'running', 'weightlifting_msk', 'activity', 'cycling', 'walking'];
+  const out = [];
+  for (let d = 2, i = 0; d < 540; d += 1 + (i * 7) % 3, i++) {
+    const sport = sports[i % sports.length];
+    const lift = sport.includes('lifting');
+    const minutes = lift ? 30 + (i * 13) % 25 : 35 + (i * 17) % 60;
+    const start = new Date(Date.now() - d * 86400000 - ((i * 5) % 10) * 3600000);
+    const z = lift ? [0.35, 0.5, 0.12, 0.03, 0, 0] : [0.05, 0.2, 0.35, 0.25, 0.12, 0.03];
+    out.push({
+      date: start.toISOString().slice(0, 10), start: start.toISOString(), timezone_offset: '-04:00', minutes, sport,
+      strain: +(lift ? 9 + (i % 5) : 8 + (i % 8)).toFixed(1), average_heart_rate: lift ? 112 + (i % 9) : 128 + (i % 20),
+      max_heart_rate: lift ? 148 + (i % 7) : 160 + (i % 18), kilojoules: minutes * (lift ? 17 : 22), percent_recorded: 1, distance_meter: null,
+      minutes_in_zone: Object.fromEntries(['zone_zero', 'zone_one', 'zone_two', 'zone_three', 'zone_four', 'zone_five'].map((k, j) => [k, Math.round(minutes * z[j])])),
+    });
+  }
+  return out;
+}
+
 async function route(method: string, path: string, body?: any): Promise<any> {
   await wait(150);
   const url = new URL(path, 'http://mock');
@@ -939,6 +959,7 @@ async function route(method: string, path: string, body?: any): Promise<any> {
     if (linkDown()) fail(503, 'mock: API unreachable');
     if (ipDrift) fail(401, 'IP mismatch for provided token.', 'IP_MISMATCH');
   }
+  if (p === '/api/v1/workouts') return { days: 3650, workouts: mockWorkouts() };
   if (p === '/api/v1/access') {
     if (!signedIn) fail(401, 'Not authenticated');
     if (method === 'POST') localStorage.setItem('mock_access_requested', 'true');

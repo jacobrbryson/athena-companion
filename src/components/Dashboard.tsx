@@ -25,6 +25,7 @@ import { CommunityMap, PointsOfInterest, Neighbors, LocalEvents, PlaceReminders,
 import { EmergencyAlertSetup } from './EmergencyAlertSetup';
 import { Websites } from './Websites';
 import { Workplaces } from './Workplaces';
+import { WorkoutsPanel } from './Workouts';
 
 /** Enough for a household, so nobody sorted late in the alphabet is cut off the card. */
 const FAMILY_CARD_ROWS = 7;
@@ -1093,6 +1094,7 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
       <Panel title="Day strain" note="last 7 days · 0–21">
         {ready(summary?.strain) ? <Trend rows={strainWeek} max={21} unit="day strain" format={v => v.toFixed(1)} neutral /> : unavailable('strain', 'WHOOP strain')}
       </Panel>
+      <WorkoutsPanel onAsk={onAsk} />
     </SectionPage>;
   }
 
