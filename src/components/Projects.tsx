@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Drawer } from './Drawer';
+import { DrawerButton } from './ActionControls';
 import { ProjectJournal } from './ProjectJournal';
 import { ProjectData } from './ProjectData';
 import {
@@ -187,7 +188,7 @@ export function ProjectBoard({ state, onOpen, onNew, area: fixedArea }: {
       </button>)}
       <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Find…" aria-label="Find a project"
         className="min-w-[8rem] flex-1 rounded-full border border-slate-700 bg-slate-950 px-3 py-1 text-xs" />
-      <button type="button" className="dashboard-chat-cta" onClick={() => onNew(area)}>New project <span>+</span></button>
+      <DrawerButton primary onClick={() => onNew(area)}><span aria-hidden="true">＋</span>New project</DrawerButton>
     </div>
     {state.error && <p role="alert" className="text-sm text-amber-200">{state.error} <button className="underline" onClick={state.reload}>Retry</button></p>}
     {state.loading && !state.snap.projects.length ? <p className="dashboard-empty">Loading projects…</p>

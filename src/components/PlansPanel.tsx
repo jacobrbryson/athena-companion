@@ -4,7 +4,7 @@ import { dashboardApi, type Place } from '../api/dashboard';
 
 /**
  * The places list behind the Right Now card: places worth going to. (Projects
- * moved to the Projects and Home pages, ./Projects.tsx, on 2026-10-13.)
+ * moved to the Projects and Property pages, ./Projects.tsx, on 2026-10-13.)
  *
  * The list is the person's own. Athena reads a place's page on her own rhythm and
  * reports what it says — there is no control here for how often, for the same
@@ -90,7 +90,7 @@ export function PlansPanel({ onClose, onSaved }: { onClose: () => void; onSaved:
     <p className="mb-4 text-sm text-slate-300">
       What I weigh when I tell you what to do with a free afternoon. I read a place’s page on my own
       rhythm and report what it says; I never add or finish anything here myself.
-      Projects live on the Projects and Home pages.
+      Projects live on the Projects and Property pages.
     </p>
 
     {error && <p role="alert" className="mb-4 text-sm text-amber-200">{error} {!loaded && <button onClick={reload} className="underline">Retry</button>}</p>}

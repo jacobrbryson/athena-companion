@@ -317,6 +317,13 @@ function dashboardSummary() {
         { id: 't1', title: 'Troutman soccer practice', start: inMinutes(30 * 60), end: inMinutes(30 * 60 + 90), allDay: false, location: null, calendar: null, shared: false },
         { id: 't2', title: 'Troutman Rec game vs Mooresville', start: inMinutes(4 * 24 * 60 - 120), end: inMinutes(4 * 24 * 60 - 120 + 60), allDay: false, location: null, calendar: null, shared: false },
         { id: 't3', title: 'Troutman Founders Day 5K', start: inMinutes(4 * 24 * 60 + 420), end: inMinutes(4 * 24 * 60 + 420 + 90), allDay: false, location: null, calendar: null, shared: false },
+        // Named calendars, so the Calendar page has more than one colour and switch to show.
+        { id: 'w1', title: 'Emily & Ross 1:1', start: inMinutes(60 * 3), end: inMinutes(60 * 3 + 30), allDay: false, location: 'https://meet.google.com/abc', calendar: 'ross@example.com', shared: false, eventType: 'default', attendees: 2 },
+        { id: 'w2', title: 'Sprint planning', start: inMinutes(60 * 24 + 120), end: inMinutes(60 * 24 + 180), allDay: false, location: null, calendar: 'ross@example.com', shared: false, eventType: 'default', attendees: 8 },
+        { id: 'f1', title: 'Skylar softball practice', start: inMinutes(60 * 5), end: inMinutes(60 * 6), allDay: false, location: 'Troutman Middle School', calendar: 'Family', shared: true },
+        { id: 'f2', title: 'Ashlynn therapy', start: inMinutes(60 * 48), end: inMinutes(60 * 49), allDay: false, location: null, calendar: 'Family', shared: true },
+        { id: 'g1', title: 'Gym', start: inMinutes(60 * 22), end: inMinutes(60 * 23), allDay: false, location: null, calendar: 'ross@example.com', shared: false },
+        { id: 'v1', title: 'Iceland trip', start: dayStamp(-2), end: dayStamp(-6), allDay: true, location: null, calendar: 'Travel', shared: true },
       ],
     }),
     // A fortnight of heart data: a settled baseline, then a couple of days of
@@ -956,6 +963,73 @@ function mockWorkouts() {
   return out;
 }
 
+/** The Health page's plan (training program + nutrition), seeded to week 2 of a hypertrophy block. */
+type MockPlanSession = { uuid: string; weekday: number; kind: string; title: string; focus: string | null; detail: string | null; exercises: string[] };
+type MockPlanState = {
+  program: { uuid: string; name: string; goal: string | null; starts_on: string; weeks: number; sessions: MockPlanSession[] } | null;
+  marks: Record<string, string>;
+  targets: Record<string, number | null> | null;
+  entries: { uuid: string; eaten_on: string; label: string; calories: number | null; protein_g: number | null; carbs_g: number | null; fat_g: number | null; water_oz: number | null; created_at: string }[];
+};
+const planDay = (d: Date) => d.toLocaleDateString('en-CA');
+const planAdd = (date: string, days: number) => new Date(Date.parse(`${date}T12:00:00Z`) + days * DAY).toISOString().slice(0, 10);
+const planMonday = (date: string) => planAdd(date, -((new Date(`${date}T12:00:00Z`).getUTCDay() + 6) % 7));
+function mockPlanState(): MockPlanState {
+  const stored = localStorage.getItem('mock_health_plan');
+  if (stored) return JSON.parse(stored);
+  const today = planDay(new Date());
+  const s = (weekday: number, kind: string, title: string, focus: string | null, detail: string | null = null, exercises: string[] = []) => ({ uuid: `ses-${weekday}`, weekday, kind, title, focus, detail, exercises });
+  const at = (h: number) => new Date(new Date().setHours(h, 0, 0, 0)).toISOString();
+  return {
+    program: {
+      uuid: 'prog-1', name: 'Hypertrophy Program', goal: 'Add lean mass without losing the legs for soccer', starts_on: planAdd(planMonday(today), -7), weeks: 22,
+      sessions: [
+        s(0, 'gym', 'Gym A', 'Upper', null, ['Bench press', 'Rows', 'Overhead press', 'Pull-ups', 'Curls', 'Triceps']),
+        s(1, 'recovery', 'Recovery', 'Active', 'Mobility, an easy walk'),
+        s(2, 'gym', 'Gym B', 'Lower', null, ['Leg press', 'RDL', 'Lunges', 'Leg curls', 'Calves', 'Core']),
+        s(3, 'run', 'Run', null, '3–5 miles'),
+        s(4, 'gym', 'Gym C', 'Upper', null, ['Incline press', 'Cable rows', 'Lateral raises', 'Dips', 'Hammer curls']),
+        s(5, 'sport', 'Soccer', 'AM'),
+        s(6, 'ride', 'MTB', 'Active'),
+      ],
+    },
+    marks: { [`ses-0:${planMonday(today)}`]: 'done' },
+    targets: { calories: 2900, protein_g: 185, carbs_g: 350, fat_g: 80, water_oz: 100, sleep_hours: 8.5, target_weight_low_kg: 88.45, target_weight_high_kg: 90.72 },
+    entries: [
+      { uuid: 'food-1', eaten_on: today, label: 'Eggs, oats and berries', calories: 640, protein_g: 42, carbs_g: 78, fat_g: 20, water_oz: 16, created_at: at(7) },
+      { uuid: 'food-2', eaten_on: today, label: 'Chicken rice bowl', calories: 780, protein_g: 56, carbs_g: 96, fat_g: 24, water_oz: 24, created_at: at(12) },
+      { uuid: 'food-3', eaten_on: today, label: 'Protein shake', calories: 320, protein_g: 50, carbs_g: 30, fat_g: 6, water_oz: 12, created_at: at(15) },
+      { uuid: 'food-4', eaten_on: today, label: 'Bagel and peanut butter', calories: 600, protein_g: 20, carbs_g: 106, fat_g: 22, water_oz: null, created_at: at(17) },
+      ...[1, 2, 3, 4, 5, 6].map(d => ({ uuid: `food-past-${d}`, eaten_on: planAdd(today, -d), label: 'Logged day', calories: 2500 + ((d * 173) % 500), protein_g: 160 + ((d * 7) % 30), carbs_g: 300 + ((d * 19) % 60), fat_g: 70 + ((d * 5) % 15), water_oz: 80 + ((d * 9) % 30), created_at: new Date(Date.now() - d * DAY).toISOString() })),
+    ],
+  };
+}
+const savePlan = (state: MockPlanState) => localStorage.setItem('mock_health_plan', JSON.stringify(state));
+function mockProgram(state: MockPlanState, today: string) {
+  const prog = state.program;
+  if (!prog) return null;
+  const monday = planMonday(today);
+  const workouts = mockWorkouts();
+  const kinds: Record<string, RegExp> = { gym: /lifting/, run: /running/, ride: /cycling/, recovery: /walking|yoga/, sport: /soccer/ };
+  return {
+    uuid: prog.uuid, name: prog.name, goal: prog.goal, starts_on: prog.starts_on, weeks: prog.weeks,
+    week_number: Math.floor((Date.parse(monday) - Date.parse(planMonday(prog.starts_on))) / (7 * DAY)) + 1, ended: false, before_start: today < prog.starts_on, week_of: monday,
+    sessions: prog.sessions.map(s => {
+      const date = planAdd(monday, s.weekday);
+      const mark = state.marks[`${s.uuid}:${date}`] || null;
+      const rec = kinds[s.kind] ? workouts.find(w => w.date === date && kinds[s.kind].test(w.sport)) : null;
+      return { ...s, date, marked: !!mark, recorded: rec ? { sport: rec.sport, minutes: rec.minutes, strain: rec.strain } : null,
+        status: mark || (rec ? 'done' : date < today ? 'missed' : date === today ? 'today' : 'planned') };
+    }),
+  };
+}
+function mockNutrition(state: MockPlanState, today: string) {
+  const fields = ['calories', 'protein_g', 'carbs_g', 'fat_g', 'water_oz'] as const;
+  const totals = (rows: MockPlanState['entries']) => Object.fromEntries(fields.map(f => [f, rows.reduce((n, e) => n + (e[f] || 0), 0)]));
+  const todays = state.entries.filter(e => e.eaten_on === today);
+  return { date: today, entries: todays, totals: totals(todays), days: Array.from({ length: 7 }, (_, i) => { const date = planAdd(today, i - 6); const rows = state.entries.filter(e => e.eaten_on === date); return { date, logged: rows.length > 0, totals: totals(rows) }; }) };
+}
+
 async function route(method: string, path: string, body?: any): Promise<any> {
   await wait(150);
   const url = new URL(path, 'http://mock');
@@ -987,6 +1061,45 @@ async function route(method: string, path: string, body?: any): Promise<any> {
     if (ipDrift) fail(401, 'IP mismatch for provided token.', 'IP_MISMATCH');
   }
   if (p === '/api/v1/workouts') return { days: 3650, workouts: mockWorkouts() };
+  if (p.startsWith('/api/v1/dashboard/health/plan') || p.startsWith('/api/v1/dashboard/health/program') || p.startsWith('/api/v1/dashboard/health/targets') || p.startsWith('/api/v1/dashboard/health/nutrition')) {
+    const state = mockPlanState();
+    const today = url.searchParams.get('today') || body?.today || planDay(new Date());
+    if (p === '/api/v1/dashboard/health/plan') return { program: mockProgram(state, today), targets: state.targets, nutrition: mockNutrition(state, today) };
+    if (p === '/api/v1/dashboard/health/program' && method === 'PUT') {
+      const before = state.program?.sessions || [];
+      state.program = { uuid: `prog-${Date.now()}`, name: body.name, goal: body.goal || null, starts_on: body.starts_on, weeks: body.weeks, sessions: body.sessions.map((x: MockPlanSession, i: number) => ({ ...x, uuid: `ses-${Date.now()}-${i}`, focus: x.focus || null, detail: x.detail || null, exercises: x.exercises || [] })) };
+      // Like the server: a mark follows the session with the same weekday and title.
+      const carried: Record<string, string> = {};
+      for (const [key, status] of Object.entries(state.marks)) {
+        const [uuid, date] = key.split(':');
+        const old = before.find(x => x.uuid === uuid);
+        const now = old && state.program.sessions.find(x => x.weekday === old.weekday && x.title === old.title);
+        if (now) carried[`${now.uuid}:${date}`] = status;
+      }
+      state.marks = carried;
+      savePlan(state);
+      return { program: mockProgram(state, today) };
+    }
+    if (p === '/api/v1/dashboard/health/program' && method === 'DELETE') { state.program = null; savePlan(state); return { ended: true }; }
+    if (p.endsWith('/mark')) {
+      const key = `${decodeURIComponent(p.split('/')[7])}:${body.date}`;
+      if (body.status) state.marks[key] = body.status; else delete state.marks[key];
+      savePlan(state);
+      return { program: mockProgram(state, today) };
+    }
+    if (p === '/api/v1/dashboard/health/targets') { state.targets = { ...body }; savePlan(state); return { targets: state.targets }; }
+    if (p === '/api/v1/dashboard/health/nutrition' && method === 'POST') {
+      state.entries.push({ uuid: `food-${Date.now()}`, eaten_on: body.eaten_on || today, label: body.label || 'Water', calories: body.calories ?? null, protein_g: body.protein_g ?? null, carbs_g: body.carbs_g ?? null, fat_g: body.fat_g ?? null, water_oz: body.water_oz ?? null, created_at: new Date().toISOString() });
+      savePlan(state);
+      return { nutrition: mockNutrition(state, today) };
+    }
+    if (p.startsWith('/api/v1/dashboard/health/nutrition/') && method === 'DELETE') {
+      const uuid = decodeURIComponent(p.split('/').pop() || '');
+      state.entries = state.entries.filter(e => e.uuid !== uuid);
+      savePlan(state);
+      return { nutrition: mockNutrition(state, today) };
+    }
+  }
   if (p === '/api/v1/access') {
     if (!signedIn) fail(401, 'Not authenticated');
     if (method === 'POST') localStorage.setItem('mock_access_requested', 'true');

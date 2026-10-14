@@ -17,7 +17,7 @@ import { familyHealthSummary } from './familyHealthSummary';
 import { DoorToDoor } from './DoorToDoor';
 import { communityEvents } from './communityCalendar.ts';
 import { WorkBanner } from './WorkBanner';
-import { untilLabel } from './workStatus';
+import { untilLabel, workStatus } from './workStatus';
 import { EmailPanel, CATEGORY_LABEL } from './EmailPanel';
 import { MailBundles } from './MailBundles';
 import { DreamCard, DreamsPage } from './Dreams';
@@ -27,16 +27,21 @@ import { EmergencyAlertSetup } from './EmergencyAlertSetup';
 import { Websites } from './Websites';
 import { Workplaces } from './Workplaces';
 import { WorkoutsPanel } from './Workouts';
+import { HealthOverview } from './HealthPage';
+import { CalendarOverview } from './CalendarPage';
+import { FamilyOverview } from './FamilyPage';
+import { NavigationLink, DrawerButton } from './ActionControls';
 import { plannedToday } from './ProjectData';
 import { useProjects, openProjects, ProjectList, ProjectBoard, ProjectsDrawers, ConcernList, CharterView, StateChip, type ProjectsDrawer } from './Projects';
 import type { Area } from '../api/projects';
+import { useProperty, PropertyOverview, PropertyWeather, PropertyNavigation, propertyHealth, type PropertyTab } from './Property';
 
 /** Enough for a household, so nobody sorted late in the alphabet is cut off the card. */
 const FAMILY_CARD_ROWS = 7;
 
 /** Open a console panel; `consentFor` opens Connected apps on that provider's consent prompt. */
 export type OpenPanel = (panel: 'integrations' | 'memory' | 'actions' | 'notifications' | 'knows' | 'photo' | 'devices', options?: { consentFor?: string }) => void;
-export type DashboardSection = 'Dashboard' | 'Home' | 'Today' | 'Calendar' | 'Health' | 'Family' | 'Community' | 'Mail' | 'Work' | 'Projects' | 'News' | 'Dreams' | 'System';
+export type DashboardSection = 'Dashboard' | 'Property' | 'Today' | 'Calendar' | 'Health' | 'Family' | 'Community' | 'Mail' | 'Work' | 'Projects' | 'News' | 'Dreams' | 'System';
 // Icons live in ./icons — one registry, so a drawn icon looks the same in
 // the nav, on its card and in the phone's bottom bar.
 export { DashboardIcon } from './icons';
@@ -45,7 +50,7 @@ export { DashboardIcon } from './icons';
 // Quick Actions entry, which now lives on as the bell in the
 // top bar (the Notifications card was removed by the owner, 2026-09-27).
 // Today remains an internal page for now but is not a left-navigation entry.
-export const dashboardSections: DashboardSection[] = ['Dashboard', 'Calendar', 'Health', 'Family', 'Community', 'Home', 'Mail', 'Work', 'Projects', 'News', 'Dreams', 'System'];
+export const dashboardSections: DashboardSection[] = ['Dashboard', 'Calendar', 'Health', 'Family', 'Community', 'Property', 'Mail', 'Work', 'Projects', 'News', 'Dreams', 'System'];
 // The card set, in the one order the dashboard uses. Fixed by the owner
 // (2026-09-26): Health & Performance first, and Athena no longer re-sorts it.
 // The first row is the owner's hierarchy (2026-09-27): take care of yourself,
@@ -171,8 +176,9 @@ function Issues({ issues }: { issues: JiraIssue[] }) {
 // Home, where the job is breadth rather than depth.
 
 /** One number worth reading at a glance, with the note that gives it meaning. */
-export function Stat({ label, value, note, tone }: { label: string; value: ReactNode; note?: ReactNode; tone?: 'good' | 'ok' | 'low' | 'alert' | 'idle' }) {
-  return <div className={`stat-tile${tone ? ` stat-${tone}` : ''}`}><span>{label}</span><strong>{value}</strong>{note && <small>{note}</small>}</div>;
+export function Stat({ label, value, note, tone, icon }: { label: string; value: ReactNode; note?: ReactNode; tone?: 'good' | 'ok' | 'low' | 'alert' | 'idle'; icon?: string }) {
+  const reading = <><span>{label}</span><strong className={icon && typeof value === 'string' && value.length > 8 ? 'stat-small' : undefined}>{value}</strong></>;
+  return <div className={`stat-tile${tone ? ` stat-${tone}` : ''}${icon ? ' stat-with-icon' : ''}`} data-icon={icon}>{icon ? <div className="stat-main"><div className="stat-icon"><DashboardIcon name={icon} bare /></div><div className="stat-reading">{reading}</div></div> : reading}{note && <small>{note}</small>}</div>;
 }
 export function Panel({ title, note, children, wide, id }: { title: string; note?: ReactNode; children: ReactNode; wide?: boolean; id?: string }) {
   return <section id={id} className={`section-panel${wide ? ' section-panel-wide' : ''}`}><header><h2>{title}</h2>{note && <span>{note}</span>}</header>{children}</section>;
@@ -240,14 +246,19 @@ export interface SectionContext {
  * whole subtree each time, and the news-sources panel would lose what was
  * being typed into it.
  */
-export function SectionPage({ eyebrow, title, blurb, stats, children, ask, ctx }: {
-  eyebrow: string; title: string; blurb: string; stats?: ReactNode; children: ReactNode; ask: string; ctx: SectionContext;
+export function SectionPage({ eyebrow, title, blurb, stats, children, ask, ctx, headerImage, headerAside, hero }: {
+  eyebrow: string; title: string; blurb: string; stats?: ReactNode; children: ReactNode; ask: string; ctx: SectionContext; headerImage?: string; headerAside?: ReactNode;
+  /** A page that draws its own head (Health) passes it here; it replaces the title, blurb and stat row. */
+  hero?: ReactNode;
 }) {
   return <main className="dashboard-content dashboard-section">
-    <div className="dashboard-toolbar"><span className="dashboard-eyebrow">{eyebrow}</span><time dateTime={new Date().toISOString()}>{new Date().toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}</time><button onClick={() => ctx.onAsk('')} className="ask-athena">ϟ <span>Ask Athena…</span> ↗</button></div>
-    <header className="section-head"><h1>{title}</h1><p>{blurb}</p></header>
+    <div className={headerAside ? 'property-hero' : undefined} id={headerAside ? 'property-overview' : undefined}>
+    {headerImage && <img className="property-hero-photo" src={headerImage} alt="" />}
+    <div className="dashboard-toolbar"><span className="dashboard-eyebrow">{eyebrow}</span><time dateTime={new Date().toISOString()}>{new Date().toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}</time>{headerAside ? <div className="property-hero-actions"><button onClick={() => ctx.onAsk('')} className="ask-athena">ϟ <span>Ask Athena…</span> ↗</button>{headerAside}</div> : <button onClick={() => ctx.onAsk('')} className="ask-athena">ϟ <span>Ask Athena…</span> ↗</button>}</div>
+    {hero ?? <header className="section-head"><h1>{title}</h1><p>{blurb}</p></header>}
     {ctx.error && <p className="dashboard-notice" role="status">Connected data is unavailable. {ctx.error}</p>}
-    {stats && <div className="stat-row">{stats}</div>}
+    {!hero && stats && <div className="stat-row">{stats}</div>}
+    </div>
     <div className="section-panels">{children}</div>
     <section className="dashboard-bottom"><div><span className="dashboard-eyebrow">A MOMENT WITH ATHENA</span><h2>She has read all of this.<br />Ask her what she makes of it.</h2><button className="dashboard-chat-cta" onClick={() => ctx.onAsk(ask)}>Talk it through <span>↗</span></button></div><div className="dashboard-utilities"><button onClick={ctx.onHome}>Back to your briefing <span>↗</span></button><button onClick={() => ctx.onPanel('integrations')}>Connected apps <span>↗</span></button><button onClick={() => ctx.onPanel('memory')}>Explore memories <span>↗</span></button></div></section>
     <footer className="dashboard-footer"><span><i /> YOUR SPACE. YOUR PACE.</span><span>LIVE · UPDATES ARRIVE ON THEIR OWN</span></footer>
@@ -665,13 +676,6 @@ function eventTime(event: CalendarEvent, timeZone?: string) {
   if (event.allDay) return 'All day';
   return new Date(event.start).toLocaleTimeString(undefined, { timeZone, hour: 'numeric', minute: '2-digit' });
 }
-function dayHeading(key: string, today: string) {
-  const date = new Date(`${key}T12:00:00Z`);
-  if (!Number.isFinite(date.getTime())) return key;
-  const days = Math.round((date.getTime() - new Date(`${today}T12:00:00Z`).getTime()) / 86400000);
-  const label = date.toLocaleDateString(undefined, { timeZone: 'UTC', weekday: 'long', month: 'short', day: 'numeric' });
-  return days === 0 ? `Today · ${label}` : days === 1 ? `Tomorrow · ${label}` : label;
-}
 
 export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, onPlaces, onNavigate, compact = false, onExpand }: {
   section?: DashboardSection;
@@ -701,6 +705,11 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
   const [reconnecting, setReconnecting] = useState<string | null>(null);
   // Projects: one load shared by the cards, the pages and the editors.
   const proj = useProjects();
+  const property = useProperty();
+  const [propertyTab, setPropertyTab] = useState<PropertyTab>(() => {
+    const id = typeof window === 'undefined' ? '' : window.location.hash.slice(1);
+    return ['property-overview', 'property-projects', 'property-concerns', 'property-map', 'property-season'].includes(id) ? id as PropertyTab : 'property-overview';
+  });
   const [drawer, setDrawer] = useState<ProjectsDrawer>(null);
   const openProject = (uuid: string) => setDrawer({ kind: 'project', uuid });
   const newProject = (area?: Area) => setDrawer({ kind: 'project', uuid: null, area: area ?? 'home' });
@@ -835,7 +844,9 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
   // A quarter of an hour: less than that between one stretch of nights and the
   // next is when you went to bed, not how you are sleeping.
   const sleepTrend = trendOf(sleepDays, s => s.hours_asleep, .25);
-  const strain = strainDays[0];
+  // WHOOP lists today's cycle before scoring it; an unscored newest row would
+  // blank the tile while yesterday's strain sits right behind it.
+  const strain = strainDays.find(s => s.day_strain != null) ?? strainDays[0];
   const readiness = readinessOf(recovery, scoredDays.slice(1), sleep?.sleep_performance_percent ?? null);
   // The scale: one reading per day (the last of the day), newest first. A
   // second step-on is a correction, not a second data point.
@@ -853,6 +864,8 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
   // Shared derivations the section pages read from.
   const timeZone = summary?.calendar.data?.timeZone;
   const events = summary?.calendar.data?.events || [];
+  // The same test WorkBanner draws itself on.
+  const working = !!workStatus(events, summary?.calendar.data?.workingLocations, now, timeZone);
   // What on the calendar mentions where they live: soccer practice, the games, the 5K.
   const today = zonedDay(new Date(), timeZone);
   const todayEvents = events.filter(e => eventDay(e, timeZone) === today);
@@ -1109,7 +1122,7 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
     news: card('news', 'News', 'News & Updates', newsBody(3), 'View news', go('News'), news.length || undefined, headlines.news),
     // Work projects never appear here (owner, 2026-10-13) — they live on Work.
     projects: card('projects', 'Projects', 'Projects', projectsCardBody(), 'View projects', go('Projects'), dashProjects.length || undefined, headlines.projects),
-    home: card('home', 'Home', 'Home', homeCardBody(), 'View home', go('Home'), homeOpen.length || undefined, headlines.home),
+    home: card('home', 'Home', 'Property', homeCardBody(), 'View property', go('Property'), homeOpen.length || undefined, headlines.home),
   };
 
   // --- The section pages ---------------------------------------------------
@@ -1157,81 +1170,37 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
   }
 
   function CalendarPage() {
-    const days = [...new Set(events.map(e => eventDay(e, timeZone)))].sort();
+    // The concept's page (CalendarPage.tsx): the week, the chosen day, the month and the calendars.
     return <SectionPage ctx={ctx}
-      eyebrow="THE NEXT SEVEN DAYS" title="Calendar"
-      blurb="Everything on your calendars, ongoing and upcoming, grouped by day."
+      eyebrow="" title="Calendar" blurb=""
       ask="Help me review my calendar for the week ahead."
-      stats={<>
-        <Stat label="Next 7 days" value={events.length} note="events in this window" />
-        <Stat label="Today" value={todayEvents.length} note={todayEvents.length ? 'on your calendar' : 'clear'} />
-        <Stat label="Next up" value={nextEvent ? eventTime(nextEvent, timeZone) : '—'} note={nextEvent?.title || 'Nothing scheduled'} />
-        <Stat label="Time zone" value={<span className="stat-small">{timeZone || '—'}</span>} note="as your calendar reports it" />
-      </>}
+      hero={<CalendarOverview events={events} timeZone={timeZone} days={summary?.calendar.data?.days ?? 7} now={now}
+        unavailable={ready(summary?.calendar) ? null : unavailable('calendar', 'Google Calendar')}
+        familyNames={roster.filter(r => r.relation !== 'Pet').map(r => r.name)}
+        onAsk={onAsk} onManage={() => onPanel('integrations')} />}
     >
-      <Panel title="Your schedule" note={ready(summary?.calendar) ? `${events.length} events` : undefined} wide>
-        {!ready(summary?.calendar) ? unavailable('calendar', 'Google Calendar')
-          : !days.length ? <p className="dashboard-empty">No upcoming events in this window.</p>
-            : days.map(day => <div className="day-group" key={day}>
-              <h3>{dayHeading(day, today)}</h3>
-              <ul className="dashboard-data-list calendar-events">{events.filter(e => eventDay(e, timeZone) === day).map((event, i) => <li key={`${event.id}-${i}`}><span className="event-dot" /><div><small>{eventTime(event, timeZone)}</small><strong>{event.title}</strong>{event.location && <small>{event.location}</small>}{event.shared && <small>{event.calendar}</small>}</div></li>)}</ul>
-            </div>)}
-      </Panel>
+      {null}
     </SectionPage>;
   }
 
   function HealthPage() {
-    const recoveryWeek = week(summary?.recovery.data?.filter(r => r.state === 'SCORED'), r => r.recovery_score);
-    const sleepWeek = week(summary?.sleep.data?.filter(s => !s.nap), s => s.hours_asleep ?? null);
-    const strainWeek = week(summary?.strain.data, s => s.day_strain);
-    const rhrWeek = week(summary?.recovery.data?.filter(r => r.state === 'SCORED'), r => r.resting_heart_rate ?? null);
-    const hrvWeek = week(summary?.recovery.data?.filter(r => r.state === 'SCORED'), r => r.hrv_ms ?? null);
-    const avgHrWeek = week(summary?.strain.data, s => s.average_heart_rate ?? null);
-    const weightWeeks = weeklyAverage(weighDays, w => lbOf(w.weight_kg));
-    const fatWeeks = weeklyAverage(weighDays, w => w.body_fat_percent);
-    const range = (rows: { value: number | null }[], pad: number) => {
-      const values = rows.flatMap(r => (r.value === null ? [] : [r.value]));
-      return values.length ? { min: Math.floor(Math.min(...values) - pad), max: Math.ceil(Math.max(...values) + pad) } : { min: 0, max: 1 };
-    };
-    const weekOf = (date: string) => new Date(`${date}T12:00:00Z`).toLocaleDateString(undefined, { timeZone: 'UTC', month: 'numeric', day: 'numeric' });
     const body = summary?.body;
     // VeSync has no Connect button in the app (the owner links it), so a
     // missing link is said, not offered.
     const bodyFix: SourceFix = { panel: () => onPanel('integrations'), retry: retryData };
     const bodyUnavailable = <Unavailable source={body ?? { status: 'not_connected', data: null, detail: null, checkedAt: '' }} name="VeSync scale" fix={bodyFix} />;
+    // The concept's page up top (HealthPage.tsx); the deep panels it summarises stay below it.
     return <SectionPage ctx={ctx}
-      eyebrow="HOW YOUR BODY IS DOING" title="Health & Performance"
-      blurb="A week of WHOOP recovery, sleep and strain — read against the fortnight behind it, so a number that moved says so — and what your scale says about your body."
-      ask="Help me review my WHOOP recovery, heart rate, HRV, sleep and weigh-ins. Am I trending the right way?"
-      stats={<>
-        <Stat label="Today" value={readiness ? readiness.label : '—'} note={readiness ? readiness.headline : 'No scored recovery to judge'} tone={readiness?.level === 'go' ? 'good' : readiness?.level === 'rest' ? 'ok' : readiness?.level === 'warning' ? 'low' : 'idle'} />
-        <Stat label="Recovery" value={recovery?.recovery_score ?? '—'} note={recovery ? dateLabel(`${recovery.date}T12:00:00Z`, { timeZone: 'UTC' }) : 'No scored result'} tone={recovery?.recovery_score == null ? 'idle' : recovery.recovery_score >= 67 ? 'good' : recovery.recovery_score >= 34 ? 'ok' : 'low'} />
-        <Stat label="Sleep" value={sleep ? hoursMinutes(sleep.hours_asleep) : '—'} note={sleep?.sleep_performance_percent != null ? `${sleep.sleep_performance_percent}% of need` : 'No sleep recorded'} />
-        <Stat label="Day strain" value={strain?.day_strain != null ? strain.day_strain.toFixed(1) : '—'} note={strain ? dateLabel(`${strain.date}T12:00:00Z`, { timeZone: 'UTC' }) : 'No strain recorded'} />
-        {weighIn && <Stat label="Weight" value={`${lbOf(weighIn.weight_kg).toFixed(1)} lb`} note={dateLabel(weighIn.at, { timeZone })} />}
-      </>}
+      eyebrow="" title="Health & Performance" blurb=""
+      ask="Help me review my WHOOP recovery, heart rate, HRV, sleep, training and nutrition. Am I trending the right way?"
+      hero={<HealthOverview recovery={scoredDays} sleep={sleepDays} strain={strainDays} weighIns={weighDays} readiness={readiness}
+        whoopNote={whoopNotes()} bodyNote={ready(body) ? null : bodyUnavailable}
+        weightPlan={weightGoal ? { value: weightGoal.value, title: weightGoal.project.title } : null} onAsk={onAsk} />}
     >
+      <h2 className="hp-details-head section-panel-wide" id="health-details">THE DETAIL</h2>
       <Panel title="Heart" note={`goals · ${HEART_GOALS.restingHeartRate} bpm resting, ${HEART_GOALS.hrvMs} ms HRV`} wide>
         {ready(summary?.recovery) ? <div className="health-metrics health-metrics-wide">{heartMetrics(true)}</div>
           : unavailable('recovery', 'WHOOP recovery')}
-      </Panel>
-      <Panel title="Resting heart rate" note={`45–75 bpm · line is your ${HEART_GOALS.restingHeartRate} goal`}>
-        {ready(summary?.recovery) ? <Trend rows={rhrWeek} min={45} max={75} goal={HEART_GOALS.restingHeartRate} unit="resting beats per minute" neutral /> : unavailable('recovery', 'WHOOP recovery')}
-      </Panel>
-      <Panel title="HRV" note={`20–90 ms · line is your ${HEART_GOALS.hrvMs} goal`}>
-        {ready(summary?.recovery) ? <Trend rows={hrvWeek} min={20} max={90} goal={HEART_GOALS.hrvMs} unit="milliseconds of heart rate variability" neutral /> : unavailable('recovery', 'WHOOP recovery')}
-      </Panel>
-      <Panel title="Average heart rate" note="50–90 bpm · whole day">
-        {ready(summary?.strain) ? <Trend rows={avgHrWeek} min={50} max={90} unit="average beats per minute" neutral /> : unavailable('strain', 'WHOOP strain')}
-      </Panel>
-      <Panel title="Recovery" note="last 7 days · %">
-        {ready(summary?.recovery) ? <Trend rows={recoveryWeek} max={100} unit="percent recovered" /> : unavailable('recovery', 'WHOOP recovery')}
-      </Panel>
-      <Panel title="Sleep" note="last 7 days · hours asleep">
-        {ready(summary?.sleep) ? <Trend rows={sleepWeek} max={9} unit="hours asleep" format={v => hoursMinutes(v)} /> : unavailable('sleep', 'WHOOP sleep')}
-      </Panel>
-      <Panel title="Day strain" note="last 7 days · 0–21">
-        {ready(summary?.strain) ? <Trend rows={strainWeek} max={21} unit="day strain" format={v => v.toFixed(1)} neutral /> : unavailable('strain', 'WHOOP strain')}
       </Panel>
       <WorkoutsPanel onAsk={onAsk} />
       <Panel title="Body composition" note={weighIn ? `last weigh-in · ${dateLabel(weighIn.at, { timeZone })}` : 'VeSync scale'} wide>
@@ -1242,13 +1211,6 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
             : <p className="dashboard-empty">No weigh-ins in the last 90 days.</p>}
         {calibrating && <BodyCalibrationDialog references={body?.data?.references || []} calibration={body?.data?.calibration} onClose={() => setCalibrating(false)} onSaved={retryData} />}
       </Panel>
-      <Panel title="Weight" note={weightGoal ? `weekly average · lb · line = plan for today (${weightGoal.project.title})` : 'weekly average · lb'}>
-        {!ready(body) ? bodyUnavailable : <Trend rows={weightWeeks} {...range(weightWeeks, 2)} goal={weightGoal?.value} unit="pounds, weekly average" format={v => v.toFixed(1)} neutral label={weekOf} span="weeks" />}
-        {weightGoal && <button type="button" className="source-fix" onClick={() => openProject(weightGoal.project.uuid)}>{weightGoal.project.title}: plan for today {weightGoal.value} lb <span>↗</span></button>}
-      </Panel>
-      <Panel title="Body fat" note="weekly average · %">
-        {!ready(body) ? bodyUnavailable : <Trend rows={fatWeeks} {...range(fatWeeks, 1)} unit="percent body fat, weekly average" format={v => v.toFixed(1)} neutral label={weekOf} span="weeks" />}
-      </Panel>
       {areaStrip('health', 'Health')}
       {drawers}
     </SectionPage>;
@@ -1256,26 +1218,20 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
 
   function FamilyPage() {
     const health = familyHealthSummary(summary?.familyHealth);
+    const toDetails = () => document.getElementById('family-details')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    // The concept's page up top (FamilyPage.tsx); the editable list of people stays below it.
     return <SectionPage ctx={ctx}
-      eyebrow="THE PEOPLE IN YOUR CORNER" title="Family"
-      blurb="What Athena remembers about the people close to you, and how today’s chores are going."
+      eyebrow="" title="Family" blurb=""
       ask="Help me think about my family — what should I be paying attention to?"
-      stats={<>
-        <Stat label="People remembered" value={family.length} note="from your memories" />
-        <Stat label="Chores today" value={chores.length ? `${choresDone}/${chores.length}` : '—'} note={chores.length ? `${chores.length - choresDone} still open` : 'Nothing for today'} tone={chores.length && choresDone === chores.length ? 'good' : undefined} />
-        <Stat label="Household" value={<span className="stat-small">{summary?.familyChores.data?.name || '—'}</span>} note="Family Chores account" />
-        <Stat label="Family Health" value={!summary && data.summary.loading ? 'Loading…' : health.label} note={!summary && data.summary.loading ? 'Reading health reports' : health.note} tone={health.tone} />
-      </>}
+      hero={<FamilyOverview roster={roster} children={familyPeople?.children || []} events={events} timeZone={timeZone} now={now}
+        chores={chores} household={summary?.familyChores.data?.name}
+        choresNote={ready(summary?.familyChores) ? null : unavailable('familyChores', 'Family Chores')}
+        calendarNote={ready(summary?.calendar) ? null : unavailable('calendar', 'Google Calendar')}
+        health={!summary && data.summary.loading ? { label: 'Loading…', tone: 'idle', note: 'Reading health reports' } : health}
+        sick={sickFamily} onAsk={onAsk} onCalendar={go('Calendar')} onDetails={toDetails} />}
     >
-      <Panel title="Chores today" note={summary?.familyChores.data?.name} wide>
-        {!ready(summary?.familyChores) ? unavailable('familyChores', 'Family Chores')
-          : !chores.length ? <p className="dashboard-empty">No chores returned for today.</p>
-            : <>
-              <div className="progress-track" role="img" aria-label={`${choresDone} of ${chores.length} chores complete`}><span style={{ width: `${(choresDone / chores.length) * 100}%` }} /></div>
-              <ul className="dashboard-data-list chore-list">{chores.map((c, i) => <li key={i} className={c.completed ? 'chore-done' : ''}><strong>{c.completed ? '✓' : '○'} {c.title}</strong><small>{c.completed ? 'Completed' : c.status || 'Open'}{c.dueDate ? ` · due ${dateLabel(c.dueDate)}` : ''}</small></li>)}</ul>
-            </>}
-      </Panel>
-      <Panel title="People &amp; pets" note="from your memories" wide>
+      <h2 className="fp-details-head section-panel-wide">THE DETAIL</h2>
+      <Panel id="family-details" title="People &amp; pets" note="from your memories" wide>
         {data.facts.error ? <EmptyCta text="Memories couldn’t load." action="Retry" onClick={retryData} />
           : data.facts.loading ? <p className="dashboard-empty">Loading memories…</p>
             : family.length ? <><FamilyPeopleList facts={family} children={familyPeople?.children || []} links={familyPeople?.links || []} names={new Map(roster.map(r => [r.id, r.name]))} relations={new Map(roster.map(r => [r.id, r.relation]))} watches={sickFamily} watchOf={new Map(roster.flatMap(r => { const w = sickFamily.find(h => h.uuid === r.signal.healthUuid); return w ? [[r.id, w] as const] : []; }))} onHealthChanged={retryData} onFactEdited={retryData} neighbors={community?.neighbors} onNeighbors={next => data.patchCommunity({ neighbors: next })} onChange={next => data.setFamilyPeople({ data: next, loading: false, error: null })} onConnect={() => onPanel('integrations')} onFactsChanged={gone => { data.dropFact(gone); retryData(); }} /><button className="dashboard-chat-cta" onClick={() => onPanel('memory')}>Explore memories <span>↗</span></button></>
@@ -1494,19 +1450,38 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
     const contributorsOf = (uuid: string) => proj.snap.links.filter(l => l.relation === 'contributes_to' && l.to === uuid)
       .map(l => proj.snap.projects.find(p => p.uuid === l.from)).filter((p): p is NonNullable<typeof p> => !!p && p.status !== 'dropped');
     return <SectionPage ctx={ctx}
-      eyebrow="WHERE YOU LIVE" title="Home"
-      blurb="The house and the land around it: what needs doing, what’s worrying you, and the rules you decide by."
+      eyebrow="HOUSE & LAND" title={property.property?.name || 'Our Property'}
+      headerImage={property.property?.headerImage}
+      headerAside={<PropertyWeather address={property.property?.address || ''} />}
+      blurb={property.property?.description || 'The house and the land around it: what needs doing, what’s worrying you, and the rules you decide by.'}
       ask="Look at my home projects and concerns. What should I do next, and how can you help?"
       stats={<>
-        <Stat label="Open projects" value={proj.loading && !home.length ? '—' : open.filter(p => p.kind !== 'program').length} note={`${open.filter(p => p.effectiveStatus === 'active').length} active`} />
-        <Stat label="Open concerns" value={concerns.length} note={critical ? `${critical} critical` : 'none critical'} tone={critical ? 'alert' : concerns.length ? 'ok' : 'good'} />
-        <Stat label="Done this month" value={doneRecently} note="last 30 days" tone={doneRecently ? 'good' : 'idle'} />
+        <Stat label="Property health" icon="Home" value={proj.loading || property.loading ? '—' : property.error || proj.error ? 'Unavailable' : propertyHealth(property.property, proj.snap)} note="from linked areas" />
+        <Stat label="Open projects" icon="ProjectList" value={proj.loading && !home.length ? '—' : open.filter(p => p.kind !== 'program').length} note={`${open.filter(p => p.effectiveStatus === 'active').length} active`} />
+        <Stat label="Open concerns" icon="Concerns" value={concerns.length} note={critical ? `${critical} critical` : 'none critical'} tone={critical ? 'alert' : concerns.length ? 'ok' : 'good'} />
+        <Stat label="Done this month" icon="Completed" value={doneRecently} note="last 30 days" tone={doneRecently ? 'good' : 'idle'} />
       </>}
     >
-      <Panel title="Up next" note="highest first" wide>
-        <ProjectBoard state={proj} onOpen={openProject} onNew={newProject} area="home" />
-      </Panel>
-      {programs.length > 0 && <Panel title="Programs" note="the bigger efforts, and their parts" wide>
+      <PropertyNavigation active={propertyTab} onChange={setPropertyTab} />
+      <div className="property-tab-content" role="tabpanel" id="property-tab-panel" aria-labelledby={`tab-${propertyTab}`} tabIndex={0}>
+      {(propertyTab === 'property-overview' || propertyTab === 'property-map') && <PropertyOverview state={property} snap={proj.snap} projectsLoading={proj.loading || !!proj.error} mapOnly={propertyTab === 'property-map'} />}
+      {propertyTab === 'property-overview' && <Panel title="Up next" note="highest first" id="property-projects">
+        {proj.error && <p role="alert">{proj.error} <button onClick={proj.reload}>Retry</button></p>}
+        {proj.loading ? <p>Loading projects…</p> : <ProjectList projects={open.slice(0, 3)} snap={proj.snap} onOpen={openProject} />}
+        <div className="property-next-actions">
+          <NavigationLink href="#property-projects" onNavigate={() => setPropertyTab('property-projects')}>See all projects ({home.length})</NavigationLink>
+          <DrawerButton primary onClick={() => newProject('home')}><span aria-hidden="true">＋</span>New project</DrawerButton>
+        </div>
+      </Panel>}
+      {propertyTab === 'property-projects' && <Panel title="Projects" note="all property projects" wide><ProjectBoard state={proj} onOpen={openProject} onNew={newProject} area="home" /></Panel>}
+      {propertyTab === 'property-overview' && <Panel title="Recent activity" note="latest project updates" id="property-activity">
+        <div className="property-activity">{home.slice().sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt)).slice(0, 5).map(p => <button key={p.uuid} onClick={() => openProject(p.uuid)}><span>{p.title} · {p.status}</span><time>{new Date(p.updatedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</time></button>)}{!home.length && <p>No property project activity yet.</p>}</div>
+      </Panel>}
+      {(propertyTab === 'property-overview' || propertyTab === 'property-season') && <Panel title="Seasonal focus" note={new Date().toLocaleDateString(undefined, { month: 'long' })} id="property-season" wide={propertyTab === 'property-season'}>
+        <ProjectList snap={proj.snap} projects={open.filter(p => p.seasonMonths?.includes(new Date().getMonth() + 1))} onOpen={openProject} />
+        {!open.some(p => p.seasonMonths?.includes(new Date().getMonth() + 1)) && <p>No open projects scheduled for this month. Set seasonal months in a project to include it here.</p>}
+      </Panel>}
+      {propertyTab === 'property-projects' && programs.length > 0 && <Panel title="Programs" note="the bigger efforts, and their parts" wide>
         <ul className="flex flex-col gap-3">{programs.map(pg => {
           const parts = contributorsOf(pg.uuid).sort((x, y) => (y.rank ?? -1e9) - (x.rank ?? -1e9));
           return <li key={pg.uuid} className="rounded-lg border border-slate-800 p-3">
@@ -1522,12 +1497,13 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
           </li>;
         })}</ul>
       </Panel>}
-      <Panel title="Concerns" note="the problems your projects answer" wide>
+      {propertyTab === 'property-concerns' && <Panel title="Concerns" note="the problems your projects answer" wide id="property-concerns">
         <ConcernList state={proj} area="home" onOpen={uuid => setDrawer({ kind: 'concern', uuid, area: 'home' })} onNew={() => setDrawer({ kind: 'concern', uuid: null, area: 'home' })} />
-      </Panel>
-      <Panel title="Your charter" note="how you decide" wide>
+      </Panel>}
+      {(propertyTab === 'property-overview' || propertyTab === 'property-concerns') && <Panel title="Your charter" note="how you decide" wide>
         <CharterView state={proj} area="home" onEdit={() => setDrawer({ kind: 'charter', area: 'home' })} />
-      </Panel>
+      </Panel>}
+      </div>
       {drawers}
     </SectionPage>;
   }
@@ -1582,7 +1558,7 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
     if (section === 'Mail') return MailPage();
     if (section === 'Work') return WorkPage();
     if (section === 'Projects') return ProjectsPage();
-    if (section === 'Home') return HomePage();
+    if (section === 'Property') return HomePage();
     if (section === 'News') return NewsPage();
     if (section === 'Dreams') return <DreamsPage ctx={ctx} />;
     if (section === 'System') return <SystemPage ctx={ctx} />;
@@ -1599,10 +1575,12 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
         the compact drawer skips it, the console's banner is already above it. */}
     {!compact && <EmergencyBanner onAsk={onAsk} onPlaces={onPlaces} inline />}
     <WorkBanner events={events} workingLocations={summary?.calendar.data?.workingLocations} timeZone={timeZone} now={now} jira={summary?.jira.status === 'ready' ? summary.jira.data : null} onOpen={go('Calendar')} onOpenWork={go('Work')} />
-    <RightNowCard
+    {/* While the work banner is up it already answers "what now" — the next
+        meeting, the ticket in progress — so Right Now stays out of its way. */}
+    {!working && <RightNowCard
       data={data.rightNow.data} loading={data.rightNow.loading} error={data.rightNow.error}
       onAsk={onAsk} onManage={() => setPlansOpen(true)}
-    />
+    />}
     <div className="dashboard-grid">{ranked.slice(0, PRIMARY_SLOTS).map(entry => cards[entry.id])}</div>
     <div className="dashboard-secondary">{ranked.slice(PRIMARY_SLOTS).map(entry => cards[entry.id])}</div>
     {/* Below the cards, not among them: the card order is fixed (Health

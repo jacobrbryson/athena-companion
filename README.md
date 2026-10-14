@@ -33,6 +33,16 @@ core_api/   ← chat, memory v2, model router, devices, perception
 See `docs/architecture/` — `model-router.md`, `memory-v2.md`,
 `perception-and-android.md`, `nightly-self-review.md`.
 
+## Navigation and drawer controls
+
+Use `NavigationLink` from `src/components/ActionControls.tsx` for actions that go
+to a page or different tab content: a cyan text link with a right arrow. Supply
+a real `href` and, for in-place tab navigation, an `onNavigate` callback.
+Use `DrawerButton` for actions that open a side drawer: a bordered button, with
+`primary` for prominent creation actions. Drawer buttons do not carry a navigation
+arrow. Keep tab selectors as accessible tab buttons, and use ordinary buttons
+for saves, retries and other operations. Reuse these controls across app surfaces.
+
 ## Develop
 
 ```bash

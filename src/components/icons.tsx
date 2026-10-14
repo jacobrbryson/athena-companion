@@ -23,6 +23,12 @@ const SPRITE: Record<string, number> = { Dashboard: 24, Today: 130, Calendar: 13
 type Tone = 'blue' | 'violet';
 
 const DRAWN: Record<string, { tone: Tone; art: ReactNode }> = {
+  ProjectList: { tone: 'blue', art: <><circle cx="4" cy="6" r="1" /><circle cx="4" cy="12" r="1" /><circle cx="4" cy="18" r="1" /><path d="M9 6h11M9 12h11M9 18h11" /></> },
+  Completed: { tone: 'blue', art: <path d="m5 12 4.5 5L20 6" /> },
+  PropertyProjects: { tone: 'blue', art: <><rect x="3" y="4" width="7" height="7" rx="1" /><rect x="14" y="4" width="7" height="7" rx="1" /><rect x="3" y="15" width="7" height="6" rx="1" /><path d="M14 16h7M14 20h7" /></> },
+  Concerns: { tone: 'blue', art: <><path d="m12 3 10 18H2L12 3Z" /><path d="M12 9v5M12 17h.01" /></> },
+  PropertyMap: { tone: 'blue', art: <><path d="M19 10c0 5-7 11-7 11S5 15 5 10a7 7 0 1 1 14 0Z" /><circle cx="12" cy="10" r="2.5" /></> },
+  Seasonal: { tone: 'blue', art: <><path d="M20 3C10 3 4 7 4 13a7 7 0 0 0 7 7c6 0 9-7 9-17Z" /><path d="m3 21 12-12M8 16v-5M8 16h5" /></> },
   Notifications: { tone: 'blue', art: <><path d="M12 3.6a5.4 5.4 0 0 0-5.4 5.4c0 4.2-1.5 5.6-1.5 5.6h13.8s-1.5-1.4-1.5-5.6A5.4 5.4 0 0 0 12 3.6Z" /><path d="M10.4 18a1.8 1.8 0 0 0 3.2 0" /></> },
   Community: { tone: 'blue', art: <><path d="M3.6 11.4 12 4.8l8.4 6.6" /><path d="M5.8 9.8v9.4h12.4V9.8" /><circle cx="9.4" cy="13" r="1.5" /><circle cx="14.6" cy="13" r="1.5" /><path d="M7.2 19.2c0-1.9 1-3 2.2-3s2.2 1.1 2.2 3M12.4 19.2c0-1.9 1-3 2.2-3s2.2 1.1 2.2 3" /></> },
   // The house section (the briefing keeps the sprite's tile as Dashboard).
@@ -36,6 +42,7 @@ const DRAWN: Record<string, { tone: Tone; art: ReactNode }> = {
  * bordered button of its own (the bell in the top bar).
  */
 export function DashboardIcon({ name, bare = false }: { name: string; bare?: boolean }) {
+  if (name === 'Property') name = 'Home';
   const drawn = DRAWN[name];
   if (drawn) {
     const cls = ['dashboard-icon', 'dashboard-icon-drawn', `dashboard-icon-tone-${drawn.tone}`, bare ? 'dashboard-icon-bare' : ''].filter(Boolean).join(' ');

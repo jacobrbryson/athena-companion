@@ -7,6 +7,7 @@ type Any = Record<string, any>;
 const CLOSED = new Set(['done', 'dropped']);
 const now = () => new Date().toISOString();
 let seq = 0;
+let property: Any | null = null;
 const uid = (p: string) => `${p}-${Date.now().toString(36)}-${seq++}`;
 
 function project(over: Any): Any {
@@ -139,6 +140,11 @@ function cycles(from: string, to: string, relation: string) {
 
 /** Returns the mock answer for /api/v1/projects…, or undefined if the path is not ours. */
 export function mockProjectsRoute(method: string, p: string, query: URLSearchParams, body: Any): Any | undefined {
+  if (p === '/api/v1/projects/property/weather') return { status: property?.address ? 'ready' : 'no_address', weather: property?.address ? { temperatureF: 62, description: 'Mostly sunny', highF: 68, lowF: 49, checkedAt: now(), periodStart: now() } : null };
+  if (p === '/api/v1/projects/property') {
+    if (method === 'PUT') property = { ...body, uuid: property?.uuid || uid('property') };
+    return { properties: property ? [property] : [] };
+  }
   if (!p.startsWith('/api/v1/projects')) return undefined;
   const parts = p.split('/').slice(4).map(decodeURIComponent); // after /api/v1/projects
   const find = (uuid: string) => projects.find(x => x.uuid === uuid) || fail(404, 'That project is not on your list.');

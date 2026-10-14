@@ -39,6 +39,8 @@ export interface RosterRow {
   relation?: string;
   /** From a linked Google Contact, when there is one. */
   photoUrl?: string | null;
+  /** Days to their next birthday, when any source knows it. */
+  birthday?: number | null;
   signal: RosterSignal;
 }
 
@@ -292,7 +294,7 @@ export function buildFamilyRoster({ facts, sick, events, now, children = [], lin
     } else {
       signal = { kind: 'ok', rank: 6, label: quiet === null ? p.detail : `Updated ${SINCE(quiet)} ago`, action: 'Check in', ask: `How is ${name} doing? Ask me for an update so you stay current.` };
     }
-    return { id: p.id, name, initial: name.slice(0, 1) || '?', detail: p.detail, relation: p.relation && p.relation.toLowerCase() !== name.toLowerCase() ? p.relation : undefined, photoUrl: p.photoUrl, signal };
+    return { id: p.id, name, initial: name.slice(0, 1) || '?', detail: p.detail, relation: p.relation && p.relation.toLowerCase() !== name.toLowerCase() ? p.relation : undefined, photoUrl: p.photoUrl, birthday, signal };
   });
 
   // Someone reported unwell who Athena has no memory of still gets a row.
