@@ -305,14 +305,8 @@ export interface Place {
   now: { openNow: boolean | null; why: string; closesAt?: string | null; closesInMinutes?: number | null;
     opensAt?: string | null; opensInMinutes?: number | null; todaysHours: string[] };
 }
+/** Right Now's own vocabulary for a project it is offering (projects themselves live in ./projects). */
 export type ProjectStatus = 'todo' | 'in_progress' | 'blocked' | 'done';
-export interface HomeProject {
-  uuid: string; title: string; detail: string | null; area: string | null;
-  status: ProjectStatus; priority: 'low' | 'normal' | 'high';
-  effortMinutes: number | null; indoor: boolean | null; costEstimate: number | null;
-  dueDate: string | null; blockedOn: string | null; source: string;
-}
-export interface ProjectCounts { todo: number; inProgress: number; blocked: number; done: number; open: number }
 /** What Athena is putting in front of them, and everything it was drawn from. */
 export interface Suggestion {
   id: string; kind: 'place' | 'project' | 'goal' | 'work' | 'rest'; title: string; why: string | null;
@@ -464,15 +458,6 @@ export const dashboardApi = {
     api.patch<{ place: Place }>(`/api/v1/dashboard/places/${encodeURIComponent(uuid)}`, patch),
   removePlace: (uuid: string) => api.del<{ success: true }>(`/api/v1/dashboard/places/${encodeURIComponent(uuid)}`),
   checkPlace: (uuid: string) => api.post<{ place: Place }>(`/api/v1/dashboard/places/${encodeURIComponent(uuid)}/check`, {}),
-  projects: () => api.get<{ projects: HomeProject[]; counts: ProjectCounts; maxProjects: number }>('/api/v1/dashboard/projects'),
-  addProject: (project: Partial<HomeProject>) => api.post<{ project: HomeProject }>('/api/v1/dashboard/projects', project),
-  updateProject: (uuid: string, patch: Partial<HomeProject>) =>
-    api.patch<{ project: HomeProject }>(`/api/v1/dashboard/projects/${encodeURIComponent(uuid)}`, patch),
-  removeProject: (uuid: string) => api.del<{ success: true }>(`/api/v1/dashboard/projects/${encodeURIComponent(uuid)}`),
-  /** `dryRun` shows what the import would create without writing any of it. */
-  importProjects: (text: string, dryRun = false) =>
-    api.post<{ projects: HomeProject[]; created: number; skipped: { line: number | null; reason: string }[]; columns: string[]; unmapped: string[] }>(
-      '/api/v1/dashboard/projects/import', { text, dryRun }),
   systemTwilio: () => api.get<TwilioBilling>('/api/v1/system/twilio-billing'),
   systemOpenAI: () => api.get<OpenAIBilling>('/api/v1/system/openai-billing'),
   systemGcp: () => api.get<GcpBilling>('/api/v1/system/gcp-billing'),

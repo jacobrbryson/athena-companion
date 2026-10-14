@@ -122,7 +122,7 @@ export function CompanionConsole() {
   const [chatOpened, setChatOpened] = useState(false);
   useEffect(() => { if (view === 'chat') setChatOpened(true); }, [view]);
   const [briefing, setBriefing] = useState(false);
-  const [activeSection, setActiveSection] = useState<DashboardSection>('Home');
+  const [activeSection, setActiveSection] = useState<DashboardSection>('Dashboard');
   const [menuOpen, setMenuOpen] = useState(false);
   const [inputOpen, setInputOpen] = useState(false);
   const inputMenuRef = useRef<HTMLDivElement | null>(null);
@@ -518,9 +518,9 @@ export function CompanionConsole() {
   return (
     <div className={`companion-shell ${view === 'chat' ? 'companion-chat-mode' : ''}`}>
       <aside className="dashboard-sidebar">
-        <button className="athena-wordmark" onClick={() => navigateDashboard('Home')}><AthenaAvatar /> ATHENA</button>
+        <button className="athena-wordmark" onClick={() => navigateDashboard('Dashboard')}><AthenaAvatar /> ATHENA</button>
         <span className="sidebar-caption">YOUR COMPANION</span>
-        <nav aria-label="Main navigation">{dashboardSections.map(section => <button key={section} className={view === 'dashboard' && activeSection === section ? 'active' : ''} aria-current={view === 'dashboard' && activeSection === section ? 'page' : undefined} onClick={() => navigateDashboard(section)}><DashboardIcon name={section} /><span>{section === 'Home' ? 'Dashboard' : section}</span></button>)}</nav>
+        <nav aria-label="Main navigation">{dashboardSections.map(section => <button key={section} className={view === 'dashboard' && activeSection === section ? 'active' : ''} aria-current={view === 'dashboard' && activeSection === section ? 'page' : undefined} onClick={() => navigateDashboard(section)}><DashboardIcon name={section} /><span>{section}</span></button>)}</nav>
         <button className={`sidebar-chat ${view === 'chat' ? 'active' : ''}`} onClick={() => setView('chat')}><DashboardIcon name="Chat" /><span>Talk to Athena</span><span className="sidebar-chat-arrow">↗</span></button>
         {/* The account row IS the menu. Settings, the panels and sign-out all
             used to be split between a sidebar button and a ⋯ in the far
@@ -554,7 +554,7 @@ export function CompanionConsole() {
           />
           <span className="truncate opacity-70">{firstName} · Companion</span>
         </div>
-        <button className="mobile-wordmark" onClick={() => navigateDashboard('Home')}>ATHENA</button>
+        <button className="mobile-wordmark" onClick={() => navigateDashboard('Dashboard')}>ATHENA</button>
         <div className="flex items-center gap-2">
           {view === 'chat' && <button className="briefing-trigger" onClick={() => setBriefing(true)}>▦ <span>Daily briefing</span></button>}
           {/* Up whenever the camera is actually open, including for a look she
@@ -601,7 +601,7 @@ export function CompanionConsole() {
       {/* Above every view: an emergency near home is never on a screen you are
           not looking at. The dashboard home draws it itself, in the slot above
           its cards. */}
-      {!(view === 'dashboard' && activeSection === 'Home') && (
+      {!(view === 'dashboard' && activeSection === 'Dashboard') && (
         <EmergencyBanner onAsk={askAthena} onPlaces={showPointsOfInterest} pinned={view === 'chat'} />
       )}
 
@@ -927,7 +927,7 @@ export function CompanionConsole() {
         style={{ position: 'fixed', width: 1, height: 1, opacity: 0, pointerEvents: 'none', bottom: 0, left: 0 }}
       />
       <nav className="mobile-navigation" aria-label="Mobile navigation">
-        <button className={view === 'dashboard' ? 'active' : ''} onClick={() => navigateDashboard('Home')}><DashboardIcon name="Home" /><span>Dashboard</span></button>
+        <button className={view === 'dashboard' ? 'active' : ''} onClick={() => navigateDashboard('Dashboard')}><DashboardIcon name="Dashboard" /><span>Dashboard</span></button>
         <button className={view === 'chat' ? 'active' : ''} onClick={() => setView('chat')}><DashboardIcon name="Chat" /><span>Chat</span></button>
         <button className="mobile-athena" aria-label="Talk to Athena" onClick={() => setView('chat')}><AthenaAvatar /></button>
         <button className="mobile-notifications" onClick={() => openPanel('notifications')}><DashboardIcon name="Notifications" /><span>Alerts</span>{waitingCount > 0 && <i className="topbar-badge">{waitingCount > 9 ? '9+' : waitingCount}</i>}</button>
@@ -969,7 +969,7 @@ export function CompanionConsole() {
           <span aria-hidden>🚪</span>Sign out
         </button>
       </div>
-      {briefing && <Drawer eyebrow="Athena" title="Your daily briefing" onClose={() => setBriefing(false)}><Dashboard compact firstName={firstName} onAsk={askAthena} onPanel={(p, options) => { setBriefing(false); openPanel(p, options); }} onExpand={() => { setBriefing(false); navigateDashboard('Home'); }} /></Drawer>}
+      {briefing && <Drawer eyebrow="Athena" title="Your daily briefing" onClose={() => setBriefing(false)}><Dashboard compact firstName={firstName} onAsk={askAthena} onPanel={(p, options) => { setBriefing(false); openPanel(p, options); }} onExpand={() => { setBriefing(false); navigateDashboard('Dashboard'); }} /></Drawer>}
 
       {panel === 'memory' && <MemoryPanel onClose={() => setPanel(null)} />}
       {panel === 'photo' && <PhotoMemory onClose={() => setPanel(null)} onTalkAbout={talkAboutPhoto} />}

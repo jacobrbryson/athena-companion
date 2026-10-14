@@ -8,6 +8,7 @@
  */
 
 import type { NewsSource } from '../src/api/dashboard';
+import { mockProjectsRoute } from './projects';
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const now = Date.now();
@@ -419,10 +420,6 @@ let mockPlaces = [
     lastCheckedAt: new Date(now - 40 * 60_000).toISOString(), lastChangedAt: null, lastError: null,
     now: { openNow: true as boolean | null, why: 'Open · Weather Dependent', closesAt: '7:30 PM', closesInMinutes: 300, todaysHours: ['7:00 AM – 7:30 PM'] },
   },
-];
-let mockProjects = [
-  { uuid: 'proj-shelves', title: 'Rehang the garage shelves', detail: 'Brackets are already in the truck', area: 'Garage', status: 'todo' as const, priority: 'normal' as const, effortMinutes: 120, indoor: true, costEstimate: null, dueDate: null, blockedOn: null, source: 'import' },
-  { uuid: 'proj-deck', title: 'Stain the deck', detail: null, area: 'Backyard', status: 'in_progress' as const, priority: 'high' as const, effortMinutes: 360, indoor: false, costEstimate: 140, dueDate: null, blockedOn: null, source: 'import' },
 ];
 
 // ------------------------------------------------------------------ mail ---
@@ -1327,34 +1324,8 @@ async function route(method: string, path: string, body?: any): Promise<any> {
     if (p.endsWith('/check')) { place!.lastCheckedAt = new Date().toISOString(); return { result: { status: 'unchanged' }, place }; }
     return { place };
   }
-  if (p === '/api/v1/dashboard/projects/import') {
-    // The real parser lives in core_api; this stands in for its answer so the
-    // preview-then-import flow can be exercised.
-    const rows = String(body?.text || '').trim().split(/\r?\n/).filter(Boolean).slice(1);
-    const projects = rows.map((row: string, i: number) => ({
-      ...mockProjects[0], uuid: `proj-import-${i}`, title: row.split(/[,\t]/)[0], source: 'import',
-    }));
-    if (body?.dryRun) return { projects, created: 0, skipped: [], columns: ['title', 'area', 'status'], unmapped: [] };
-    mockProjects = [...mockProjects, ...projects];
-    return { projects, created: projects.length, skipped: [], columns: ['title', 'area', 'status'], unmapped: [] };
-  }
-  if (p === '/api/v1/dashboard/projects') {
-    if (method === 'POST') {
-      const project = { ...mockProjects[0], uuid: `proj-${Date.now()}`, ...body, status: 'todo' as const, source: 'manual' };
-      mockProjects = [...mockProjects, project];
-      return { project };
-    }
-    const counts = { todo: mockProjects.filter(x => x.status === 'todo').length, inProgress: mockProjects.filter(x => x.status === 'in_progress').length, blocked: 0, done: 0, open: mockProjects.length };
-    return { projects: mockProjects, counts, maxProjects: 500 };
-  }
-  if (p.startsWith('/api/v1/dashboard/projects/')) {
-    const uuid = decodeURIComponent(p.split('/')[5]);
-    const project = mockProjects.find(x => x.uuid === uuid);
-    if (!project) fail(404, 'That project is not on your list.');
-    if (method === 'DELETE') { mockProjects = mockProjects.filter(x => x.uuid !== uuid); return { success: true }; }
-    mockProjects = mockProjects.map(x => (x.uuid === uuid ? { ...x, ...body } : x));
-    return { project: mockProjects.find(x => x.uuid === uuid) };
-  }
+  const projectAnswer = mockProjectsRoute(method, p, url.searchParams, body);
+  if (projectAnswer !== undefined) return projectAnswer;
   if (p === '/api/v1/dashboard/email/scan') {
     // Simulates "Scan more" turning up a bit more of the backlog, once.
     const reserve: MockEmail[] = [

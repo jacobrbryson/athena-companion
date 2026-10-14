@@ -27,28 +27,33 @@ import { EmergencyAlertSetup } from './EmergencyAlertSetup';
 import { Websites } from './Websites';
 import { Workplaces } from './Workplaces';
 import { WorkoutsPanel } from './Workouts';
+import { plannedToday } from './ProjectData';
+import { useProjects, openProjects, ProjectList, ProjectBoard, ProjectsDrawers, ConcernList, CharterView, StateChip, type ProjectsDrawer } from './Projects';
+import type { Area } from '../api/projects';
 
 /** Enough for a household, so nobody sorted late in the alphabet is cut off the card. */
 const FAMILY_CARD_ROWS = 7;
 
 /** Open a console panel; `consentFor` opens Connected apps on that provider's consent prompt. */
 export type OpenPanel = (panel: 'integrations' | 'memory' | 'actions' | 'notifications' | 'knows' | 'photo' | 'devices', options?: { consentFor?: string }) => void;
-export type DashboardSection = 'Home' | 'Today' | 'Calendar' | 'Health' | 'Family' | 'Community' | 'Mail' | 'Work' | 'Projects' | 'News' | 'Dreams' | 'System';
+export type DashboardSection = 'Dashboard' | 'Home' | 'Today' | 'Calendar' | 'Health' | 'Family' | 'Community' | 'Mail' | 'Work' | 'Projects' | 'News' | 'Dreams' | 'System';
 // Icons live in ./icons — one registry, so a drawn icon looks the same in
 // the nav, on its card and in the phone's bottom bar.
 export { DashboardIcon } from './icons';
-// Left-hand navigation. "Home" is presented to people as Dashboard; it also
-// replaces the old Quick Actions entry, which now lives on as the bell in the
+// Left-hand navigation. "Dashboard" is the briefing (it was keyed 'Home' until
+// 2026-10-13, when Home became the house section); it also replaces the old
+// Quick Actions entry, which now lives on as the bell in the
 // top bar (the Notifications card was removed by the owner, 2026-09-27).
 // Today remains an internal page for now but is not a left-navigation entry.
-export const dashboardSections: DashboardSection[] = ['Home', 'Calendar', 'Health', 'Family', 'Community', 'Mail', 'Work', 'Projects', 'News', 'Dreams', 'System'];
+export const dashboardSections: DashboardSection[] = ['Dashboard', 'Calendar', 'Health', 'Family', 'Community', 'Home', 'Mail', 'Work', 'Projects', 'News', 'Dreams', 'System'];
 // The card set, in the one order the dashboard uses. Fixed by the owner
 // (2026-09-26): Health & Performance first, and Athena no longer re-sorts it.
 // The first row is the owner's hierarchy (2026-09-27): take care of yourself,
 // so you can take care of your family, so your family can take care of the
-// community. Ids are shared with services/dashboardPriority.js in core_api —
+// community. Home (the house) follows them (2026-10-13; placement is the
+// owner's call). Ids are shared with services/dashboardPriority.js in core_api —
 // changing one means changing both.
-const DEFAULT_CARD_ORDER = ['health', 'family', 'community', 'calendar', 'mail', 'work', 'news', 'projects'];
+const DEFAULT_CARD_ORDER = ['health', 'family', 'community', 'home', 'calendar', 'mail', 'work', 'news', 'projects'];
 // The first row holds three cards; whatever ranks below them drops to the second.
 const PRIMARY_SLOTS = 3;
 const statusText = { not_connected: 'Not connected', needs_reauth: 'Reconnect to refresh', consent_required: 'Health consent required', error: 'Couldn’t load this source', ready: 'Connected' };
@@ -668,7 +673,7 @@ function dayHeading(key: string, today: string) {
   return days === 0 ? `Today · ${label}` : days === 1 ? `Tomorrow · ${label}` : label;
 }
 
-export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlaces, onNavigate, compact = false, onExpand }: {
+export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, onPlaces, onNavigate, compact = false, onExpand }: {
   section?: DashboardSection;
   firstName: string; onAsk: (text: string) => void;
   onPanel: OpenPanel;
@@ -694,6 +699,28 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
   const [healthResolving, setHealthResolving] = useState<string | null>(null);
   const [calibrating, setCalibrating] = useState(false);
   const [reconnecting, setReconnecting] = useState<string | null>(null);
+  // Projects: one load shared by the cards, the pages and the editors.
+  const proj = useProjects();
+  const [drawer, setDrawer] = useState<ProjectsDrawer>(null);
+  const openProject = (uuid: string) => setDrawer({ kind: 'project', uuid });
+  const newProject = (area?: Area) => setDrawer({ kind: 'project', uuid: null, area: area ?? 'home' });
+  const drawers = <ProjectsDrawers state={proj} drawer={drawer} setDrawer={setDrawer} />;
+  // A Health project reading the scale draws its plan on the Weight panel (in lb, the panel's unit).
+  const weightGoal = (() => {
+    const p = openProjects(proj.snap, 'health', { anyArea: true }).find(x => x.bindings?.some(b => b.sourceType === 'health_metric') && x.metric?.target != null);
+    const plan = p && plannedToday(p);
+    if (!p || !plan) return null;
+    return { project: p, value: plan.unit === 'kg' ? Math.round((plan.value / 0.45359237) * 10) / 10 : plan.value };
+  })();
+  /** A section page's own projects, primary or not — the overlap, made visible. */
+  const areaStrip = (area: Area, label: string) => {
+    const list = openProjects(proj.snap, area, { anyArea: true });
+    if (!list.length) return null;
+    return <Panel title="Projects" note={`${list.length} touching ${label}`} wide>
+      <ProjectList projects={list.slice(0, 6)} snap={proj.snap} onOpen={openProject} compact />
+      {list.length > 6 && <p className="source-note">+{list.length - 6} more on the Projects page</p>}
+    </Panel>;
+  };
   const now = useNow(30000);
   const [collapsedMap, setCollapsedMap] = useState<Record<string, boolean>>(loadCollapsed);
   const isCollapsed = (id: string) => collapsedMap[id] ?? isPhoneWidth();
@@ -1025,6 +1052,19 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
   const openMail = summary?.emailTriage.data?.newCount || 0;
   const needReply = summary?.emailTriage.data?.bundles?.replies.count || 0;
   const whoopDown = (['recovery', 'sleep', 'strain'] as const).every(key => summary?.[key]?.status === 'not_connected');
+  const dashProjects = openProjects(proj.snap, undefined, { includeWork: false });
+  const homeOpen = openProjects(proj.snap, 'home');
+  const homeConcerns = proj.snap.concerns.filter(c => c.area === 'home' && c.status === 'open').sort((a, b) => b.severity - a.severity);
+  const projectsCardBody = () => proj.error && !proj.snap.projects.length ? <EmptyCta text="Projects couldn’t load." action="Retry" onClick={proj.reload} />
+    : dashProjects.length ? <ul className="dashboard-data-list">{dashProjects.slice(0, 3).map(p => <li key={p.uuid}><button type="button" className="w-full text-left" onClick={() => openProject(p.uuid)}><strong>{p.title}</strong><small>{[p.effectiveStatus, ...p.rankWhy].join(' · ')}</small></button></li>)}</ul>
+      : <EmptyCta text="No projects yet." action="Start one" onClick={() => newProject()} />;
+  const homeCardBody = () => proj.error && !proj.snap.projects.length ? <EmptyCta text="Projects couldn’t load." action="Retry" onClick={proj.reload} />
+    : <>
+      {homeConcerns.length > 0 && <><p className="source-note">Open concerns</p><ul className="dashboard-data-list">{homeConcerns.slice(0, 2).map(c => <li key={c.uuid}><strong>{c.title}</strong><small>{c.frequency || 'open'}</small></li>)}</ul></>}
+      <p className="source-note">Up next</p>
+      {homeOpen.length ? <ul className="dashboard-data-list">{homeOpen.filter(p => p.kind !== 'program').slice(0, 3).map(p => <li key={p.uuid}><button type="button" className="w-full text-left" onClick={() => openProject(p.uuid)}><strong>{p.title}</strong><small>{[p.effectiveStatus, ...p.rankWhy].join(' · ')}</small></button></li>)}</ul>
+        : <EmptyCta text="No house projects yet." action="Add one" onClick={() => newProject('home')} />}
+    </>;
   const headlines: Record<string, ReactNode> = {
     health: whoopDown ? sayStatus(summary?.recovery, 'WHOOP')
       : readiness ? say(<span className={`readiness readiness-${readiness.level}`}>{readiness.label}</span>, `Recovery ${recovery?.recovery_score}% · ${readiness.headline}`)
@@ -1041,7 +1081,11 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
     mail: ready(summary?.emailTriage) ? say(openMail, needReply ? `open · ${needReply} need you` : 'open') : sayStatus(summary?.emailTriage, 'Gmail'),
     work: ready(summary?.jira) ? say(issues.length, 'open issues assigned to you') : sayStatus(summary?.jira, 'Jira'),
     news: news[0] ? say(news[0].title, news[0].source) : data.news.loading ? say('Loading…') : say('No headlines yet', newsSources.length ? 'still reading' : 'add a news page'),
-    projects: ready(summary?.jira) ? say(new Set(issues.map(i => i.project)).size, `project${new Set(issues.map(i => i.project)).size === 1 ? '' : 's'} with open issues`) : sayStatus(summary?.jira, 'Jira'),
+    projects: proj.loading && !proj.snap.projects.length ? say('Loading…')
+      : dashProjects.length ? say(dashProjects[0].title, dashProjects[0].rankWhy[0] || `${dashProjects.length} open`) : say('Nothing open', 'start a project'),
+    home: proj.loading && !proj.snap.projects.length ? say('Loading…')
+      : homeConcerns.length ? say(homeConcerns[0].title, `${homeConcerns.length} open concern${homeConcerns.length === 1 ? '' : 's'}`)
+        : homeOpen.length ? say(homeOpen[0].title, `${homeOpen.length} open`) : say('All quiet', 'no open house projects'),
   };
   const cards: Record<string, ReactNode> = {
     // Every card now opens its own page, including when its source is down:
@@ -1063,7 +1107,9 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
     mail: card('mail', 'Mail', 'Mail', mailBody(3), 'Review inbox', go('Mail'), summary?.emailTriage.data?.newCount, headlines.mail),
     work: card('work', 'Work', 'Work', workBody(1), 'View work', go('Work'), undefined, headlines.work),
     news: card('news', 'News', 'News & Updates', newsBody(3), 'View news', go('News'), news.length || undefined, headlines.news),
-    projects: card('projects', 'Projects', 'Projects', <><SourceBlock source={summary?.jira} label="Jira projects · your assigned issues" name="Jira" fix={fixFor('jira')}>{issues.length ? <ul className="dashboard-data-list">{[...new Set(issues.map(i => i.project))].slice(0, 3).map(project => <li key={project}><strong>{project}</strong><small>{issues.filter(i => i.project === project).length} assigned issues in this snapshot</small></li>)}</ul> : <p className="dashboard-empty">No assigned issues in this snapshot.</p>}</SourceBlock><p className="source-note">Saved goals</p>{projects.length ? <Facts facts={projects.slice(0, 2)} /> : data.facts.error ? <EmptyCta text="Memories unavailable." action="Retry" onClick={retryData} /> : <EmptyCta text="No saved goals yet." action="Tell her what you’re working towards" onClick={() => onAsk('Here is what I am working towards right now.')} />}</>, 'View projects', go('Projects'), undefined, headlines.projects),
+    // Work projects never appear here (owner, 2026-10-13) — they live on Work.
+    projects: card('projects', 'Projects', 'Projects', projectsCardBody(), 'View projects', go('Projects'), dashProjects.length || undefined, headlines.projects),
+    home: card('home', 'Home', 'Home', homeCardBody(), 'View home', go('Home'), homeOpen.length || undefined, headlines.home),
   };
 
   // --- The section pages ---------------------------------------------------
@@ -1071,7 +1117,7 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
   // reason SectionPage lives outside this component: a type created during
   // render remounts its subtree on every render.
   const ctx: SectionContext = {
-    onAsk, onPanel, onHome: go('Home'), error: data.summary.error,
+    onAsk, onPanel, onHome: go('Dashboard'), error: data.summary.error,
     sourcesOpen, setSourcesOpen, refresh: () => void data.refresh(),
   };
 
@@ -1196,12 +1242,15 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
             : <p className="dashboard-empty">No weigh-ins in the last 90 days.</p>}
         {calibrating && <BodyCalibrationDialog references={body?.data?.references || []} calibration={body?.data?.calibration} onClose={() => setCalibrating(false)} onSaved={retryData} />}
       </Panel>
-      <Panel title="Weight" note="weekly average · lb">
-        {!ready(body) ? bodyUnavailable : <Trend rows={weightWeeks} {...range(weightWeeks, 2)} unit="pounds, weekly average" format={v => v.toFixed(1)} neutral label={weekOf} span="weeks" />}
+      <Panel title="Weight" note={weightGoal ? `weekly average · lb · line = plan for today (${weightGoal.project.title})` : 'weekly average · lb'}>
+        {!ready(body) ? bodyUnavailable : <Trend rows={weightWeeks} {...range(weightWeeks, 2)} goal={weightGoal?.value} unit="pounds, weekly average" format={v => v.toFixed(1)} neutral label={weekOf} span="weeks" />}
+        {weightGoal && <button type="button" className="source-fix" onClick={() => openProject(weightGoal.project.uuid)}>{weightGoal.project.title}: plan for today {weightGoal.value} lb <span>↗</span></button>}
       </Panel>
       <Panel title="Body fat" note="weekly average · %">
         {!ready(body) ? bodyUnavailable : <Trend rows={fatWeeks} {...range(fatWeeks, 1)} unit="percent body fat, weekly average" format={v => v.toFixed(1)} neutral label={weekOf} span="weeks" />}
       </Panel>
+      {areaStrip('health', 'Health')}
+      {drawers}
     </SectionPage>;
   }
 
@@ -1232,6 +1281,8 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
             : family.length ? <><FamilyPeopleList facts={family} children={familyPeople?.children || []} links={familyPeople?.links || []} names={new Map(roster.map(r => [r.id, r.name]))} relations={new Map(roster.map(r => [r.id, r.relation]))} watches={sickFamily} watchOf={new Map(roster.flatMap(r => { const w = sickFamily.find(h => h.uuid === r.signal.healthUuid); return w ? [[r.id, w] as const] : []; }))} onHealthChanged={retryData} onFactEdited={retryData} neighbors={community?.neighbors} onNeighbors={next => data.patchCommunity({ neighbors: next })} onChange={next => data.setFamilyPeople({ data: next, loading: false, error: null })} onConnect={() => onPanel('integrations')} onFactsChanged={gone => { data.dropFact(gone); retryData(); }} /><button className="dashboard-chat-cta" onClick={() => onPanel('memory')}>Explore memories <span>↗</span></button></>
               : <><p className="dashboard-empty">No family memories saved yet. Tell Athena about them and she will keep them.</p><button className="dashboard-chat-cta" onClick={() => onAsk('Let me tell you about my family.')}>Tell her <span>↗</span></button></>}
       </Panel>
+      {areaStrip('family', 'Family')}
+      {drawers}
     </SectionPage>;
   }
 
@@ -1300,6 +1351,8 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
             : communityPlaces.length ? <Facts facts={communityPlaces} />
               : <><p className="dashboard-empty">Nothing yet — places you mention in conversation show up here.</p><button className="dashboard-chat-cta" onClick={() => onAsk('Let me tell you about the places in my community.')}>Tell her <span>↗</span></button></>}
       </Panel>
+      {areaStrip('community', 'Community')}
+      {drawers}
     </SectionPage>;
   }
 
@@ -1335,6 +1388,10 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
       <Panel title="Saved work context" note="what Athena remembers" wide>
         {facts.filter(f => f.category === 'work').length ? <Facts facts={facts.filter(f => f.category === 'work')} /> : <><p className="dashboard-empty">Nothing saved about your work yet.</p><button className="dashboard-chat-cta" onClick={() => onAsk('Let me tell you about my work.')}>Tell her <span>↗</span></button></>}
       </Panel>
+      <Panel title="Work projects" note="kept here, off the Dashboard" wide>
+        <ProjectBoard state={proj} onOpen={openProject} onNew={newProject} area="work" />
+      </Panel>
+      {drawers}
     </SectionPage>;
   }
 
@@ -1389,17 +1446,28 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
   }
 
   function ProjectsPage() {
+    const all = proj.snap.projects;
+    const open = all.filter(p => !['done', 'dropped'].includes(p.status));
+    const deadlines = open.filter(p => p.hardDeadline).sort((x, y) => (x.hardDeadline! < y.hardDeadline! ? -1 : 1));
     const names = [...new Set(issues.map(i => i.project))];
     return <SectionPage ctx={ctx}
       eyebrow="WHAT YOU ARE BUILDING" title="Projects"
-      blurb="Your websites and Jira projects alongside the goals Athena is holding on to for you."
-      ask="What do you remember about my projects? Help me choose a next step."
+      blurb="Everything you’re working on, across every part of your life — ordered by what matters most, editable here."
+      ask="Look at my projects. What should I focus on next, and how can you help?"
       stats={<>
-        <Stat label="Projects" value={ready(summary?.jira) ? names.length : '—'} note="with issues assigned to you" />
-        <Stat label="Open issues" value={ready(summary?.jira) ? issues.length : '—'} note="across all projects" />
-        <Stat label="Saved goals" value={projects.length} note="held in memory" />
+        <Stat label="Open" value={proj.loading && !all.length ? '—' : open.length} note={`${open.filter(p => p.effectiveStatus === 'active').length} active`} />
+        <Stat label="Blocked" value={open.filter(p => p.effectiveStatus === 'blocked').length} note="waiting on other projects" tone={open.some(p => p.effectiveStatus === 'blocked') ? 'ok' : undefined} />
+        <Stat label="Next deadline" value={<span className="stat-small">{deadlines[0]?.title || '—'}</span>} note={deadlines[0]?.hardDeadline || 'none set'} tone={deadlines[0] ? 'alert' : 'idle'} />
       </>}
     >
+      <Panel title="Your projects" note="ordered by priority, open concerns, your charter and deadlines" wide>
+        <ProjectBoard state={proj} onOpen={openProject} onNew={newProject} />
+      </Panel>
+      <Panel title="Goals" note="saved in memory" wide>
+        {data.facts.error ? <EmptyCta text="Memories unavailable." action="Retry" onClick={retryData} />
+          : projects.length ? <><Facts facts={projects} /><button className="dashboard-chat-cta" onClick={() => onAsk('Help me turn one of my saved goals into a project.')}>Make one a project <span>↗</span></button></>
+            : <><p className="dashboard-empty">No saved goals yet. Tell Athena what you are working towards.</p><button className="dashboard-chat-cta" onClick={() => onAsk('Here is what I am working towards right now.')}>Tell her <span>↗</span></button></>}
+      </Panel>
       <Panel title="Websites" note="Search Console and Analytics, last 7 days" wide id="websites">
         <Websites onConnect={() => onPanel('integrations')} />
       </Panel>
@@ -1411,11 +1479,56 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
               <Issues issues={issues.filter(i => i.project === project)} />
             </div>)}
       </Panel>
-      <Panel title="Goals" note="saved in memory" wide>
-        {data.facts.error ? <EmptyCta text="Memories unavailable." action="Retry" onClick={retryData} />
-          : projects.length ? <><Facts facts={projects} /><button className="dashboard-chat-cta" onClick={() => onAsk('Help me pick the next step on one of my goals.')}>Pick a next step <span>↗</span></button></>
-            : <><p className="dashboard-empty">No saved goals yet. Tell Athena what you are working towards.</p><button className="dashboard-chat-cta" onClick={() => onAsk('Here is what I am working towards right now.')}>Tell her <span>↗</span></button></>}
+      {drawers}
+    </SectionPage>;
+  }
+
+  /** The house: its projects and programs, the concerns behind them, and the charter they are decided by. */
+  function HomePage() {
+    const home = proj.snap.projects.filter(p => p.primaryArea === 'home');
+    const open = openProjects(proj.snap, 'home');
+    const programs = open.filter(p => p.kind === 'program');
+    const concerns = proj.snap.concerns.filter(c => c.area === 'home' && c.status === 'open');
+    const critical = concerns.filter(c => c.severity >= 5).length;
+    const doneRecently = home.filter(p => p.status === 'done' && p.completedAt && Date.now() - Date.parse(p.completedAt) < 30 * 86_400_000).length;
+    const contributorsOf = (uuid: string) => proj.snap.links.filter(l => l.relation === 'contributes_to' && l.to === uuid)
+      .map(l => proj.snap.projects.find(p => p.uuid === l.from)).filter((p): p is NonNullable<typeof p> => !!p && p.status !== 'dropped');
+    return <SectionPage ctx={ctx}
+      eyebrow="WHERE YOU LIVE" title="Home"
+      blurb="The house and the land around it: what needs doing, what’s worrying you, and the rules you decide by."
+      ask="Look at my home projects and concerns. What should I do next, and how can you help?"
+      stats={<>
+        <Stat label="Open projects" value={proj.loading && !home.length ? '—' : open.filter(p => p.kind !== 'program').length} note={`${open.filter(p => p.effectiveStatus === 'active').length} active`} />
+        <Stat label="Open concerns" value={concerns.length} note={critical ? `${critical} critical` : 'none critical'} tone={critical ? 'alert' : concerns.length ? 'ok' : 'good'} />
+        <Stat label="Done this month" value={doneRecently} note="last 30 days" tone={doneRecently ? 'good' : 'idle'} />
+      </>}
+    >
+      <Panel title="Up next" note="highest first" wide>
+        <ProjectBoard state={proj} onOpen={openProject} onNew={newProject} area="home" />
       </Panel>
+      {programs.length > 0 && <Panel title="Programs" note="the bigger efforts, and their parts" wide>
+        <ul className="flex flex-col gap-3">{programs.map(pg => {
+          const parts = contributorsOf(pg.uuid).sort((x, y) => (y.rank ?? -1e9) - (x.rank ?? -1e9));
+          return <li key={pg.uuid} className="rounded-lg border border-slate-800 p-3">
+            <button type="button" className="flex w-full items-center justify-between gap-2 text-left" onClick={() => openProject(pg.uuid)}>
+              <strong className="text-sm text-slate-100">{pg.title}</strong>
+              <span className="text-xs text-slate-400">{parts.filter(p => p.status === 'done').length}/{parts.length} done</span>
+            </button>
+            <ul className="mt-2 flex flex-wrap gap-1">{parts.map(p => <li key={p.uuid}>
+              <button type="button" onClick={() => openProject(p.uuid)} className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs ${p.status === 'done' ? 'border-slate-800 text-slate-500 line-through' : 'border-slate-700 text-slate-300 hover:border-cyan-600'}`}>
+                {p.title}{p.status !== 'done' && p.effectiveStatus !== 'ready' && <StateChip state={p.effectiveStatus} />}
+              </button>
+            </li>)}</ul>
+          </li>;
+        })}</ul>
+      </Panel>}
+      <Panel title="Concerns" note="the problems your projects answer" wide>
+        <ConcernList state={proj} area="home" onOpen={uuid => setDrawer({ kind: 'concern', uuid, area: 'home' })} onNew={() => setDrawer({ kind: 'concern', uuid: null, area: 'home' })} />
+      </Panel>
+      <Panel title="Your charter" note="how you decide" wide>
+        <CharterView state={proj} area="home" onEdit={() => setDrawer({ kind: 'charter', area: 'home' })} />
+      </Panel>
+      {drawers}
     </SectionPage>;
   }
 
@@ -1460,7 +1573,7 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
 
   // The briefing is what Home and the drawer show; every other nav entry has
   // a page of its own.
-  if (!compact && section !== 'Home') {
+  if (!compact && section !== 'Dashboard') {
     if (section === 'Today') return TodayPage();
     if (section === 'Calendar') return CalendarPage();
     if (section === 'Health') return HealthPage();
@@ -1469,6 +1582,7 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
     if (section === 'Mail') return MailPage();
     if (section === 'Work') return WorkPage();
     if (section === 'Projects') return ProjectsPage();
+    if (section === 'Home') return HomePage();
     if (section === 'News') return NewsPage();
     if (section === 'Dreams') return <DreamsPage ctx={ctx} />;
     if (section === 'System') return <SystemPage ctx={ctx} />;
@@ -1494,11 +1608,12 @@ export function Dashboard({ section = 'Home', firstName, onAsk, onPanel, onPlace
     {/* Below the cards, not among them: the card order is fixed (Health
         first) and this isn't a source — it's her night, told as a dream. */}
     {!compact && <DreamCard onOpen={go('Dreams')} onAsk={onAsk} />}
-    <section className="dashboard-bottom"><div><span className="dashboard-eyebrow">A MOMENT WITH ATHENA</span><h2>Whatever’s on your mind,<br />you don’t have to carry it alone.</h2><button className="dashboard-chat-cta" onClick={() => onAsk('')}>Let’s talk <span>↗</span></button></div><div className="dashboard-utilities"><button onClick={() => onPanel('memory')}>Explore memories <span>↗</span></button><button onClick={() => onPanel('photo')}>Share a moment <span>↗</span></button><button onClick={() => onPanel('integrations')}>Connected apps <span>↗</span></button><button onClick={() => setSourcesOpen(true)}>News sources <span>↗</span></button><button onClick={() => setPlansOpen(true)}>Places &amp; projects <span>↗</span></button></div></section>
+    <section className="dashboard-bottom"><div><span className="dashboard-eyebrow">A MOMENT WITH ATHENA</span><h2>Whatever’s on your mind,<br />you don’t have to carry it alone.</h2><button className="dashboard-chat-cta" onClick={() => onAsk('')}>Let’s talk <span>↗</span></button></div><div className="dashboard-utilities"><button onClick={() => onPanel('memory')}>Explore memories <span>↗</span></button><button onClick={() => onPanel('photo')}>Share a moment <span>↗</span></button><button onClick={() => onPanel('integrations')}>Connected apps <span>↗</span></button><button onClick={() => setSourcesOpen(true)}>News sources <span>↗</span></button><button onClick={() => setPlansOpen(true)}>Places <span>↗</span></button></div></section>
     <footer className="dashboard-footer"><span><i /> YOUR SPACE. YOUR PACE.</span><span>LIVE · UPDATES ARRIVE ON THEIR OWN</span></footer>
     {compact && <button className="dashboard-chat-cta" onClick={onExpand}>Open full dashboard ↗</button>}
     {sourcesOpen && <NewsSourcesPanel onClose={() => setSourcesOpen(false)} onSaved={() => void data.refresh()} />}
     {plansOpen && <PlansPanel onClose={() => setPlansOpen(false)} onSaved={() => void data.refresh()} />}
+    {drawers}
     {selectedEmail && <EmailPanel uuid={selectedEmail} onClose={() => setSelectedEmail(null)} onChanged={() => { setMailRefresh(n => n + 1); void data.refresh(); }} />}
   </main>;
 }
