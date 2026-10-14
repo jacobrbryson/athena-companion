@@ -27,6 +27,8 @@ interface Props {
   now: number;
   chores: Chore[];
   household?: string | null;
+  /** The Family Chores site, for "View all"; no link without one. */
+  choresUrl?: string | null;
   /** Why chores can't be read, with its fix button; null when they can. */
   choresNote: ReactNode;
   /** Why the calendar can't be read; null when it can. */
@@ -62,7 +64,7 @@ function Avatar({ name, photoUrl, size }: { name: string; photoUrl?: string | nu
   </span>;
 }
 
-export function FamilyOverview({ roster, children, events, timeZone, now, chores, household, choresNote, calendarNote, health, sick, onAsk, onCalendar, onDetails }: Props) {
+export function FamilyOverview({ roster, children, events, timeZone, now, chores, household, choresUrl, choresNote, calendarNote, health, sick, onAsk, onCalendar, onDetails }: Props) {
   const today = zonedDay(new Date(now), timeZone);
   const names = roster.filter(r => r.relation !== 'Pet').map(r => r.name);
   const namesPattern = names.length ? new RegExp(`\\b(${names.map(firstWord).filter(w => w.length > 2).join('|')})\\b`, 'i') : null;
@@ -166,7 +168,9 @@ export function FamilyOverview({ roster, children, events, timeZone, now, chores
 
     <div className="fp-grid">
       <section className="hp-panel fp-chores">
-        <header><h2>Chores <span>{household || ''}</span></h2><span>Today</span></header>
+        <header><h2>Chores <span>{household || ''}</span></h2>{choresUrl
+          ? <a className="hp-link" href={choresUrl} target="_blank" rel="noopener noreferrer">View all <Icon name="arrowRight" /></a>
+          : <span>Today</span>}</header>
         {choresNote ? choresNote
           : !chores.length ? <div className="fp-empty-hero">
             <Icon name="check" className="fp-empty-icon" />
@@ -177,7 +181,7 @@ export function FamilyOverview({ roster, children, events, timeZone, now, chores
               <div className="hp-bar"><i style={{ width: `${(choresDone / chores.length) * 100}%` }} /></div>
               <ul className="fp-chore-list">{chores.map((c, i) => <li key={i} className={c.completed ? 'fp-done' : undefined}>
                 <span className={`fp-check${c.completed ? ' fp-on' : ''}`}>{c.completed && <Icon name="check" />}</span>
-                <div><strong>{c.title}</strong><small>{c.completed ? 'Completed' : c.status || 'Open'}{c.dueDate ? ` · due ${new Date(c.dueDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}` : ''}</small></div>
+                <div><strong>{c.title}</strong><small>{c.completed ? 'Completed' : c.status || 'Open'}{c.dueDate ? ` · due ${new Date(`${c.dueDate}T00:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}` : ''}</small></div>
               </li>)}</ul>
             </>}
       </section>

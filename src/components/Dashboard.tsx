@@ -1224,7 +1224,7 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
       eyebrow="" title="Family" blurb=""
       ask="Help me think about my family — what should I be paying attention to?"
       hero={<FamilyOverview roster={roster} children={familyPeople?.children || []} events={events} timeZone={timeZone} now={now}
-        chores={chores} household={summary?.familyChores.data?.name}
+        chores={chores} household={summary?.familyChores.data?.name} choresUrl={summary?.familyChores.data?.appUrl}
         choresNote={ready(summary?.familyChores) ? null : unavailable('familyChores', 'Family Chores')}
         calendarNote={ready(summary?.calendar) ? null : unavailable('calendar', 'Google Calendar')}
         health={!summary && data.summary.loading ? { label: 'Loading…', tone: 'idle', note: 'Reading health reports' } : health}

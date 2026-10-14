@@ -396,7 +396,12 @@ function dashboardSummary() {
         : { heightCm: null, corrections: {}, unmatched: [] };
       return ready({ latest: weighIns[0], weighIns, calibration, references });
     })(),
-    familyChores: ready({ name: 'Rivera family', chores: [
+    familyChores: ready({ name: 'Rivera family', appUrl: 'https://family-chores.app', chores: [
+      { title: 'Sand front rails', completed: false, status: 'Open', dueDate: dayStamp(180) },
+      { title: 'Paint front rails', completed: false, status: 'Open', dueDate: dayStamp(180) },
+      { title: 'Fix backyard spigot', completed: false, status: 'Open', dueDate: dayStamp(110) },
+      { title: 'Fix insulation in attic', completed: false, status: 'Open', dueDate: dayStamp(46) },
+      { title: 'Fix insulation in crawl space', completed: false, status: 'Open', dueDate: dayStamp(46) },
       { title: 'Dishes', completed: true, status: 'done', dueDate: dayStamp(0) },
       { title: 'Walk Biscuit', completed: false, status: 'open', dueDate: dayStamp(0) },
       { title: 'Homework check', completed: false, status: 'open', dueDate: dayStamp(0) },

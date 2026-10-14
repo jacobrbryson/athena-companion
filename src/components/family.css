@@ -27,7 +27,8 @@ button.cp-stat { text-align: left; color: inherit; }
 .fp-empty-hero strong { margin-top: 6px; font-size: 20px; font-weight: 600; }
 .fp-empty-hero p { max-width: 36ch; color: var(--hp-sub); font-size: 14px; line-height: 1.5; }
 .fp-empty-hero .cp-outline { margin-top: 8px; }
-.fp-chore-list { display: grid; gap: 6px; margin-top: 14px; }
+/* Long lists scroll inside the panel instead of stretching the page. */
+.fp-chore-list { display: grid; gap: 6px; margin-top: 14px; max-height: 360px; overflow-y: auto; overscroll-behavior: contain; padding-right: 4px; scrollbar-width: thin; scrollbar-color: #1d3550 transparent; }
 .fp-chore-list li { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid #1d3550; border-radius: 10px; background: #0a1a2e; }
 .fp-chore-list strong { display: block; font-size: 15px; font-weight: 500; }
 .fp-chore-list small { color: var(--hp-sub); font-size: 12px; }
