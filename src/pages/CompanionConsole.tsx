@@ -499,6 +499,8 @@ export function CompanionConsole() {
     setView('dashboard');
     window.setTimeout(() => document.getElementById('community-places')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
   }
+  // Workouts is a page under Health, not a nav entry of its own.
+  const navSection: DashboardSection = activeSection === 'Workouts' ? 'Health' : activeSection;
   const menuItems: { icon: string; label: string; onClick: () => void; right?: string }[] = [
     { icon: '🧠', label: 'Memories', onClick: () => openPanel('memory') },
     // The phone has no left nav; this is its way to the Dreams page.
@@ -520,7 +522,7 @@ export function CompanionConsole() {
       <aside className="dashboard-sidebar">
         <button className="athena-wordmark" onClick={() => navigateDashboard('Dashboard')}><AthenaAvatar /> ATHENA</button>
         <span className="sidebar-caption">YOUR COMPANION</span>
-        <nav aria-label="Main navigation">{dashboardSections.map(section => <button key={section} className={view === 'dashboard' && activeSection === section ? 'active' : ''} aria-current={view === 'dashboard' && activeSection === section ? 'page' : undefined} onClick={() => navigateDashboard(section)}><DashboardIcon name={section} /><span>{section}</span></button>)}</nav>
+        <nav aria-label="Main navigation">{dashboardSections.map(section => <button key={section} className={view === 'dashboard' && navSection === section ? 'active' : ''} aria-current={view === 'dashboard' && navSection === section ? 'page' : undefined} onClick={() => navigateDashboard(section)}><DashboardIcon name={section} /><span>{section}</span></button>)}</nav>
         <button className={`sidebar-chat ${view === 'chat' ? 'active' : ''}`} onClick={() => setView('chat')}><DashboardIcon name="Chat" /><span>Talk to Athena</span><span className="sidebar-chat-arrow">↗</span></button>
         {/* The account row IS the menu. Settings, the panels and sign-out all
             used to be split between a sidebar button and a ⋯ in the far

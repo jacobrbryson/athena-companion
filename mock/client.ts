@@ -977,7 +977,8 @@ type MockPlanState = {
   program: { uuid: string; name: string; goal: string | null; starts_on: string; weeks: number; sessions: MockPlanSession[] } | null;
   marks: Record<string, string>;
   targets: Record<string, number | null> | null;
-  entries: { uuid: string; eaten_on: string; label: string; calories: number | null; protein_g: number | null; carbs_g: number | null; fat_g: number | null; water_oz: number | null; created_at: string }[];
+  entries: { uuid: string; eaten_on: string; label: string; calories: number | null; protein_g: number | null; carbs_g: number | null; fat_g: number | null; water_oz: number | null; source?: string; serving?: string | null; barcode?: string | null; created_at: string }[];
+  favorites?: { uuid: string; label: string; calories: number | null; protein_g: number | null; carbs_g: number | null; fat_g: number | null; water_oz: number | null; serving: string | null; barcode: string | null }[];
 };
 const planDay = (d: Date) => d.toLocaleDateString('en-CA');
 const planAdd = (date: string, days: number) => new Date(Date.parse(`${date}T12:00:00Z`) + days * DAY).toISOString().slice(0, 10);
@@ -1034,8 +1035,9 @@ function mockProgram(state: MockPlanState, today: string) {
 function mockNutrition(state: MockPlanState, today: string) {
   const fields = ['calories', 'protein_g', 'carbs_g', 'fat_g', 'water_oz'] as const;
   const totals = (rows: MockPlanState['entries']) => Object.fromEntries(fields.map(f => [f, rows.reduce((n, e) => n + (e[f] || 0), 0)]));
-  const todays = state.entries.filter(e => e.eaten_on === today);
-  return { date: today, entries: todays, totals: totals(todays), days: Array.from({ length: 7 }, (_, i) => { const date = planAdd(today, i - 6); const rows = state.entries.filter(e => e.eaten_on === date); return { date, logged: rows.length > 0, totals: totals(rows) }; }) };
+  const favorites = state.favorites || [];
+  const todays = state.entries.filter(e => e.eaten_on === today).map(e => ({ source: 'manual', serving: null, barcode: null, ...e, favorite: favorites.find(f => f.label.toLowerCase() === e.label.toLowerCase())?.uuid || null }));
+  return { date: today, favorites, entries: todays, totals: totals(todays), days: Array.from({ length: 7 }, (_, i) => { const date = planAdd(today, i - 6); const rows = state.entries.filter(e => e.eaten_on === date); return { date, logged: rows.length > 0, totals: totals(rows) }; }) };
 }
 
 async function route(method: string, path: string, body?: any): Promise<any> {
@@ -1069,7 +1071,7 @@ async function route(method: string, path: string, body?: any): Promise<any> {
     if (ipDrift) fail(401, 'IP mismatch for provided token.', 'IP_MISMATCH');
   }
   if (p === '/api/v1/workouts') return { days: 3650, workouts: mockWorkouts() };
-  if (p.startsWith('/api/v1/dashboard/health/plan') || p.startsWith('/api/v1/dashboard/health/program') || p.startsWith('/api/v1/dashboard/health/targets') || p.startsWith('/api/v1/dashboard/health/nutrition')) {
+  if (p.startsWith('/api/v1/dashboard/health/plan') || p.startsWith('/api/v1/dashboard/health/program') || p.startsWith('/api/v1/dashboard/health/targets') || p.startsWith('/api/v1/dashboard/health/nutrition') || p.startsWith('/api/v1/dashboard/health/favorites')) {
     const state = mockPlanState();
     const today = url.searchParams.get('today') || body?.today || planDay(new Date());
     if (p === '/api/v1/dashboard/health/plan') return { program: mockProgram(state, today), targets: state.targets, nutrition: mockNutrition(state, today) };
@@ -1096,8 +1098,51 @@ async function route(method: string, path: string, body?: any): Promise<any> {
       return { program: mockProgram(state, today) };
     }
     if (p === '/api/v1/dashboard/health/targets') { state.targets = { ...body }; savePlan(state); return { targets: state.targets }; }
+    const food = (b: any) => ({ label: b.label || 'Water', calories: b.calories ?? null, protein_g: b.protein_g ?? null, carbs_g: b.carbs_g ?? null, fat_g: b.fat_g ?? null, water_oz: b.water_oz ?? null, serving: b.serving ?? null, barcode: b.barcode ?? null });
+    const star = (b: any) => {
+      const favs = (state.favorites ||= []).filter(f => f.label.toLowerCase() !== String(b.label).toLowerCase());
+      state.favorites = [...favs, { uuid: `fav-${Date.now()}`, ...food(b) }].sort((a, c) => a.label.localeCompare(c.label));
+    };
+    const log = (b: any, source: string) => { const e = { uuid: `food-${Date.now()}`, eaten_on: b.eaten_on || today, source, ...food(b), created_at: new Date().toISOString() }; state.entries.push(e); return e; };
     if (p === '/api/v1/dashboard/health/nutrition' && method === 'POST') {
-      state.entries.push({ uuid: `food-${Date.now()}`, eaten_on: body.eaten_on || today, label: body.label || 'Water', calories: body.calories ?? null, protein_g: body.protein_g ?? null, carbs_g: body.carbs_g ?? null, fat_g: body.fat_g ?? null, water_oz: body.water_oz ?? null, created_at: new Date().toISOString() });
+      if (!body.label && body.water_oz == null) fail(400, 'Say what it was.');
+      log(body, body.source || 'manual');
+      if (body.favorite) star(body);
+      savePlan(state);
+      return { nutrition: mockNutrition(state, today) };
+    }
+    // ?mock_scan=barcode|none previews the other outcomes; the default is a photo estimate.
+    if (p === '/api/v1/dashboard/health/nutrition/scan') {
+      await wait(1200);
+      const how = localStorage.getItem('mock_scan') || (body.barcode ? 'barcode' : 'photo');
+      if (how === 'none') fail(422, 'Couldn’t make out a food or a barcode in that photo. Try again closer, or enter it by hand.');
+      const entry = how === 'barcode'
+        ? log({ label: 'Clif Bar Chocolate Chip', serving: '1 bar (68 g)', calories: 250, protein_g: 10, carbs_g: 44, fat_g: 5, barcode: body.barcode || '722252100900' }, 'barcode')
+        : log({ label: 'Grilled salmon and rice', serving: '1 plate (~420 g)', calories: 640, protein_g: 42, carbs_g: 58, fat_g: 24 }, 'photo');
+      savePlan(state);
+      return { entry, how, note: how === 'barcode' ? `Found ${entry.label} — logged one serving (${entry.serving}).` : 'Estimated from your photo: assumed about 6 oz of salmon and a cup of white rice.', nutrition: mockNutrition(state, today) };
+    }
+    if (p.startsWith('/api/v1/dashboard/health/nutrition/') && method === 'PATCH') {
+      const uuid = decodeURIComponent(p.split('/').pop() || '');
+      const e = state.entries.find(x => x.uuid === uuid);
+      if (!e) fail(404, 'Not found.');
+      const fav = state.favorites?.find(f => f.label.toLowerCase() === e!.label.toLowerCase());
+      Object.assign(e!, food(body), { barcode: e!.barcode ?? null });
+      if (fav) Object.assign(fav, food(body), { barcode: fav.barcode });
+      savePlan(state);
+      return { nutrition: mockNutrition(state, today) };
+    }
+    if (p === '/api/v1/dashboard/health/favorites' && method === 'POST') { star(body); savePlan(state); return { nutrition: mockNutrition(state, today) }; }
+    if (p.endsWith('/log') && p.startsWith('/api/v1/dashboard/health/favorites/')) {
+      const fav = state.favorites?.find(f => f.uuid === decodeURIComponent(p.split('/')[6]));
+      if (!fav) fail(404, 'Not found.');
+      log({ ...fav, eaten_on: body.eaten_on }, 'favorite');
+      savePlan(state);
+      return { nutrition: mockNutrition(state, today) };
+    }
+    if (p.startsWith('/api/v1/dashboard/health/favorites/') && method === 'DELETE') {
+      const uuid = decodeURIComponent(p.split('/').pop() || '');
+      state.favorites = (state.favorites || []).filter(f => f.uuid !== uuid);
       savePlan(state);
       return { nutrition: mockNutrition(state, today) };
     }

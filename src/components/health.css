@@ -74,6 +74,7 @@
 .hp-panel>header>span { color: var(--hp-sub); font-size: 14px; }
 .hp-link { display: inline-flex; align-items: center; gap: 6px; color: #4fb5ff; font-size: 14px; }
 .hp-link .hp-icon { width: 16px; height: 16px; }
+.hp-view-all { margin-top: 14px; align-self: flex-start; }
 .hp-danger { color: #ff8b8b; }
 .hp-empty { color: var(--hp-sub); font-size: 13px; line-height: 1.6; }
 .hp-empty .hp-link { margin-top: 10px; }
@@ -125,6 +126,21 @@
 .hp-nutrition-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
 .hp-nutrition-actions button { display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; border: 1px solid #244a6b; border-radius: 8px; background: #0b1f36; color: #cfe0f0; font-size: 12px; }
 .hp-nutrition-actions .hp-icon { width: 14px; height: 14px; }
+.hp-nutrition-actions .hp-push-right { margin-left: auto; }
+.hp-nutrition-actions .hp-caret { width: 12px; height: 12px; opacity: .7; }
+.hp-menu-wrap { position: relative; }
+.hp-menu { position: absolute; left: 0; bottom: calc(100% + 6px); z-index: 20; display: grid; width: min(290px, 80vw); max-height: 360px; overflow-y: auto; padding: 6px; border: 1px solid #2c5f8d; border-radius: 10px; background: #0a1c31; box-shadow: 0 14px 34px rgba(0, 0, 0, .5); }
+.hp-menu button { display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 10px; border: 0; border-radius: 7px; background: none; color: #dbe8f4; font-size: 13px; text-align: left; }
+.hp-menu button:hover, .hp-menu button:focus-visible { background: #13304f; }
+.hp-menu button span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hp-menu button span small { display: block; color: var(--hp-dim, #7d93aa); font-size: 11px; }
+.hp-menu button em { color: var(--hp-dim, #7d93aa); font-size: 11px; font-style: normal; }
+.hp-menu .hp-icon { width: 16px; height: 16px; flex: none; }
+.hp-menu-head { padding: 6px 10px 2px; color: var(--hp-dim, #7d93aa); font-size: 10px; letter-spacing: .14em; text-transform: uppercase; }
+.hp-menu-empty { padding: 6px 10px 8px; color: var(--hp-dim, #7d93aa); font-size: 12px; }
+.hp-menu hr { margin: 4px 6px; border: 0; border-top: 1px solid #1d3a57; }
+.hp-star-on { color: #f6c33a; }
+.hp-star-on.hp-icon, .hp-star-on .hp-icon { fill: currentColor; }
 
 /* Progress */
 .hp-tabs { display: inline-flex; padding: 3px; border: 1px solid #284865; border-radius: 9px; background: #071628; }
@@ -180,7 +196,22 @@ em.hp-tone-idle { color: var(--hp-dim); } .hp-tone-dot.hp-tone-idle { background
 .hp-food-list li div { flex: 1; }
 .hp-food-list strong { display: block; font-size: 13px; font-weight: 500; }
 .hp-food-list small { color: var(--hp-dim, #7d93aa); font-size: 11px; }
-.hp-food-list button { width: 26px; height: 26px; border: 1px solid #2c6a80; border-radius: 50%; color: #c9e6f3; font-size: 11px; }
+.hp-food-list li > button { display: grid; place-items: center; flex: none; width: 26px; height: 26px; border: 1px solid #2c6a80; border-radius: 50%; color: #c9e6f3; font-size: 11px; }
+.hp-food-list li > button .hp-icon { width: 13px; height: 13px; }
+.hp-food-list li > button.hp-food-star { border-color: transparent; color: #6f8aa5; }
+.hp-food-list li > button.hp-food-star.hp-star-on { color: #f6c33a; }
+.hp-food-list li > button.hp-food-star .hp-icon { width: 17px; height: 17px; }
+.hp-food-list li.hp-food-editing { display: block; }
+.hp-food-edit { margin: 4px 0 6px; }
+.hp-food-tag { margin-left: 8px; padding: 1px 6px; border-radius: 5px; background: #13304f; color: #9fc2e0; font-size: 10px; font-style: normal; vertical-align: 1px; }
+.hp-food-tag-photo { background: #3a2a10; color: #f6c33a; }
+.hp-scan-note { display: flex; align-items: flex-start; gap: 8px; margin: 4px 0 6px; padding: 10px 12px; border: 1px solid #5a4516; border-radius: 9px; background: #1d1708; color: #f3dfa6; font-size: 13px; }
+.hp-scan-note .hp-icon { flex: none; width: 16px; height: 16px; margin-top: 1px; }
+.hp-form .hp-check { display: flex; flex-direction: row; align-items: center; gap: 8px; }
+.hp-form[hidden] { display: none; }
+.hp-form-head { margin: 4px 0 -4px; color: #dbe8f4; font-size: 14px; font-weight: 600; }
+.hp-form .hp-check { color: #c9dceb; font-size: 13px; }
+.hp-form .hp-check input { width: 16px; height: 16px; padding: 0; accent-color: #f6c33a; }
 
 /* --- Narrower screens ------------------------------------------------------ */
 /* Five tiles and two-column panels hold down to a half-width 4K window; below that, three tiles and one column. */

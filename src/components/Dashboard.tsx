@@ -8,7 +8,6 @@ import type { ApiError } from '../api/client';
 import { useDashboardData } from './useDashboardData';
 import { NewsSourcesPanel } from './NewsSourcesPanel';
 import { PlansPanel } from './PlansPanel';
-import { BodyCalibrationDialog } from './BodyCalibration';
 import { EmergencyBanner } from './EmergencyBanner';
 import { RightNowCard } from './RightNowCard';
 import { buildFamilyRoster, type RosterRow } from './familyRoster';
@@ -42,7 +41,7 @@ const FAMILY_CARD_ROWS = 7;
 
 /** Open a console panel; `consentFor` opens Connected apps on that provider's consent prompt. */
 export type OpenPanel = (panel: 'integrations' | 'memory' | 'actions' | 'notifications' | 'knows' | 'photo' | 'devices', options?: { consentFor?: string }) => void;
-export type DashboardSection = 'Dashboard' | 'Property' | 'Today' | 'Calendar' | 'Health' | 'Family' | 'Community' | 'Mail' | 'Work' | 'Projects' | 'News' | 'Dreams' | 'System';
+export type DashboardSection = 'Dashboard' | 'Property' | 'Today' | 'Calendar' | 'Health' | 'Family' | 'Community' | 'Mail' | 'Work' | 'Projects' | 'News' | 'Dreams' | 'System' | 'Workouts';
 // Icons live in ./icons — one registry, so a drawn icon looks the same in
 // the nav, on its card and in the phone's bottom bar.
 export { DashboardIcon } from './icons';
@@ -701,7 +700,6 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
   const [mailScanNote, setMailScanNote] = useState('');
   const [healthError, setHealthError] = useState('');
   const [healthResolving, setHealthResolving] = useState<string | null>(null);
-  const [calibrating, setCalibrating] = useState(false);
   const [reconnecting, setReconnecting] = useState<string | null>(null);
   // Projects: one load shared by the cards, the pages and the editors.
   const proj = useProjects();
@@ -1189,30 +1187,26 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
     // missing link is said, not offered.
     const bodyFix: SourceFix = { panel: () => onPanel('integrations'), retry: retryData };
     const bodyUnavailable = <Unavailable source={body ?? { status: 'not_connected', data: null, detail: null, checkedAt: '' }} name="VeSync scale" fix={bodyFix} />;
-    // The concept's page up top (HealthPage.tsx); the deep panels it summarises stay below it.
+    // The concept's page (HealthPage.tsx) is the whole page; the full workout history has its own page.
     return <SectionPage ctx={ctx}
       eyebrow="" title="Health & Performance" blurb=""
       ask="Help me review my WHOOP recovery, heart rate, HRV, sleep, training and nutrition. Am I trending the right way?"
       hero={<HealthOverview recovery={scoredDays} sleep={sleepDays} strain={strainDays} weighIns={weighDays} readiness={readiness}
         whoopNote={whoopNotes()} bodyNote={ready(body) ? null : bodyUnavailable}
-        weightPlan={weightGoal ? { value: weightGoal.value, title: weightGoal.project.title } : null} onAsk={onAsk} />}
+        weightPlan={weightGoal ? { value: weightGoal.value, title: weightGoal.project.title } : null} onAsk={onAsk} onWorkouts={go('Workouts')} />}
     >
-      <h2 className="hp-details-head section-panel-wide" id="health-details">THE DETAIL</h2>
-      <Panel title="Heart" note={`goals · ${HEART_GOALS.restingHeartRate} bpm resting, ${HEART_GOALS.hrvMs} ms HRV`} wide>
-        {ready(summary?.recovery) ? <div className="health-metrics health-metrics-wide">{heartMetrics(true)}</div>
-          : unavailable('recovery', 'WHOOP recovery')}
-      </Panel>
+      {null}
+    </SectionPage>;
+  }
+
+  function WorkoutsPage() {
+    // Every recorded workout, reached from the program card's "View all activities".
+    return <SectionPage ctx={ctx}
+      eyebrow="HEALTH & PERFORMANCE" title="Workouts" blurb="Every workout WHOOP has recorded, kept by Athena."
+      ask="Look at my workouts. How consistent have I been, and what stands out?"
+    >
+      <button type="button" className="source-fix section-panel-wide" onClick={go('Health')}><span>←</span> Back to Health &amp; Performance</button>
       <WorkoutsPanel onAsk={onAsk} />
-      <Panel title="Body composition" note={weighIn ? `last weigh-in · ${dateLabel(weighIn.at, { timeZone })}` : 'VeSync scale'} wide>
-        {!ready(body) ? bodyUnavailable
-          : weighIn ? <><div className="health-metrics health-metrics-wide">{bodyMetrics(true)}</div>
-              <p className="source-note">est. = Athena's estimate from your scale's impedance · cal. = corrected to a lab result</p>
-              <button type="button" className="source-fix" onClick={() => setCalibrating(true)}>{body?.data?.references?.length ? `Calibration · ${body.data.references.length} reference${body.data.references.length === 1 ? '' : 's'}` : 'Calibrate with a lab result'} <span>↗</span></button></>
-            : <p className="dashboard-empty">No weigh-ins in the last 90 days.</p>}
-        {calibrating && <BodyCalibrationDialog references={body?.data?.references || []} calibration={body?.data?.calibration} onClose={() => setCalibrating(false)} onSaved={retryData} />}
-      </Panel>
-      {areaStrip('health', 'Health')}
-      {drawers}
     </SectionPage>;
   }
 
@@ -1553,6 +1547,7 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
     if (section === 'Today') return TodayPage();
     if (section === 'Calendar') return CalendarPage();
     if (section === 'Health') return HealthPage();
+    if (section === 'Workouts') return WorkoutsPage();
     if (section === 'Family') return FamilyPage();
     if (section === 'Community') return CommunityPage();
     if (section === 'Mail') return MailPage();

@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { RecoveryDay, WeighIn } from '../api/dashboard';
-import { healthPlanApi, localDay, type HealthPlan, type NutritionDay, type NutritionTargets, type ProgramDraft, type ProgramSession, type SessionKind, type TrainingProgram } from '../api/healthPlan';
+import { healthPlanApi, localDay, type HealthPlan, type EntrySource, type NutritionDay, type NutritionEntry, type NutritionTargets, type ProgramDraft, type ProgramSession, type SessionKind, type TrainingProgram } from '../api/healthPlan';
 import { workoutsApi, type Workout } from '../api/workouts';
 import { PageHeader } from './PageHeader';
+import { downscale } from './photoStore';
 import './health.css';
 
 /**
@@ -37,6 +38,8 @@ interface Props {
   /** A Health project's plan for today's weight, in lb. */
   weightPlan?: { value: number; title: string } | null;
   onAsk: (text: string) => void;
+  /** Opens the Workouts page — every recorded workout. */
+  onWorkouts: () => void;
 }
 
 const RANGES = [
@@ -98,6 +101,10 @@ const PATHS: Record<string, ReactNode> = {
   chevronLeft: <path d="M15 6l-6 6 6 6" />,
   cake: <><path d="M4 20h16v-6.5a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2V20ZM4 15.5c1.3 1 2.7 1 4 0s2.7-1 4 0 2.7 1 4 0 2.7-1 4 0M8 11.5v-3M12 11.5v-3M16 11.5v-3" /><path d="M8 6.5c-.6-.7-.6-1.5 0-2.5.6 1 .6 1.8 0 2.5ZM12 6.5c-.6-.7-.6-1.5 0-2.5.6 1 .6 1.8 0 2.5ZM16 6.5c-.6-.7-.6-1.5 0-2.5.6 1 .6 1.8 0 2.5Z" /></>,
   user: <><circle cx="12" cy="8" r="3.5" /><path d="M5 20c.8-4 3.6-6 7-6s6.2 2 7 6" /></>,
+  star: <path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8-4.3-4.1 5.9-.9Z" />,
+  camera: <><path d="M4 8.5A1.5 1.5 0 0 1 5.5 7h2.3l1.5-2h5.4l1.5 2h2.3A1.5 1.5 0 0 1 20 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 17.5Z" /><circle cx="12" cy="13" r="3.3" /></>,
+  pencil: <path d="M4 20l1-4.5L15.5 5a2 2 0 0 1 3 3L8 18.5Zm9.5-13l3 3" />,
+  barcode: <path d="M4 6v12M7 6v12M10 6v12M14 6v12M16 6v12M20 6v12M4 6h1M19 6h1" />,
 };
 export function Icon({ name, className }: { name: keyof typeof PATHS | string; className?: string }) {
   return <svg className={`hp-icon ${className || ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{PATHS[name] ?? PATHS.pulse}</svg>;
@@ -256,11 +263,12 @@ function takeOf(readiness: HealthReadiness | null, program: TrainingProgram | nu
 // ---------------------------------------------------------------------------
 // The page
 // ---------------------------------------------------------------------------
-export function HealthOverview({ recovery, sleep, strain, weighIns, readiness, whoopNote, bodyNote, weightPlan, onAsk }: Props) {
+export function HealthOverview({ recovery, sleep, strain, weighIns, readiness, whoopNote, bodyNote, weightPlan, onAsk, onWorkouts }: Props) {
   const [range, setRange] = useState<RangeId>('today');
   const [plan, setPlan] = useState<HealthPlan | null>(null);
   const [planError, setPlanError] = useState('');
   const [editing, setEditing] = useState<null | 'program' | 'food' | 'targets'>(null);
+  const [foodOpen, setFoodOpen] = useState<FoodLogOpen>({ mode: 'list' });
   const [workouts, setWorkouts] = useState<Workout[] | null>(null);
   const load = useCallback(() => {
     healthPlanApi.overview().then(p => { setPlan(p); setPlanError(''); }).catch(e => setPlanError((e as Error).message || 'Your plan couldn’t load.'));
@@ -367,8 +375,8 @@ export function HealthOverview({ recovery, sleep, strain, weighIns, readiness, w
       </section>
 
       <div className="hp-stack">
-        <ProgramWeek program={program} loading={!plan && !planError} onEdit={() => setEditing('program')} onMarked={p => setPlan(prev => prev && { ...prev, program: p })} onAsk={onAsk} />
-        <NutritionPanel food={food} targets={targets} loading={!plan && !planError} onLog={() => setEditing('food')} onTargets={() => setEditing('targets')} onChanged={n => setPlan(prev => prev && { ...prev, nutrition: n })} />
+        <ProgramWeek program={program} loading={!plan && !planError} onEdit={() => setEditing('program')} onMarked={p => setPlan(prev => prev && { ...prev, program: p })} onAsk={onAsk} onViewAll={onWorkouts} />
+        <NutritionPanel food={food} targets={targets} loading={!plan && !planError} onOpen={o => { setFoodOpen(o); setEditing('food'); }} onTargets={() => setEditing('targets')} onChanged={n => setPlan(prev => prev && { ...prev, nutrition: n })} />
       </div>
     </div>
 
@@ -386,7 +394,7 @@ export function HealthOverview({ recovery, sleep, strain, weighIns, readiness, w
     </div>
 
     {editing === 'program' && <ProgramEditor program={program} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }} />}
-    {editing === 'food' && <FoodLog food={food} onClose={() => setEditing(null)} onChanged={n => setPlan(prev => prev && { ...prev, nutrition: n })} />}
+    {editing === 'food' && <FoodLog food={food} open={foodOpen} onClose={() => setEditing(null)} onChanged={n => setPlan(prev => prev && { ...prev, nutrition: n })} />}
     {editing === 'targets' && <TargetsEditor targets={targets} onClose={() => setEditing(null)} onSaved={t => { setPlan(prev => prev && { ...prev, targets: t }); setEditing(null); }} />}
   </div>;
 }
@@ -394,15 +402,17 @@ export function HealthOverview({ recovery, sleep, strain, weighIns, readiness, w
 // ---------------------------------------------------------------------------
 // Program week
 // ---------------------------------------------------------------------------
-function ProgramWeek({ program, loading, onEdit, onMarked, onAsk }: { program: TrainingProgram | null; loading: boolean; onEdit: () => void; onMarked: (p: TrainingProgram) => void; onAsk: (t: string) => void }) {
+function ProgramWeek({ program, loading, onEdit, onMarked, onAsk, onViewAll }: { program: TrainingProgram | null; loading: boolean; onEdit: () => void; onMarked: (p: TrainingProgram) => void; onAsk: (t: string) => void; onViewAll: () => void }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState('');
+  const viewAll = <button type="button" className="hp-link hp-view-all" onClick={onViewAll}>View all activities <Icon name="arrowRight" /></button>;
   if (!program) return <section className="hp-panel hp-program">
     <header><h2>Training Program</h2></header>
     {loading ? <p className="hp-empty">Loading your program…</p> : <div className="hp-empty">
       <p>No program set up. Lay out your week — gym days, runs, the soccer game — and Athena reads every day against it.</p>
       <button type="button" className="hp-link" onClick={onEdit}>Set up a program <Icon name="arrowRight" /></button>
     </div>}
+    {viewAll}
   </section>;
   const today = localDay();
   const tomorrow = localDay(new Date(Date.now() + DAY));
@@ -442,6 +452,7 @@ function ProgramWeek({ program, loading, onEdit, onMarked, onAsk }: { program: T
       <small>Next up tomorrow</small>
       <span className="hp-next-row"><Icon name={sessionIcon(next)} className="hp-next-icon" /><span><strong>{next.title}{next.focus ? ` (${next.focus})` : ''}</strong><small>{next.exercises.length ? next.exercises.join(' · ') : next.detail || ''}</small></span><Icon name="chevron" className="hp-chev" /></span>
     </button>}
+    {viewAll}
   </section>;
 }
 
@@ -454,14 +465,58 @@ const MACROS = [
   { key: 'carbs_g', target: 'carbs_g', label: 'Carbs', unit: ' g', color: '#ff6b4a' },
   { key: 'fat_g', target: 'fat_g', label: 'Fat', unit: ' g', color: '#f6c33a' },
 ] as const;
-function NutritionPanel({ food, targets, loading, onLog, onTargets, onChanged }: { food: NutritionDay | null; targets: NutritionTargets | null; loading: boolean; onLog: () => void; onTargets: () => void; onChanged: (n: NutritionDay) => void }) {
-  const [busy, setBusy] = useState(false);
-  const water = async () => {
-    setBusy(true);
-    try { onChanged((await healthPlanApi.addEntry({ water_oz: 16 })).nutrition); } catch { /* the Today button still logs it */ } finally { setBusy(false); }
+/** What the food log opens on: the list, the manual form, or a just-scanned entry to check. */
+type FoodLogOpen = { mode: 'list' | 'manual' } | { mode: 'check'; uuid: string; note: string };
+
+/**
+ * A barcode in the photo, read on the phone where the browser can (Android's
+ * BarcodeDetector). Null when it can't or there isn't one — the server's
+ * vision model then looks at the photo instead.
+ */
+async function readBarcode(file: Blob): Promise<string | null> {
+  const Detector = (window as unknown as { BarcodeDetector?: new (o: { formats: string[] }) => { detect: (s: ImageBitmap) => Promise<{ rawValue: string }[]> } }).BarcodeDetector;
+  if (!Detector) return null;
+  try {
+    const bitmap = await createImageBitmap(file);
+    try {
+      const found = await new Detector({ formats: ['ean_13', 'ean_8', 'upc_a'] }).detect(bitmap);
+      return found.find(b => /^\d{8,14}$/.test(b.rawValue))?.rawValue ?? null;
+    } finally { bitmap.close?.(); }
+  } catch { return null; }
+}
+
+const kcalOf = (f: { calories: number | null }) => (f.calories != null ? `${f.calories} kcal` : '');
+
+function NutritionPanel({ food, targets, loading, onOpen, onTargets, onChanged }: { food: NutritionDay | null; targets: NutritionTargets | null; loading: boolean; onOpen: (o: FoodLogOpen) => void; onTargets: () => void; onChanged: (n: NutritionDay) => void }) {
+  const [menu, setMenu] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState('');
+  const menuRef = useRef<HTMLDivElement>(null);
+  const cameraRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (!menu) return;
+    const away = (e: Event) => { if (!menuRef.current?.contains(e.target as Node)) setMenu(false); };
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') setMenu(false); };
+    document.addEventListener('pointerdown', away);
+    window.addEventListener('keydown', esc);
+    return () => { document.removeEventListener('pointerdown', away); window.removeEventListener('keydown', esc); };
+  }, [menu]);
+  const favorites = food?.favorites || [];
+  const logFavorite = async (uuid: string) => {
+    setMenu(false); setBusy('Logging…'); setError('');
+    try { onChanged((await healthPlanApi.logFavorite(uuid)).nutrition); } catch (e) { setError((e as Error).message || 'Couldn’t log that.'); } finally { setBusy(null); }
+  };
+  const scan = async (file: File) => {
+    setBusy('Athena is looking…'); setError('');
+    try {
+      const [barcode, { base64 }] = await Promise.all([readBarcode(file), downscale(file, 1280, 0.85)]);
+      const r = await healthPlanApi.scan({ barcode, imageBase64: base64, mimeType: 'image/jpeg' });
+      onChanged(r.nutrition);
+      onOpen({ mode: 'check', uuid: r.entry.uuid, note: r.note });
+    } catch (e) { setError((e as Error).message || 'Athena couldn’t read that photo.'); } finally { setBusy(null); }
   };
   return <section className="hp-panel hp-nutrition">
-    <header><h2><Icon name="food" className="hp-amber-text" /> Nutrition</h2><button type="button" className="hp-link" onClick={onLog}>Today <Icon name="arrowRight" /></button></header>
+    <header><h2><Icon name="food" className="hp-amber-text" /> Nutrition</h2><button type="button" className="hp-link" onClick={() => onOpen({ mode: 'list' })}>Today <Icon name="arrowRight" /></button></header>
     {loading ? <p className="hp-empty">Loading…</p> : <>
       <div className="hp-rings">{MACROS.map(m => {
         const v = food?.totals[m.key] ?? 0;
@@ -474,10 +529,22 @@ function NutritionPanel({ food, targets, loading, onLog, onTargets, onChanged }:
         </div>;
       })}</div>
       <div className="hp-nutrition-actions">
-        <button type="button" onClick={onLog}><Icon name="plus" /> Log food</button>
-        <button type="button" disabled={busy} onClick={() => void water()}><Icon name="drop" /> +16 oz water{food?.totals.water_oz ? ` · ${Math.round(food.totals.water_oz)}${targets?.water_oz ? `/${targets.water_oz}` : ''} oz` : ''}</button>
-        <button type="button" onClick={onTargets}>{targets ? 'Targets' : 'Set targets'}</button>
+        <div className="hp-menu-wrap" ref={menuRef}>
+          <button type="button" aria-haspopup="menu" aria-expanded={menu} disabled={!!busy} onClick={() => setMenu(m => !m)}><Icon name="plus" /> {busy || 'Log food'} <Icon name="down" className="hp-caret" /></button>
+          {menu && <div className="hp-menu" role="menu">
+            <small className="hp-menu-head">Favorites</small>
+            {favorites.length ? favorites.map(f => <button key={f.uuid} type="button" role="menuitem" onClick={() => void logFavorite(f.uuid)}>
+              <Icon name="star" className="hp-star-on" /><span>{f.label}</span><em>{kcalOf(f)}</em>
+            </button>) : <p className="hp-menu-empty">Star a food in Today’s list to keep it here.</p>}
+            <hr />
+            <button type="button" role="menuitem" onClick={() => { setMenu(false); cameraRef.current?.click(); }}><Icon name="camera" /><span>Take a picture<small>The food or its barcode</small></span></button>
+            <button type="button" role="menuitem" onClick={() => { setMenu(false); onOpen({ mode: 'manual' }); }}><Icon name="pencil" /><span>Manual entry</span></button>
+          </div>}
+          <input ref={cameraRef} type="file" accept="image/*" capture="environment" hidden onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void scan(f); }} />
+        </div>
+        <button type="button" className="hp-push-right" onClick={onTargets}>{targets ? 'Targets' : 'Set targets'}</button>
       </div>
+      {error && <p className="hp-error" role="status">{error}</p>}
     </>}
   </section>;
 }
@@ -498,38 +565,92 @@ function Modal({ title, eyebrow, onClose, children, wide }: { title: string; eye
 }
 
 const numOrNull = (s: string) => (s.trim() === '' ? null : Number(s));
-function FoodLog({ food, onClose, onChanged }: { food: NutritionDay | null; onClose: () => void; onChanged: (n: NutritionDay) => void }) {
-  const blank = { label: '', calories: '', protein_g: '', carbs_g: '', fat_g: '', water_oz: '' };
-  const [draft, setDraft] = useState(blank);
+const FOOD_BLANK = { label: '', serving: '', calories: '', protein_g: '', carbs_g: '', fat_g: '', water_oz: '' };
+type FoodDraft = typeof FOOD_BLANK;
+const str = (v: number | string | null | undefined) => (v == null ? '' : String(v));
+const draftOf = (e: NutritionEntry): FoodDraft => ({ label: e.label, serving: e.serving || '', calories: str(e.calories), protein_g: str(e.protein_g), carbs_g: str(e.carbs_g), fat_g: str(e.fat_g), water_oz: str(e.water_oz) });
+const foodOfDraft = (d: FoodDraft) => ({ label: d.label, serving: d.serving.trim() || null, calories: numOrNull(d.calories), protein_g: numOrNull(d.protein_g), carbs_g: numOrNull(d.carbs_g), fat_g: numOrNull(d.fat_g), water_oz: numOrNull(d.water_oz) });
+const SOURCE_TAG: Partial<Record<EntrySource, string>> = { photo: 'Photo estimate', barcode: 'Barcode', favorite: 'Favorite' };
+
+/** The food fields shared by the manual form and an entry being corrected. */
+function FoodFields({ draft, setDraft }: { draft: FoodDraft; setDraft: (f: (d: FoodDraft) => FoodDraft) => void }) {
+  const set = (k: keyof FoodDraft) => (e: React.ChangeEvent<HTMLInputElement>) => setDraft(d => ({ ...d, [k]: e.target.value }));
+  return <>
+    <label className="hp-span">What was it<input value={draft.label} onChange={set('label')} placeholder="Chicken rice bowl" maxLength={120} /></label>
+    <label className="hp-span">Serving<input value={draft.serving} onChange={set('serving')} placeholder="1 bowl" maxLength={60} /></label>
+    <label>Calories<input inputMode="numeric" value={draft.calories} onChange={set('calories')} /></label>
+    <label>Protein g<input inputMode="decimal" value={draft.protein_g} onChange={set('protein_g')} /></label>
+    <label>Carbs g<input inputMode="decimal" value={draft.carbs_g} onChange={set('carbs_g')} /></label>
+    <label>Fat g<input inputMode="decimal" value={draft.fat_g} onChange={set('fat_g')} /></label>
+    <label>Water oz<input inputMode="decimal" value={draft.water_oz} onChange={set('water_oz')} /></label>
+  </>;
+}
+
+function FoodLog({ food, open, onClose, onChanged }: { food: NutritionDay | null; open: FoodLogOpen; onClose: () => void; onChanged: (n: NutritionDay) => void }) {
+  const [draft, setDraft] = useState(FOOD_BLANK);
+  const [star, setStar] = useState(false);
+  const [editing, setEditing] = useState<{ uuid: string; draft: FoodDraft } | null>(null);
+  const [note, setNote] = useState(open.mode === 'check' ? open.note : '');
   const [error, setError] = useState('');
-  const [busy, setBusy] = useState(false);
-  const set = (k: keyof typeof blank) => (e: React.ChangeEvent<HTMLInputElement>) => setDraft(d => ({ ...d, [k]: e.target.value }));
+  const [busy, setBusy] = useState<string | null>(null);
+  const manualRef = useRef<HTMLFormElement>(null);
+  const entries = food?.entries || [];
+  // A just-scanned entry opens ready to correct; the manual option jumps to the form.
+  useEffect(() => {
+    if (open.mode === 'check') {
+      const e = entries.find(x => x.uuid === open.uuid);
+      if (e) setEditing({ uuid: e.uuid, draft: draftOf(e) });
+    } else if (open.mode === 'manual') {
+      manualRef.current?.scrollIntoView({ block: 'nearest' });
+      manualRef.current?.querySelector('input')?.focus();
+    }
+    // Only on open: later list changes shouldn't re-open an editor.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const run = async (key: string, fn: () => Promise<{ nutrition: NutritionDay }>, fallback: string) => {
+    setBusy(key); setError('');
+    try { onChanged((await fn()).nutrition); return true; } catch (err) { setError((err as Error).message || fallback); return false; } finally { setBusy(null); }
+  };
   const add = async (e: React.FormEvent) => {
     e.preventDefault();
-    setBusy(true); setError('');
-    try {
-      onChanged((await healthPlanApi.addEntry({ label: draft.label, calories: numOrNull(draft.calories), protein_g: numOrNull(draft.protein_g), carbs_g: numOrNull(draft.carbs_g), fat_g: numOrNull(draft.fat_g), water_oz: numOrNull(draft.water_oz) })).nutrition);
-      setDraft(blank);
-    } catch (err) { setError((err as Error).message || 'Couldn’t log that.'); } finally { setBusy(false); }
+    if (await run('add', () => healthPlanApi.addEntry({ ...foodOfDraft(draft), source: 'manual', favorite: star }), 'Couldn’t log that.')) { setDraft(FOOD_BLANK); setStar(false); }
   };
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editing) return;
+    if (await run(editing.uuid, () => healthPlanApi.updateEntry(editing.uuid, foodOfDraft(editing.draft)), 'Couldn’t save that.')) { setEditing(null); setNote(''); }
+  };
+  const toggleStar = (e: NutritionEntry) => run(`star-${e.uuid}`, () => (e.favorite
+    ? healthPlanApi.removeFavorite(e.favorite)
+    : healthPlanApi.saveFavorite({ label: e.label, serving: e.serving, calories: e.calories, protein_g: e.protein_g, carbs_g: e.carbs_g, fat_g: e.fat_g, water_oz: e.water_oz, barcode: e.barcode })), 'Couldn’t change that favorite.');
   const remove = async (uuid: string) => {
-    try { onChanged((await healthPlanApi.removeEntry(uuid)).nutrition); } catch (err) { setError((err as Error).message || 'Couldn’t remove that.'); }
+    if (await run(uuid, () => healthPlanApi.removeEntry(uuid), 'Couldn’t remove that.') && editing?.uuid === uuid) { setEditing(null); setNote(''); }
   };
-  const entries = food?.entries || [];
   return <Modal title="Today’s food" eyebrow="NUTRITION · WHAT YOU LOGGED" onClose={onClose} wide>
-    {entries.length ? <ul className="hp-food-list">{entries.map(e => <li key={e.uuid}>
-      <div><strong>{e.label}</strong><small>{[e.calories != null && `${e.calories} kcal`, e.protein_g != null && `P ${e.protein_g} g`, e.carbs_g != null && `C ${e.carbs_g} g`, e.fat_g != null && `F ${e.fat_g} g`, e.water_oz != null && `${e.water_oz} oz water`].filter(Boolean).join(' · ')}</small></div>
-      <button type="button" aria-label={`Remove ${e.label}`} onClick={() => void remove(e.uuid)}>✕</button>
+    {note && <p className="hp-scan-note" role="status"><Icon name={/^Found/.test(note) ? 'barcode' : 'camera'} />{note} Check it, fix anything that’s off, or remove it.</p>}
+    {entries.length ? <ul className="hp-food-list">{entries.map(e => <li key={e.uuid} className={editing?.uuid === e.uuid ? 'hp-food-editing' : ''}>
+      {editing?.uuid === e.uuid ? <form className="hp-form hp-food-edit" onSubmit={save}>
+        <FoodFields draft={editing.draft} setDraft={f => setEditing(x => x && { ...x, draft: f(x.draft) })} />
+        <div className="hp-span hp-form-actions">
+          <button type="button" className="hp-link hp-danger" disabled={!!busy} onClick={() => void remove(e.uuid)}>Remove</button>
+          <button type="button" className="hp-link" onClick={() => { setEditing(null); setNote(''); }}>Cancel</button>
+          <button type="submit" className="dashboard-chat-cta" disabled={!!busy}>{busy === e.uuid ? 'Saving…' : 'Save'} <span>↗</span></button>
+        </div>
+      </form> : <>
+        <button type="button" className={`hp-food-star${e.favorite ? ' hp-star-on' : ''}`} aria-pressed={!!e.favorite} disabled={!!busy} aria-label={e.favorite ? `Remove ${e.label} from favorites` : `Add ${e.label} to favorites`} title={e.favorite ? 'In favorites' : 'Add to favorites'} onClick={() => void toggleStar(e)}><Icon name="star" /></button>
+        <div><strong>{e.label}{e.source && SOURCE_TAG[e.source] && <em className={`hp-food-tag hp-food-tag-${e.source}`}>{SOURCE_TAG[e.source]}</em>}</strong>
+          <small>{[e.serving, kcalOf(e), e.protein_g != null && `P ${e.protein_g} g`, e.carbs_g != null && `C ${e.carbs_g} g`, e.fat_g != null && `F ${e.fat_g} g`, e.water_oz != null && `${e.water_oz} oz water`].filter(Boolean).join(' · ')}</small></div>
+        <button type="button" aria-label={`Edit ${e.label}`} disabled={!!busy} onClick={() => setEditing({ uuid: e.uuid, draft: draftOf(e) })}><Icon name="pencil" /></button>
+        <button type="button" aria-label={`Remove ${e.label}`} disabled={!!busy} onClick={() => void remove(e.uuid)}>✕</button>
+      </>}
     </li>)}</ul> : <p className="hp-empty">Nothing logged yet today.</p>}
-    <form className="hp-form" onSubmit={add}>
-      <label className="hp-span">What was it<input value={draft.label} onChange={set('label')} placeholder="Chicken rice bowl" maxLength={120} /></label>
-      <label>Calories<input inputMode="numeric" value={draft.calories} onChange={set('calories')} /></label>
-      <label>Protein g<input inputMode="decimal" value={draft.protein_g} onChange={set('protein_g')} /></label>
-      <label>Carbs g<input inputMode="decimal" value={draft.carbs_g} onChange={set('carbs_g')} /></label>
-      <label>Fat g<input inputMode="decimal" value={draft.fat_g} onChange={set('fat_g')} /></label>
-      <label>Water oz<input inputMode="decimal" value={draft.water_oz} onChange={set('water_oz')} /></label>
+    {editing && error && <p className="hp-error" role="status">{error}</p>}
+    <form ref={manualRef} className="hp-form" hidden={!!editing} onSubmit={add}>
+      <h3 className="hp-span hp-form-head">Add a food</h3>
+      <FoodFields draft={draft} setDraft={setDraft} />
+      <label className="hp-span hp-check"><input type="checkbox" checked={star} onChange={e => setStar(e.target.checked)} /> Save to favorites</label>
       {error && <p className="hp-error hp-span" role="status">{error}</p>}
-      <div className="hp-span hp-form-actions"><button type="submit" className="dashboard-chat-cta" disabled={busy}>{busy ? 'Logging…' : 'Log it'} <span>↗</span></button></div>
+      <div className="hp-span hp-form-actions"><button type="submit" className="dashboard-chat-cta" disabled={!!busy}>{busy === 'add' ? 'Logging…' : 'Log it'} <span>↗</span></button></div>
     </form>
   </Modal>;
 }
