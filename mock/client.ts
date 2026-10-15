@@ -1112,6 +1112,11 @@ async function route(method: string, path: string, body?: any): Promise<any> {
       return { nutrition: mockNutrition(state, today) };
     }
     // ?mock_scan=barcode|none previews the other outcomes; the default is a photo estimate.
+    if (p === '/api/v1/dashboard/health/nutrition' && method === 'GET') {
+      const date = url.searchParams.get('date') || today;
+      if (date > today) fail(400, 'That day hasn’t happened yet.');
+      return { nutrition: mockNutrition(state, date) };
+    }
     if (p === '/api/v1/dashboard/health/nutrition/scan') {
       await wait(1200);
       const how = localStorage.getItem('mock_scan') || (body.barcode ? 'barcode' : 'photo');

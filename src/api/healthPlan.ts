@@ -71,6 +71,8 @@ export const healthPlanApi = {
   saveTargets: (targets: Partial<NutritionTargets>) => api.put<{ targets: NutritionTargets }>('/api/v1/dashboard/health/targets', targets),
   addEntry: (entry: EntryDraft) => api.post<{ nutrition: NutritionDay }>('/api/v1/dashboard/health/nutrition', { eaten_on: localDay(), ...entry, today: localDay() }),
   removeEntry: (uuid: string) => api.del<{ nutrition: NutritionDay }>(`/api/v1/dashboard/health/nutrition/${encodeURIComponent(uuid)}?today=${localDay()}`),
+  /** A past day's log (its entries, totals and favorites), for paging back in Today's food. */
+  day: (date: string) => api.get<{ nutrition: NutritionDay }>(`/api/v1/dashboard/health/nutrition?date=${date}&today=${localDay()}`),
   updateEntry: (uuid: string, entry: EntryDraft) => api.patch<{ nutrition: NutritionDay }>(`/api/v1/dashboard/health/nutrition/${encodeURIComponent(uuid)}`, { ...entry, today: localDay() }),
   /** Log from the camera: a barcode the phone read, the photo, or both (the photo is the fallback). */
   scan: (body: { imageBase64?: string; mimeType?: string; barcode?: string | null }) =>

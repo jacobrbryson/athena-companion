@@ -593,8 +593,27 @@ function FoodLog({ food, open, onClose, onChanged }: { food: NutritionDay | null
   const [note, setNote] = useState(open.mode === 'check' ? open.note : '');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState<string | null>(null);
+  // The manual form stays folded behind "New record" unless the menu's Manual entry opened it.
+  const [adding, setAdding] = useState(open.mode === 'manual');
   const manualRef = useRef<HTMLFormElement>(null);
-  const entries = food?.entries || [];
+  // The day being looked at: today by default, paged back with the arrows, never past today.
+  const today = localDay();
+  const [date, setDate] = useState(food?.date || today);
+  const [past, setPast] = useState<NutritionDay | null>(null);
+  const [loadingDay, setLoadingDay] = useState(false);
+  const isToday = date >= today;
+  const shown = isToday ? food : past?.date === date ? past : null;
+  const entries = shown?.entries || [];
+  const loadDay = useCallback(async (d: string) => {
+    setLoadingDay(true); setError('');
+    try { setPast((await healthPlanApi.day(d)).nutrition); } catch (err) { setError((err as Error).message || 'Couldn’t load that day.'); } finally { setLoadingDay(false); }
+  }, []);
+  const go = (days: number) => {
+    const next = localDay(new Date(Date.parse(`${date}T12:00:00`) + days * DAY));
+    if (next > today) return;
+    setDate(next); setEditing(null); setNote('');
+    if (next < today) void loadDay(next);
+  };
   // A just-scanned entry opens ready to correct; the manual option jumps to the form.
   useEffect(() => {
     if (open.mode === 'check') {
@@ -607,14 +626,20 @@ function FoodLog({ food, open, onClose, onChanged }: { food: NutritionDay | null
     // Only on open: later list changes shouldn't re-open an editor.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  // Every change answers with today's log (the card's); a past day is then re-read for the list.
   const run = async (key: string, fn: () => Promise<{ nutrition: NutritionDay }>, fallback: string) => {
     setBusy(key); setError('');
-    try { onChanged((await fn()).nutrition); return true; } catch (err) { setError((err as Error).message || fallback); return false; } finally { setBusy(null); }
+    try {
+      onChanged((await fn()).nutrition);
+      if (!isToday) await loadDay(date);
+      return true;
+    } catch (err) { setError((err as Error).message || fallback); return false; } finally { setBusy(null); }
   };
   const add = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (await run('add', () => healthPlanApi.addEntry({ ...foodOfDraft(draft), source: 'manual', favorite: star }), 'Couldn’t log that.')) { setDraft(FOOD_BLANK); setStar(false); }
+    if (await run('add', () => healthPlanApi.addEntry({ ...foodOfDraft(draft), eaten_on: date, source: 'manual', favorite: star }), 'Couldn’t log that.')) { setDraft(FOOD_BLANK); setStar(false); setAdding(false); }
   };
+  const dayLabel = noon(date).toLocaleDateString(undefined, { timeZone: 'UTC', weekday: 'long', month: 'short', day: 'numeric' });
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editing) return;
@@ -626,8 +651,14 @@ function FoodLog({ food, open, onClose, onChanged }: { food: NutritionDay | null
   const remove = async (uuid: string) => {
     if (await run(uuid, () => healthPlanApi.removeEntry(uuid), 'Couldn’t remove that.') && editing?.uuid === uuid) { setEditing(null); setNote(''); }
   };
-  return <Modal title="Today’s food" eyebrow="NUTRITION · WHAT YOU LOGGED" onClose={onClose} wide>
-    {note && <p className="hp-scan-note" role="status"><Icon name={/^Found/.test(note) ? 'barcode' : 'camera'} />{note} Check it, fix anything that’s off, or remove it.</p>}
+  const t = shown?.totals;
+  return <Modal title={isToday ? 'Today’s food' : 'Food log'} eyebrow="NUTRITION · WHAT YOU LOGGED" onClose={onClose} wide>
+    <div className="hp-day-nav">
+      <button type="button" aria-label="Previous day" disabled={!!busy || loadingDay} onClick={() => go(-1)}><Icon name="chevronLeft" /></button>
+      <div><strong>{isToday ? 'Today' : dayLabel}</strong><small>{isToday ? dayLabel : t ? `${Math.round(t.calories).toLocaleString()} kcal · P ${Math.round(t.protein_g)} g · C ${Math.round(t.carbs_g)} g · F ${Math.round(t.fat_g)} g` : ' '}</small></div>
+      <button type="button" aria-label="Next day" disabled={isToday || !!busy || loadingDay} onClick={() => go(1)}><Icon name="chevron" /></button>
+    </div>
+    {note &&<p className="hp-scan-note" role="status"><Icon name={/^Found/.test(note) ? 'barcode' : 'camera'} />{note} Check it, fix anything that’s off, or remove it.</p>}
     {entries.length ? <ul className="hp-food-list">{entries.map(e => <li key={e.uuid} className={editing?.uuid === e.uuid ? 'hp-food-editing' : ''}>
       {editing?.uuid === e.uuid ? <form className="hp-form hp-food-edit" onSubmit={save}>
         <FoodFields draft={editing.draft} setDraft={f => setEditing(x => x && { ...x, draft: f(x.draft) })} />
@@ -643,14 +674,18 @@ function FoodLog({ food, open, onClose, onChanged }: { food: NutritionDay | null
         <button type="button" aria-label={`Edit ${e.label}`} disabled={!!busy} onClick={() => setEditing({ uuid: e.uuid, draft: draftOf(e) })}><Icon name="pencil" /></button>
         <button type="button" aria-label={`Remove ${e.label}`} disabled={!!busy} onClick={() => void remove(e.uuid)}>✕</button>
       </>}
-    </li>)}</ul> : <p className="hp-empty">Nothing logged yet today.</p>}
-    {editing && error && <p className="hp-error" role="status">{error}</p>}
-    <form ref={manualRef} className="hp-form" hidden={!!editing} onSubmit={add}>
-      <h3 className="hp-span hp-form-head">Add a food</h3>
+    </li>)}</ul> : <p className="hp-empty">{loadingDay ? 'Loading…' : isToday ? 'Nothing logged yet today.' : 'Nothing logged that day.'}</p>}
+    {(editing || !adding) && error && <p className="hp-error" role="status">{error}</p>}
+    {!editing && !adding && <button type="button" className="hp-new-record" disabled={loadingDay} onClick={() => setAdding(true)}><Icon name="plus" /> New record{isToday ? '' : ` for ${noon(date).toLocaleDateString(undefined, { timeZone: 'UTC', month: 'short', day: 'numeric' })}`}</button>}
+    <form ref={manualRef} className="hp-form" hidden={!!editing || !adding} onSubmit={add}>
+      <h3 className="hp-span hp-form-head">New record{isToday ? '' : ` · ${dayLabel}`}</h3>
       <FoodFields draft={draft} setDraft={setDraft} />
       <label className="hp-span hp-check"><input type="checkbox" checked={star} onChange={e => setStar(e.target.checked)} /> Save to favorites</label>
       {error && <p className="hp-error hp-span" role="status">{error}</p>}
-      <div className="hp-span hp-form-actions"><button type="submit" className="dashboard-chat-cta" disabled={!!busy}>{busy === 'add' ? 'Logging…' : 'Log it'} <span>↗</span></button></div>
+      <div className="hp-span hp-form-actions">
+        <button type="button" className="hp-link" onClick={() => { setAdding(false); setError(''); }}>Cancel</button>
+        <button type="submit" className="dashboard-chat-cta" disabled={!!busy}>{busy === 'add' ? 'Logging…' : 'Log it'} <span>↗</span></button>
+      </div>
     </form>
   </Modal>;
 }
