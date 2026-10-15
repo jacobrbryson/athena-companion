@@ -8,10 +8,7 @@
 .cp-text-amber { color: #f6b23a; }
 .cp-slate { color: #cfe0f0; background: #1c2d42; }
 
-/* --- Head ------------------------------------------------------------------ */
-.cp-head { padding: 26px 0 30px; }
-.cp-head h1 { margin-top: 10px; font-size: clamp(34px, 3.6vw, 50px); font-weight: 650; line-height: 1.04; letter-spacing: -.02em; text-shadow: 0 2px 24px #000a; }
-.cp-head p { margin-top: 10px; color: #d3e1ef; font-size: 17px; text-shadow: 0 1px 12px #000; }
+/* --- Unavailable ------------------------------------------------------------- */
 .cp-unavailable { max-width: 560px; }
 
 /* --- Four numbers ---------------------------------------------------------- */
@@ -131,8 +128,6 @@
   .cp-grid { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 760px) {
-  .cp-head { padding: 8px 0 18px; }
-  .cp-head p { font-size: 15px; }
   .cp-stats { gap: 10px; }
   .cp-stats .hp-tile:first-child { grid-column: auto; }
   .hp-tile.cp-stat { min-height: 0; padding: 12px; gap: 10px; }

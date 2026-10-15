@@ -2,6 +2,7 @@ import { Fragment, useMemo, useState, type CSSProperties, type ReactNode } from 
 import type { CalendarEvent } from '../api/dashboard';
 import { Icon, Ring } from './HealthPage';
 import { untilLabel } from './workStatus';
+import { PageHeader } from './PageHeader';
 import './health.css';
 import './calendar.css';
 
@@ -146,11 +147,7 @@ export function CalendarOverview({ events: all, timeZone, days: span, now, unava
   const away = inWindow.filter(r => r.area === 'travel');
   const areaDots = (list: typeof rows) => [...new Set(list.map(r => r.area))].slice(0, 4);
 
-  const header = <header className="cp-head">
-    <span className="hp-eyebrow">THE NEXT SEVEN DAYS</span>
-    <h1>Calendar</h1>
-    <p>Your time, your people, your priorities.</p>
-  </header>;
+  const header = <PageHeader eyebrow="THE NEXT SEVEN DAYS" title="Calendar" blurb="Your time, your people, your priorities." />;
   if (unavailable) return <div className="hp cp">{header}<div className="hp-panel cp-unavailable">{unavailable}</div></div>;
 
   // The month: weeks from the Sunday on or before the 1st, through the last day.

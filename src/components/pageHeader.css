@@ -1,0 +1,28 @@
+/* The shared section-page head (PageHeader.tsx), lifted from the Health page's
+   hero: eyebrow, large title, blurb, optional art behind and a side column. */
+.ph { position: relative; display: grid; grid-template-columns: minmax(0, 1fr); gap: 24px; padding: 34px 0 22px; color: #e8f3ff; isolation: isolate; }
+.ph-with-side { grid-template-columns: minmax(0, 1fr) minmax(280px, 330px); }
+.ph-with-art { min-height: 330px; }
+.ph-art { position: absolute; z-index: -1; top: -30px; left: 50%; width: min(620px, 62%); transform: translateX(-56%); mix-blend-mode: screen; opacity: .95; pointer-events: none;
+  -webkit-mask-image: radial-gradient(ellipse 50% 52% at 50% 50%, #000 58%, transparent 100%); mask-image: radial-gradient(ellipse 50% 52% at 50% 50%, #000 58%, transparent 100%); }
+.ph-eyebrow { color: #b9cbe0; font-size: 13px; letter-spacing: .2em; }
+.ph h1 { margin-top: 14px; font-size: clamp(34px, 3.6vw, 50px); font-weight: 650; line-height: 1.04; letter-spacing: -.02em; text-shadow: 0 2px 24px #000a; }
+.ph-copy > h1:first-child { margin-top: 0; }
+.ph-copy > p { margin-top: 14px; max-width: 62ch; color: #d3e1ef; font-size: 17px; line-height: 1.45; text-shadow: 0 1px 12px #000; }
+.ph-with-art .ph-copy > p { max-width: 30ch; }
+.ph-side { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+
+/* Athena's Take */
+.ph-take { position: relative; text-align: left; padding: 18px 50px 18px 20px; border: 1px solid #2a5a86; border-radius: 14px; color: #e8f3ff; background: linear-gradient(150deg, #0d2742e8, #07162ae8); box-shadow: 0 10px 30px #0006, inset 0 1px 0 #ffffff0d; backdrop-filter: blur(6px); }
+.ph-take h2 { display: flex; align-items: center; gap: 9px; margin-bottom: 12px; font-size: 17px; font-weight: 600; }
+.ph-take h2 .hp-icon { color: #f6c33a; width: 24px; height: 24px; }
+.ph-take p { color: #c8d7e6; font-size: 14px; line-height: 1.55; }
+.ph-take p + p { margin-top: 6px; }
+.ph-take-go { position: absolute; right: 14px; top: 50%; translate: 0 -50%; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: #1d8cff; color: white; box-shadow: 0 0 14px #1d8cff88; }
+.ph-take-go .hp-icon { width: 18px; height: 18px; }
+
+@media (max-width: 760px) {
+  .ph, .ph-with-side { grid-template-columns: minmax(0, 1fr); padding-top: 8px; min-height: 0; }
+  .ph-art { top: -10px; left: auto; right: -30%; width: 110%; transform: none; opacity: .55; }
+  .ph-copy > p { font-size: 15px; }
+}

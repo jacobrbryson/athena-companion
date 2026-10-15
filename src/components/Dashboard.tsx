@@ -28,6 +28,7 @@ import { Websites } from './Websites';
 import { Workplaces } from './Workplaces';
 import { WorkoutsPanel } from './Workouts';
 import { HealthOverview } from './HealthPage';
+import { PageHeader } from './PageHeader';
 import { CalendarOverview } from './CalendarPage';
 import { FamilyOverview } from './FamilyPage';
 import { NavigationLink, DrawerButton } from './ActionControls';
@@ -246,16 +247,15 @@ export interface SectionContext {
  * whole subtree each time, and the news-sources panel would lose what was
  * being typed into it.
  */
-export function SectionPage({ eyebrow, title, blurb, stats, children, ask, ctx, headerImage, headerAside, hero }: {
-  eyebrow: string; title: string; blurb: string; stats?: ReactNode; children: ReactNode; ask: string; ctx: SectionContext; headerImage?: string; headerAside?: ReactNode;
-  /** A page that draws its own head (Health) passes it here; it replaces the title, blurb and stat row. */
+export function SectionPage({ eyebrow, title, blurb, stats, children, ask, ctx, headerAside, hero }: {
+  eyebrow: string; title: string; blurb: string; stats?: ReactNode; children: ReactNode; ask: string; ctx: SectionContext; headerAside?: ReactNode;
+  /** A page that draws its own head (Health) passes it here — built on PageHeader too — and it replaces the title, blurb and stat row. */
   hero?: ReactNode;
 }) {
   return <main className="dashboard-content dashboard-section">
-    <div className={headerAside ? 'property-hero' : undefined} id={headerAside ? 'property-overview' : undefined}>
-    {headerImage && <img className="property-hero-photo" src={headerImage} alt="" />}
-    <div className="dashboard-toolbar"><span className="dashboard-eyebrow">{eyebrow}</span><time dateTime={new Date().toISOString()}>{new Date().toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}</time>{headerAside ? <div className="property-hero-actions"><button onClick={() => ctx.onAsk('')} className="ask-athena">ϟ <span>Ask Athena…</span> ↗</button>{headerAside}</div> : <button onClick={() => ctx.onAsk('')} className="ask-athena">ϟ <span>Ask Athena…</span> ↗</button>}</div>
-    {hero ?? <header className="section-head"><h1>{title}</h1><p>{blurb}</p></header>}
+    <div id={headerAside ? 'property-overview' : undefined}>
+    <div className="dashboard-toolbar"><time dateTime={new Date().toISOString()}>{new Date().toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}</time><button onClick={() => ctx.onAsk('')} className="ask-athena">ϟ <span>Ask Athena…</span> ↗</button></div>
+    {hero ?? <PageHeader eyebrow={eyebrow} title={title} blurb={blurb} aside={headerAside} />}
     {ctx.error && <p className="dashboard-notice" role="status">Connected data is unavailable. {ctx.error}</p>}
     {!hero && stats && <div className="stat-row">{stats}</div>}
     </div>
@@ -1452,7 +1452,6 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
       .map(l => proj.snap.projects.find(p => p.uuid === l.from)).filter((p): p is NonNullable<typeof p> => !!p && p.status !== 'dropped');
     return <SectionPage ctx={ctx}
       eyebrow="HOUSE & LAND" title={property.property?.name || 'Our Property'}
-      headerImage={property.property?.headerImage}
       headerAside={<PropertyWeather address={property.property?.address || ''} />}
       blurb={property.property?.description || 'The house and the land around it: what needs doing, what’s worrying you, and the rules you decide by.'}
       ask="Look at my home projects and concerns. What should I do next, and how can you help?"
@@ -1566,8 +1565,8 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
   }
 
   return <main className={`dashboard-content ${compact ? 'dashboard-compact' : ''}`}>
-    <div className="dashboard-toolbar"><span className="dashboard-eyebrow">YOUR DAILY BRIEFING</span><time dateTime={new Date().toISOString()}>{new Date().toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}</time><button onClick={() => onAsk('')} className="ask-athena">ϟ <span>Ask Athena…</span> ↗</button></div>
-    <section className="dashboard-greeting"><div><h1>{greeting}, {firstName}</h1><p>Here’s what’s on your radar today.</p></div></section>
+    <div className="dashboard-toolbar"><time dateTime={new Date().toISOString()}>{new Date().toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}</time><button onClick={() => onAsk('')} className="ask-athena">ϟ <span>Ask Athena…</span> ↗</button></div>
+    <PageHeader eyebrow="YOUR DAILY BRIEFING" title={`${greeting}, ${firstName}`} blurb="Here’s what’s on your radar today." />
     {data.summary.error && <p className="dashboard-notice" role="status">Connected data is unavailable. {data.summary.error}</p>}
     {/* The emergency near home first, then the one thing on this page that
         answers a question rather than reporting a source — both above the

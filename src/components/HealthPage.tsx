@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react
 import type { RecoveryDay, WeighIn } from '../api/dashboard';
 import { healthPlanApi, localDay, type HealthPlan, type NutritionDay, type NutritionTargets, type ProgramDraft, type ProgramSession, type SessionKind, type TrainingProgram } from '../api/healthPlan';
 import { workoutsApi, type Workout } from '../api/workouts';
+import { PageHeader } from './PageHeader';
 import './health.css';
 
 /**
@@ -296,28 +297,17 @@ export function HealthOverview({ recovery, sleep, strain, weighIns, readiness, w
   const whoopLinked = !whoopNote;
 
   return <div className="hp">
-    <section className="hp-hero">
-      <img className="hp-hero-heart" src="/assets/heart.png" alt="" />
-      <div className="hp-hero-copy">
-        <span className="hp-eyebrow">HEALTH &amp; PERFORMANCE</span>
-        <h1>Stronger for<br />what matters</h1>
-        <p>More energy for your family, the field, and the life you want to live.</p>
-        <div className="hp-range" role="tablist" aria-label="Time range">
-          {RANGES.map(r => <button key={r.id} role="tab" aria-selected={range === r.id} className={range === r.id ? 'active' : ''} onClick={() => setRange(r.id)}>{r.label}</button>)}
-        </div>
-      </div>
-      <div className="hp-hero-side">
-        <div className="hp-avg-hr">
-          <Ecg />
-          <div><strong>{cycle?.average_heart_rate != null ? Math.round(cycle.average_heart_rate) : '—'}<small> bpm</small></strong><span>Avg Heart Rate</span></div>
-        </div>
-        <button type="button" className="hp-take" onClick={() => onAsk('What do you make of how my body is doing today, and what should I do?')}>
-          <h2><Icon name="sun" /> Athena’s Take</h2>
-          {take.map((t, i) => <p key={i}>{t}</p>)}
-          <span className="hp-take-go"><Icon name="chevron" /></span>
-        </button>
-      </div>
-    </section>
+    <PageHeader eyebrow="HEALTH & PERFORMANCE" title={<>Stronger for<br />what matters</>}
+      blurb="More energy for your family, the field, and the life you want to live."
+      art="/assets/heart.png"
+      controls={<div className="hp-range" role="tablist" aria-label="Time range">
+        {RANGES.map(r => <button key={r.id} role="tab" aria-selected={range === r.id} className={range === r.id ? 'active' : ''} onClick={() => setRange(r.id)}>{r.label}</button>)}
+      </div>}
+      aside={<div className="hp-avg-hr">
+        <Ecg />
+        <div><strong>{cycle?.average_heart_rate != null ? Math.round(cycle.average_heart_rate) : '—'}<small> bpm</small></strong><span>Avg Heart Rate</span></div>
+      </div>}
+      take={{ lines: take, ask: 'What do you make of how my body is doing today, and what should I do?', onAsk }} />
 
     {whoopNote && <div className="hp-source-note">{whoopNote}</div>}
 

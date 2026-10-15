@@ -3,29 +3,15 @@
 .hp { overflow-x: clip; --hp-panel: linear-gradient(150deg, #0a1d33f2, #050f1ef7); --hp-line: #1f3d58; --hp-text: #e8f3ff; --hp-sub: #a7bdd2; --hp-dim: #7d93aa; color: var(--hp-text); }
 .hp-icon { width: 20px; height: 20px; flex-shrink: 0; }
 
-/* --- Hero ------------------------------------------------------------- */
-.hp-hero { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 330px); gap: 24px; min-height: 330px; padding: 34px 0 22px; isolation: isolate; }
-.hp-hero-heart { position: absolute; z-index: -1; top: -30px; left: 50%; width: min(620px, 62%); transform: translateX(-56%); mix-blend-mode: screen; opacity: .95; pointer-events: none;
-  -webkit-mask-image: radial-gradient(ellipse 50% 52% at 50% 50%, #000 58%, transparent 100%); mask-image: radial-gradient(ellipse 50% 52% at 50% 50%, #000 58%, transparent 100%); }
-.hp-eyebrow { color: #b9cbe0; font-size: 13px; letter-spacing: .2em; }
-.hp-hero h1 { margin-top: 14px; font-size: clamp(34px, 3.6vw, 50px); font-weight: 650; line-height: 1.04; letter-spacing: -.02em; text-shadow: 0 2px 24px #000a; }
-.hp-hero-copy>p { margin-top: 14px; max-width: 30ch; color: #d3e1ef; font-size: 17px; line-height: 1.45; text-shadow: 0 1px 12px #000; }
+/* --- Hero: what Health puts in the shared head (PageHeader.tsx) ----------- */
 .hp-range { display: inline-flex; margin-top: 34px; padding: 3px; border: 1px solid #284865; border-radius: 10px; background: #071628cc; }
 .hp-range button { min-width: 58px; padding: 9px 14px; border-radius: 8px; color: #c7d6e6; font-size: 14px; }
 .hp-range button.active { color: #fff; background: linear-gradient(180deg, #1f7fd6, #1460ad); box-shadow: 0 0 14px #1d8cff55; }
-.hp-hero-side { display: flex; flex-direction: column; gap: 16px; }
 .hp-avg-hr { display: flex; align-items: center; gap: 8px; }
 .hp-ecg { width: 190px; height: 50px; filter: drop-shadow(0 0 4px #3ee4ffaa); }
 .hp-avg-hr strong { display: block; font-size: 30px; font-weight: 600; line-height: 1; }
 .hp-avg-hr strong small { font-size: 16px; font-weight: 400; color: #d5e5f5; }
 .hp-avg-hr span { color: var(--hp-sub); font-size: 13px; }
-.hp-take { position: relative; text-align: left; padding: 18px 50px 18px 20px; border: 1px solid #2a5a86; border-radius: 14px; background: linear-gradient(150deg, #0d2742e8, #07162ae8); box-shadow: 0 10px 30px #0006, inset 0 1px 0 #ffffff0d; backdrop-filter: blur(6px); }
-.hp-take h2 { display: flex; align-items: center; gap: 9px; margin-bottom: 12px; font-size: 17px; font-weight: 600; }
-.hp-take h2 .hp-icon { color: #f6c33a; width: 24px; height: 24px; }
-.hp-take p { color: #c8d7e6; font-size: 14px; line-height: 1.55; }
-.hp-take p + p { margin-top: 6px; }
-.hp-take-go { position: absolute; right: 14px; top: 50%; translate: 0 -50%; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: #1d8cff; color: white; box-shadow: 0 0 14px #1d8cff88; }
-.hp-take-go .hp-icon { width: 18px; height: 18px; }
 .hp-source-note { margin: 0 0 14px; }
 
 /* --- Five tiles --------------------------------------------------------- */
@@ -203,9 +189,6 @@ em.hp-tone-idle { color: var(--hp-dim); } .hp-tone-dot.hp-tone-idle { background
   .hp-grid, .hp-grid-bottom { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 760px) {
-  .hp-hero { grid-template-columns: minmax(0, 1fr); padding-top: 8px; min-height: 0; }
-  .hp-hero-heart { top: -10px; left: auto; right: -30%; width: 110%; transform: none; opacity: .55; }
-  .hp-hero-copy>p { font-size: 15px; }
   .hp-range { display: flex; margin-top: 22px; }
   .hp-range button { flex: 1; min-width: 0; padding: 8px 4px; }
   .hp-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }

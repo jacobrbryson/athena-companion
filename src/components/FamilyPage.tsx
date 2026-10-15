@@ -5,6 +5,7 @@ import type { ApiError } from '../api/client';
 import { Icon } from './HealthPage';
 import { AREA, SPORTS, areaOf, clock, iconOf, zonedDay } from './CalendarPage';
 import type { RosterRow } from './familyRoster';
+import { PageHeader } from './PageHeader';
 import './health.css';
 import './calendar.css';
 import './family.css';
@@ -251,18 +252,8 @@ export function FamilyOverview({ roster, children, events, timeZone, now, chores
   const tone = (area: keyof typeof AREA) => ({ '--cp-tone': AREA[area].color } as CSSProperties);
 
   return <div className="hp cp fp">
-    <section className="fp-hero">
-      <header className="cp-head">
-        <span className="hp-eyebrow">THE PEOPLE IN YOUR CORNER</span>
-        <h1>Family</h1>
-        <p>People, plans, chores, and the moments that matter most.</p>
-      </header>
-      <button type="button" className="hp-take fp-take" onClick={() => onAsk('Help me think about my family this week — what should I be paying attention to?')}>
-        <h2><Icon name="sun" /> Athena’s Take</h2>
-        <p>{take.join(' ')}</p>
-        <span className="hp-take-go"><Icon name="chevron" /></span>
-      </button>
-    </section>
+    <PageHeader eyebrow="THE PEOPLE IN YOUR CORNER" title="Family" blurb="People, plans, chores, and the moments that matter most."
+      take={{ lines: [take.join(' ')], ask: 'Help me think about my family this week — what should I be paying attention to?', onAsk }} />
 
     <section className="cp-stats" aria-label="Your family at a glance">
       <button type="button" className="hp-tile cp-stat" onClick={onDetails}>
