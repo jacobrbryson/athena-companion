@@ -310,6 +310,13 @@ export const actionsApi = {
     api.post<{ success: true; authorities: ActionAuthority[] }>(
       `/api/v1/actions/authority/${actionId}`
     ),
+  /**
+   * A click that is itself the approval — ticking a chore on the Family page
+   * (complete_chore) or its Undo (undo_complete_chore). Only actions core_api
+   * marks direct are accepted; the result is the executed, audited row.
+   */
+  perform: (actionId: 'complete_chore' | 'undo_complete_chore', params: { chore_id: string }) =>
+    api.post<{ success: true; action: AthenaAction }>(`/api/v1/actions/direct/${actionId}`, { params }),
   revokeAuthority: (actionId: string) =>
     api.del<{ success: true; authorities: ActionAuthority[] }>(
       `/api/v1/actions/authority/${actionId}`

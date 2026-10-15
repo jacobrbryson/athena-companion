@@ -1,5 +1,7 @@
-import { useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import type { CalendarEvent, FamilyChild, FamilyHealthStatus } from '../api/dashboard';
+import { actionsApi } from '../api/companion';
+import type { ApiError } from '../api/client';
 import { Icon } from './HealthPage';
 import { AREA, SPORTS, areaOf, clock, iconOf, zonedDay } from './CalendarPage';
 import type { RosterRow } from './familyRoster';
@@ -18,7 +20,7 @@ import './family.css';
  * birthdays already say.
  */
 
-type Chore = { title: string; completed: boolean; status: string | null; dueDate: string | null };
+type Chore = { id?: string | null; title: string; completed: boolean; status: string | null; dueDate: string | null };
 interface Props {
   roster: RosterRow[];
   children: FamilyChild[];
@@ -29,6 +31,10 @@ interface Props {
   household?: string | null;
   /** The Family Chores site, for "View all"; no link without one. */
   choresUrl?: string | null;
+  /** The Family Chores token can mark chores done (write:chores). */
+  canCompleteChores?: boolean;
+  /** Where to reconnect when it can't; shown instead of the checkboxes. */
+  choresReconnectUrl?: string | null;
   /** Why chores can't be read, with its fix button; null when they can. */
   choresNote: ReactNode;
   /** Why the calendar can't be read; null when it can. */
@@ -57,6 +63,118 @@ function joinWords(words: string[]) {
   return words.length <= 1 ? words.join('') : `${words.slice(0, -1).join(', ')} and ${words[words.length - 1]}`;
 }
 
+/** How long the snackbar (and its Undo) stays up before a ticked chore leaves the list. */
+const SNACK_MS = 6000;
+type Snack = { id: string; title: string; kind: 'done' | 'undone' | 'error'; text: string; reconnect?: boolean };
+
+/**
+ * Ticking chores off the Family page (2026-10-14). A tick runs the
+ * complete_chore action in core_api — the click is the approval, recorded and
+ * audited there — and shows at once (optimistic), rolling back if Family
+ * Chores refuses. A snackbar offers Undo for a few seconds (undo_complete_chore,
+ * the app's own undo: coins come back out); when it closes the row fades away.
+ *
+ * Done chores are not listed — they count toward done/total, but the list is
+ * what's left — except one just ticked, which stays until its snackbar goes.
+ */
+function useChoreTicks(chores: Chore[]) {
+  // Our own view of a chore until the dashboard's next read agrees with it.
+  const [override, setOverride] = useState<Record<string, boolean>>({});
+  const [busy, setBusy] = useState<Record<string, boolean>>({});
+  const [lingering, setLingering] = useState<Record<string, 'shown' | 'leaving'>>({});
+  const [snack, setSnack] = useState<Snack | null>(null);
+  const timers = useRef<number[]>([]);
+  const snackTimer = useRef<number | null>(null);
+  useEffect(() => () => {
+    timers.current.forEach(clearTimeout);
+    if (snackTimer.current) clearTimeout(snackTimer.current);
+  }, []);
+  // Forget an override once the server says the same thing.
+  useEffect(() => {
+    setOverride(prev => {
+      const next = { ...prev };
+      let changed = false;
+      for (const c of chores) if (c.id && c.id in next && next[c.id] === c.completed) { delete next[c.id]; changed = true; }
+      return changed ? next : prev;
+    });
+  }, [chores]);
+
+  const live = chores.map(c => (c.id && c.id in override ? { ...c, completed: override[c.id], status: override[c.id] ? 'Completed' : 'Open' } : c));
+  const drop = <T,>(rec: Record<string, T>, id: string) => { const next = { ...rec }; delete next[id]; return next; };
+  const showSnack = (next: Snack | null, ms = SNACK_MS) => {
+    if (snackTimer.current) clearTimeout(snackTimer.current);
+    setSnack(next);
+    snackTimer.current = next ? window.setTimeout(() => {
+      setSnack(null);
+      // A tick nobody undid: fade the row, then drop it.
+      if (next.kind === 'done') {
+        setLingering(prev => ({ ...prev, [next.id]: 'leaving' }));
+        timers.current.push(window.setTimeout(() => setLingering(prev => drop(prev, next.id)), 400));
+      }
+    }, ms) : null;
+  };
+  const failure = (id: string, title: string, err: unknown, what: 'done' | 'undo'): Snack => {
+    const e = err as ApiError;
+    const reconnect = e?.code === 'family_chores_reconnect' || e?.code === 'unavailable';
+    const tried = what === 'done' ? `mark “${title}” done` : `undo “${title}”`;
+    const text = reconnect
+      ? `Couldn’t ${tried} — Family Chores needs reconnecting.`
+      : `Couldn’t ${tried}${e?.message ? `: ${e.message}` : '.'}`;
+    return { id, title, kind: 'error', reconnect, text };
+  };
+
+  async function tick(c: Chore) {
+    const id = c.id;
+    if (!id || busy[id] || c.completed) return;
+    setBusy(b => ({ ...b, [id]: true }));
+    setOverride(o => ({ ...o, [id]: true }));
+    setLingering(l => ({ ...l, [id]: 'shown' }));
+    try {
+      await actionsApi.perform('complete_chore', { chore_id: id });
+      showSnack({ id, title: c.title, kind: 'done', text: `“${c.title}” done` });
+    } catch (err) {
+      setOverride(o => ({ ...o, [id]: false }));
+      setLingering(l => drop(l, id));
+      showSnack(failure(id, c.title, err, 'done'));
+    } finally {
+      setBusy(b => drop(b, id));
+    }
+  }
+
+  async function undo() {
+    if (!snack || snack.kind !== 'done') return;
+    const { id, title } = snack;
+    if (snackTimer.current) clearTimeout(snackTimer.current);
+    setSnack(null);
+    setBusy(b => ({ ...b, [id]: true }));
+    setOverride(o => ({ ...o, [id]: false }));
+    try {
+      await actionsApi.perform('undo_complete_chore', { chore_id: id });
+      setLingering(l => drop(l, id));
+      showSnack({ id, title, kind: 'undone', text: `“${title}” is open again` }, 3000);
+    } catch (err) {
+      // Still done at Family Chores: show it so, and let it leave as a tick would.
+      setOverride(o => ({ ...o, [id]: true }));
+      showSnack({ ...failure(id, title, err, 'undo'), kind: 'done' });
+    } finally {
+      setBusy(b => drop(b, id));
+    }
+  }
+
+  const listed = live.filter(c => !c.completed || (c.id && lingering[c.id]));
+  return { live, listed, busy, lingering, snack, tick, undo, dismiss: () => showSnack(null) };
+}
+
+function ChoreSnackbar({ snack, reconnectUrl, onUndo, onDismiss }: { snack: Snack | null; reconnectUrl?: string | null; onUndo: () => void; onDismiss: () => void }) {
+  if (!snack) return null;
+  return <div className={`fp-snack${snack.kind === 'error' ? ' fp-snack-error' : ''}`} role="status" aria-live="polite">
+    <span>{snack.text}</span>
+    {snack.kind === 'done' && !snack.reconnect && <button type="button" onClick={onUndo}>Undo</button>}
+    {snack.reconnect && reconnectUrl && <a href={reconnectUrl} target="_blank" rel="noopener noreferrer">Reconnect</a>}
+    <button type="button" className="fp-snack-x" aria-label="Dismiss" onClick={onDismiss}>×</button>
+  </div>;
+}
+
 function Avatar({ name, photoUrl, size }: { name: string; photoUrl?: string | null; size: 'lg' | 'sm' }) {
   const [broken, setBroken] = useState(false);
   return <span className={`fp-avatar fp-avatar-${size}`} aria-hidden="true">
@@ -64,7 +182,9 @@ function Avatar({ name, photoUrl, size }: { name: string; photoUrl?: string | nu
   </span>;
 }
 
-export function FamilyOverview({ roster, children, events, timeZone, now, chores, household, choresUrl, choresNote, calendarNote, health, sick, onAsk, onCalendar, onDetails }: Props) {
+export function FamilyOverview({ roster, children, events, timeZone, now, chores: choresIn, household, choresUrl, canCompleteChores, choresReconnectUrl, choresNote, calendarNote, health, sick, onAsk, onCalendar, onDetails }: Props) {
+  const ticks = useChoreTicks(choresIn);
+  const chores = ticks.live;
   const today = zonedDay(new Date(now), timeZone);
   const names = roster.filter(r => r.relation !== 'Pet').map(r => r.name);
   const namesPattern = names.length ? new RegExp(`\\b(${names.map(firstWord).filter(w => w.length > 2).join('|')})\\b`, 'i') : null;
@@ -179,10 +299,22 @@ export function FamilyOverview({ roster, children, events, timeZone, now, chores
           </div>
             : <>
               <div className="hp-bar"><i style={{ width: `${(choresDone / chores.length) * 100}%` }} /></div>
-              <ul className="fp-chore-list">{chores.map((c, i) => <li key={i} className={c.completed ? 'fp-done' : undefined}>
-                <span className={`fp-check${c.completed ? ' fp-on' : ''}`}>{c.completed && <Icon name="check" />}</span>
-                <div><strong>{c.title}</strong><small>{c.completed ? 'Completed' : c.status || 'Open'}{c.dueDate ? ` · due ${new Date(`${c.dueDate}T00:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}` : ''}</small></div>
-              </li>)}</ul>
+              {!canCompleteChores && choresReconnectUrl && choresDone < chores.length && <p className="fp-chore-reconnect">
+                To tick chores off here, <a href={choresReconnectUrl} target="_blank" rel="noopener noreferrer">reconnect Athena in Family Chores</a>. The current link can only read.
+              </p>}
+              {!ticks.listed.length ? <p className="hp-empty">All done for today.</p>
+                : <ul className="fp-chore-list">{ticks.listed.map((c, i) => {
+                  const leaving = !!(c.id && ticks.lingering[c.id] === 'leaving');
+                  const busy = !!(c.id && ticks.busy[c.id]);
+                  return <li key={c.id || i} className={[c.completed ? 'fp-done' : '', leaving ? 'fp-leaving' : ''].filter(Boolean).join(' ') || undefined}>
+                    {canCompleteChores && c.id
+                      ? <button type="button" role="checkbox" aria-checked={c.completed} aria-label={`Mark “${c.title}” done`} disabled={c.completed || busy}
+                        className={`fp-check fp-check-btn${c.completed ? ' fp-on' : ''}`} onClick={() => ticks.tick(c)}>{c.completed && <Icon name="check" />}</button>
+                      : <span className={`fp-check${c.completed ? ' fp-on' : ''}`} aria-hidden="true">{c.completed && <Icon name="check" />}</span>}
+                    <div><strong>{c.title}</strong><small>{c.completed ? 'Completed' : c.status || 'Open'}{c.dueDate ? ` · due ${new Date(`${c.dueDate}T00:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}` : ''}</small></div>
+                  </li>;
+                })}</ul>}
+              <ChoreSnackbar snack={ticks.snack} reconnectUrl={choresReconnectUrl} onUndo={ticks.undo} onDismiss={ticks.dismiss} />
             </>}
       </section>
 

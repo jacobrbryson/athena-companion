@@ -31,6 +31,22 @@ button.cp-stat { text-align: left; color: inherit; }
 .fp-chore-list { display: grid; gap: 6px; margin-top: 14px; max-height: 360px; overflow-y: auto; overscroll-behavior: contain; padding-right: 4px; scrollbar-width: thin; scrollbar-color: #1d3550 transparent; }
 .fp-chore-list li { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid #1d3550; border-radius: 10px; background: #0a1a2e; }
 .fp-chore-list strong { display: block; font-size: 15px; font-weight: 500; }
+/* Ticking a chore done (2026-10-14): the box is a button, the row fades out
+   once the snackbar's Undo window closes. */
+.fp-check-btn { padding: 0; background: transparent; color: inherit; cursor: pointer; transition: background .15s, border-color .15s; }
+.fp-check-btn:hover:not(:disabled) { border-color: #33e0a1; }
+.fp-check-btn:focus-visible { outline: 2px solid #4fb5ff; outline-offset: 2px; }
+.fp-check-btn:disabled { cursor: default; }
+.fp-chore-list li { transition: opacity .4s, transform .4s; }
+.fp-chore-list li.fp-leaving { opacity: 0; transform: translateX(12px); }
+.fp-chore-reconnect { margin: 12px 0 0; color: var(--hp-sub); font-size: 13px; line-height: 1.5; }
+.fp-chore-reconnect a { color: #4fb5ff; }
+.fp-snack { position: fixed; left: 50%; bottom: 24px; z-index: 60; display: flex; align-items: center; gap: 14px; max-width: min(520px, calc(100vw - 32px)); padding: 12px 14px 12px 18px; transform: translateX(-50%); border: 1px solid #1f3d58; border-radius: 12px; background: #0d2238; color: #e8f3ff; font-size: 14px; box-shadow: 0 12px 32px #000a; animation: fp-snack-in .2s ease-out; }
+.fp-snack-error { border-color: #7a3340; }
+.fp-snack button, .fp-snack a { flex-shrink: 0; padding: 0; border: 0; background: none; color: #4fb5ff; font: inherit; font-weight: 600; cursor: pointer; text-decoration: none; }
+.fp-snack .fp-snack-x { color: #7d93aa; font-size: 18px; font-weight: 400; line-height: 1; }
+@keyframes fp-snack-in { from { transform: translate(-50%, 8px); } to { transform: translate(-50%, 0); } }
+@media (prefers-reduced-motion: reduce) { .fp-chore-list li, .fp-snack { transition: none; animation: none; } }
 .fp-chore-list small { color: var(--hp-sub); font-size: 12px; }
 .fp-done strong { color: var(--hp-sub); text-decoration: line-through; }
 .fp-check { display: grid; place-items: center; width: 22px; height: 22px; flex-shrink: 0; border: 1.5px solid #3a6688; border-radius: 6px; }

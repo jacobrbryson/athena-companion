@@ -396,16 +396,17 @@ function dashboardSummary() {
         : { heightCm: null, corrections: {}, unmatched: [] };
       return ready({ latest: weighIns[0], weighIns, calibration, references });
     })(),
-    familyChores: ready({ name: 'Rivera family', appUrl: 'https://family-chores.app', chores: [
-      { title: 'Sand front rails', completed: false, status: 'Open', dueDate: dayStamp(180) },
-      { title: 'Paint front rails', completed: false, status: 'Open', dueDate: dayStamp(180) },
-      { title: 'Fix backyard spigot', completed: false, status: 'Open', dueDate: dayStamp(110) },
-      { title: 'Fix insulation in attic', completed: false, status: 'Open', dueDate: dayStamp(46) },
-      { title: 'Fix insulation in crawl space', completed: false, status: 'Open', dueDate: dayStamp(46) },
-      { title: 'Dishes', completed: true, status: 'done', dueDate: dayStamp(0) },
-      { title: 'Walk Biscuit', completed: false, status: 'open', dueDate: dayStamp(0) },
-      { title: 'Homework check', completed: false, status: 'open', dueDate: dayStamp(0) },
-    ] }),
+    familyChores: ready({ name: 'Rivera family', appUrl: 'https://family-chores.app', canComplete: true, reconnectUrl: 'https://family-chores.app/profile?tab=integrations', chores: [
+      { id: 'c-rails-sand', title: 'Sand front rails', completed: false, status: 'Open', dueDate: dayStamp(180) },
+      { id: 'c-rails-paint', title: 'Paint front rails', completed: false, status: 'Open', dueDate: dayStamp(180) },
+      { id: 'c-spigot', title: 'Fix backyard spigot', completed: false, status: 'Open', dueDate: dayStamp(110) },
+      { id: 'c-attic', title: 'Fix insulation in attic', completed: false, status: 'Open', dueDate: dayStamp(46) },
+      { id: 'c-crawl', title: 'Fix insulation in crawl space', completed: false, status: 'Open', dueDate: dayStamp(46) },
+      { id: 'c-dishes', title: 'Dishes', completed: true, status: 'done', dueDate: dayStamp(0) },
+      { id: 'c-biscuit', title: 'Walk Biscuit', completed: false, status: 'open', dueDate: dayStamp(0) },
+      // Family Chores refuses this one, to exercise the rollback.
+      { id: 'c-refused', title: 'Homework check', completed: false, status: 'open', dueDate: dayStamp(0) },
+    ].map((c) => (c.id in mockChoreDone ? { ...c, completed: mockChoreDone[c.id], status: mockChoreDone[c.id] ? 'Approved' : 'Open' } : c)) }),
     jira: ready({ partial: false, capped: false, issues: [
       { key: 'ATH-412', title: 'Dashboard priority ordering', status: 'In Progress', statusCategory: 'indeterminate', project: 'Athena', updated: iso(3600_000), due: null, site: 'athena', url: 'https://example.atlassian.net/browse/ATH-412' },
       { key: 'ATH-408', title: 'Companion menu merge', status: 'To Do', statusCategory: 'new', project: 'Athena', updated: iso(DAY), due: null, site: 'athena', url: 'https://example.atlassian.net/browse/ATH-408' },
@@ -447,6 +448,8 @@ type MockEmail = {
   /** Stands in for the live Gmail read the real detail() controller does — plain text only. */
   body: string;
 };
+// Chores ticked or undone on the Family page this session (id -> done).
+const mockChoreDone: Record<string, boolean> = {};
 let mockEmails: MockEmail[] = [
   { uuid: 'email-1', gmail_message_id: 'g-101', thread_id: 't-101', subject: 'Your Kroger order #48213', from_address: 'noreply@kroger.com', from_name: 'Kroger', received_at: iso(DAY), category: 'receipt', group_key: 'kroger', extracted: { merchant: 'Kroger', category: 'groceries', amount: 84.32, currency: 'USD', purchased_at: dayStamp(1) }, status: 'new', created_at: iso(DAY), body: 'Thanks for shopping at Kroger!\n\nOrder #48213\nDelivered to: 412 Maple St\n\n1x Organic bananas        $3.49\n1x 2% milk, gallon         $4.29\n1x Rotisserie chicken      $7.99\n1x Sourdough loaf          $4.50\n6x Assorted produce       $28.05\n2x Cleaning supplies      $14.00\nOther items               $22.00\n\nSubtotal:  $84.32\nTotal charged to card ending 4471: $84.32\n\nQuestions about this order? Reply to this email or visit kroger.com/help.' },
   { uuid: 'email-2', gmail_message_id: 'g-102', thread_id: 't-102', subject: 'Your Kroger order #48390', from_address: 'noreply@kroger.com', from_name: 'Kroger', received_at: iso(DAY * 4), category: 'receipt', group_key: 'kroger', extracted: { merchant: 'Kroger', category: 'groceries', amount: 61.10, currency: 'USD', purchased_at: dayStamp(4) }, status: 'new', created_at: iso(DAY * 4), body: 'Thanks for shopping at Kroger!\n\nOrder #48390\nDelivered to: 412 Maple St\n\n1x Eggs, dozen             $3.99\n1x Coffee, 12oz bag        $9.99\n4x Frozen dinners         $19.96\nOther items               $27.16\n\nTotal charged to card ending 4471: $61.10' },
@@ -1838,6 +1841,15 @@ Sam` };
     return { success: true, uuid, status: n!.status };
   }
 
+  // A tick on the Family page (core_api perform(): the click is the approval).
+  if (method === 'POST' && /^\/api\/v1\/actions\/direct\/(complete_chore|undo_complete_chore)$/.test(p)) {
+    const actionId = p.split('/')[5];
+    const id = (body as { params?: { chore_id?: string } } | undefined)?.params?.chore_id || '';
+    await wait(500);
+    if (id === 'c-refused') fail(409, 'The chore is not in a state that allows this.', 'invalid_status_transition');
+    mockChoreDone[id] = actionId === 'complete_chore';
+    return { success: true, action: { uuid: `direct-${Date.now()}`, action_id: actionId, status: 'done', approval: 'human' } };
+  }
   if (p === '/api/v1/actions' && method === 'GET') {
     return { catalog: ACTION_CATALOG, available: availableActions(), authorities, pending: proposals.filter((a) => a.status === 'pending') };
   }

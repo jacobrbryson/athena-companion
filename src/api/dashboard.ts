@@ -29,7 +29,16 @@ export interface DashboardSummary {
   recovery: Source<RecoveryDay[]>;
   sleep: Source<{ date: string; nap: boolean; hours_asleep: number; hours_in_bed?: number; sleep_performance_percent: number | null; sleep_efficiency_percent?: number | null; respiratory_rate?: number | null }[]>;
   strain: Source<{ date: string; day_strain: number | null; average_heart_rate?: number | null; kilojoules?: number | null }[]>;
-  familyChores: Source<{ name: string; /** The Family Chores site, for a "View all" link. */ appUrl?: string | null; chores: { title: string; completed: boolean; status: string | null; dueDate: string | null }[] }>;
+  familyChores: Source<{
+    name: string;
+    /** The Family Chores site, for a "View all" link. */
+    appUrl?: string | null;
+    /** The token can mark chores done; false = show the reconnect prompt instead of checkboxes. */
+    canComplete?: boolean;
+    /** Where Family Chores re-mints Athena's token (its profile's Integrations tab). */
+    reconnectUrl?: string | null;
+    chores: { id: string | null; title: string; completed: boolean; status: string | null; dueDate: string | null }[];
+  }>;
   jira: Source<{ issues: JiraIssue[]; partial: boolean; /** Jira has more than was read, so a count is a floor. */ capped?: boolean }>;
   slack: Source<{ workspace: string; messages: { text: string; channel: string; url: string; timestamp: string }[] }>;
   emailTriage: Source<{ newCount: number; receiptCount: number; travelCount: number; schoolCount: number; otherCount: number; pendingCount?: number; bundles?: MailBundles; preview: TriageEmail[] }>;
