@@ -30,8 +30,8 @@ export interface NutritionTargets {
   target_weight_low_kg: number | null; target_weight_high_kg: number | null;
 }
 export interface NutritionTotals { calories: number; protein_g: number; carbs_g: number; fat_g: number; water_oz: number }
-/** How an entry arrived: typed, estimated from a photo, a barcode lookup, a starred favorite. */
-export type EntrySource = 'manual' | 'photo' | 'barcode' | 'favorite';
+/** How an entry arrived: typed, estimated from a photo, a barcode lookup, a starred favorite, told to Athena in words. */
+export type EntrySource = 'manual' | 'photo' | 'barcode' | 'favorite' | 'described';
 export interface NutritionEntry {
   uuid: string; eaten_on: string; label: string;
   calories: number | null; protein_g: number | null; carbs_g: number | null; fat_g: number | null; water_oz: number | null;
@@ -51,7 +51,7 @@ export interface NutritionDay {
   days: { date: string; logged: boolean; totals: NutritionTotals }[];
   favorites?: NutritionFavorite[];
 }
-export interface ScanResult { entry: NutritionEntry; how: 'barcode' | 'photo'; note: string; nutrition: NutritionDay }
+export interface ScanResult { entry: NutritionEntry; how: 'barcode' | 'photo' | 'described'; note: string; nutrition: NutritionDay }
 export interface HealthPlan { program: TrainingProgram | null; targets: NutritionTargets | null; nutrition: NutritionDay | null }
 export interface ProgramDraft {
   name: string; goal?: string | null; starts_on: string; weeks: number;
@@ -77,6 +77,9 @@ export const healthPlanApi = {
   /** Log from the camera: a barcode the phone read, the photo, or both (the photo is the fallback). */
   scan: (body: { imageBase64?: string; mimeType?: string; barcode?: string | null }) =>
     api.post<ScanResult>('/api/v1/dashboard/health/nutrition/scan', { ...body, eaten_on: localDay(), today: localDay() }),
+  /** "Tell Athena": a few words ("Big Mac from McDonald's") she looks up and logs. */
+  describe: (text: string) =>
+    api.post<ScanResult>('/api/v1/dashboard/health/nutrition/describe', { text, eaten_on: localDay(), today: localDay() }),
   saveFavorite: (food: EntryDraft) => api.post<{ nutrition: NutritionDay }>('/api/v1/dashboard/health/favorites', { ...food, today: localDay() }),
   removeFavorite: (uuid: string) => api.del<{ nutrition: NutritionDay }>(`/api/v1/dashboard/health/favorites/${encodeURIComponent(uuid)}?today=${localDay()}`),
   logFavorite: (uuid: string) => api.post<{ nutrition: NutritionDay }>(`/api/v1/dashboard/health/favorites/${encodeURIComponent(uuid)}/log`, { eaten_on: localDay(), today: localDay() }),

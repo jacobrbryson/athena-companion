@@ -4,6 +4,7 @@ import { healthPlanApi, localDay, type HealthPlan, type EntrySource, type Nutrit
 import { workoutsApi, type Workout } from '../api/workouts';
 import { PageHeader } from './PageHeader';
 import { downscale } from './photoStore';
+import { Ecg, useLiveHeartRate } from './Ecg';
 import './health.css';
 
 /**
@@ -105,6 +106,7 @@ const PATHS: Record<string, ReactNode> = {
   camera: <><path d="M4 8.5A1.5 1.5 0 0 1 5.5 7h2.3l1.5-2h5.4l1.5 2h2.3A1.5 1.5 0 0 1 20 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 17.5Z" /><circle cx="12" cy="13" r="3.3" /></>,
   pencil: <path d="M4 20l1-4.5L15.5 5a2 2 0 0 1 3 3L8 18.5Zm9.5-13l3 3" />,
   barcode: <path d="M4 6v12M7 6v12M10 6v12M14 6v12M16 6v12M20 6v12M4 6h1M19 6h1" />,
+  speech: <path d="M5 5h14a1.5 1.5 0 0 1 1.5 1.5v8A1.5 1.5 0 0 1 19 16h-8l-4.5 3.5V16H5a1.5 1.5 0 0 1-1.5-1.5v-8A1.5 1.5 0 0 1 5 5Z" />,
 };
 export function Icon({ name, className }: { name: keyof typeof PATHS | string; className?: string }) {
   return <svg className={`hp-icon ${className || ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{PATHS[name] ?? PATHS.pulse}</svg>;
@@ -141,11 +143,6 @@ function Spark({ values, color }: { values: (number | null)[]; color: string }) 
     <path d={line} fill="none" stroke={color} strokeWidth="1.6" opacity=".85" />
     {pts.map((p, i) => p && <circle key={i} cx={p[0]} cy={p[1]} r="2.4" fill={color} />)}
   </svg>;
-}
-
-/** The decorative trace beside the average heart rate. */
-function Ecg() {
-  return <svg className="hp-ecg" viewBox="0 0 200 50" aria-hidden="true"><path d="M0 30h22l4-6 4 6h12l3-22 5 38 4-16h18l4-8 4 8h14l3-18 5 30 4-12h20l4-7 4 7h14l3-14 4 22 3-8h16" fill="none" stroke="#3ee4ff" strokeWidth="1.6" /></svg>;
 }
 
 function Delta({ value, unit, better, decimals = 0, suffix }: { value: number | null; unit: string; better: 'up' | 'down'; decimals?: number; suffix: string }) {
@@ -303,6 +300,10 @@ export function HealthOverview({ recovery, sleep, strain, weighIns, readiness, w
   const take = takeOf(readiness, program, targets);
   const wellness = wellnessOf(recovery, sleep);
   const whoopLinked = !whoopNote;
+  // The phone's band, while it's being read, takes over from WHOOP's daily average.
+  const live = useLiveHeartRate();
+  const avgHr = cycle?.average_heart_rate != null ? Math.round(cycle.average_heart_rate) : null;
+  const shownHr = live ?? avgHr;
 
   return <div className="hp">
     <PageHeader eyebrow="HEALTH & PERFORMANCE" title={<>Stronger for<br />what matters</>}
@@ -311,9 +312,9 @@ export function HealthOverview({ recovery, sleep, strain, weighIns, readiness, w
       controls={<div className="hp-range" role="tablist" aria-label="Time range">
         {RANGES.map(r => <button key={r.id} role="tab" aria-selected={range === r.id} className={range === r.id ? 'active' : ''} onClick={() => setRange(r.id)}>{r.label}</button>)}
       </div>}
-      aside={<div className="hp-avg-hr">
-        <Ecg />
-        <div><strong>{cycle?.average_heart_rate != null ? Math.round(cycle.average_heart_rate) : '—'}<small> bpm</small></strong><span>Avg Heart Rate</span></div>
+      aside={<div className={`hp-avg-hr${live != null ? ' hp-live' : ''}`}>
+        <Ecg bpm={shownHr} />
+        <div><strong>{shownHr ?? '—'}<small> bpm</small></strong><span>{live != null ? <><i className="hp-live-dot" />Live Heart Rate</> : 'Avg Heart Rate'}</span></div>
       </div>}
       take={{ lines: take, ask: 'What do you make of how my body is doing today, and what should I do?', onAsk }} />
 
@@ -489,12 +490,15 @@ const kcalOf = (f: { calories: number | null }) => (f.calories != null ? `${f.ca
 
 function NutritionPanel({ food, targets, loading, onOpen, onTargets, onChanged }: { food: NutritionDay | null; targets: NutritionTargets | null; loading: boolean; onOpen: (o: FoodLogOpen) => void; onTargets: () => void; onChanged: (n: NutritionDay) => void }) {
   const [menu, setMenu] = useState(false);
+  // "Tell Athena" turns the menu into a one-line box: what you ate, in your words.
+  const [telling, setTelling] = useState(false);
+  const [told, setTold] = useState('');
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState('');
   const menuRef = useRef<HTMLDivElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
-    if (!menu) return;
+    if (!menu) { setTelling(false); return; }
     const away = (e: Event) => { if (!menuRef.current?.contains(e.target as Node)) setMenu(false); };
     const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') setMenu(false); };
     document.addEventListener('pointerdown', away);
@@ -515,6 +519,18 @@ function NutritionPanel({ food, targets, loading, onOpen, onTargets, onChanged }
       onOpen({ mode: 'check', uuid: r.entry.uuid, note: r.note });
     } catch (e) { setError((e as Error).message || 'Athena couldn’t read that photo.'); } finally { setBusy(null); }
   };
+  const describe = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const text = told.trim();
+    if (!text) return;
+    setMenu(false); setBusy('Athena is looking it up…'); setError('');
+    try {
+      const r = await healthPlanApi.describe(text);
+      setTold('');
+      onChanged(r.nutrition);
+      onOpen({ mode: 'check', uuid: r.entry.uuid, note: r.note });
+    } catch (err) { setError((err as Error).message || 'Athena couldn’t look that up.'); } finally { setBusy(null); }
+  };
   return <section className="hp-panel hp-nutrition">
     <header><h2><Icon name="food" className="hp-amber-text" /> Nutrition</h2><button type="button" className="hp-link" onClick={() => onOpen({ mode: 'list' })}>Today <Icon name="arrowRight" /></button></header>
     {loading ? <p className="hp-empty">Loading…</p> : <>
@@ -531,12 +547,18 @@ function NutritionPanel({ food, targets, loading, onOpen, onTargets, onChanged }
       <div className="hp-nutrition-actions">
         <div className="hp-menu-wrap" ref={menuRef}>
           <button type="button" aria-haspopup="menu" aria-expanded={menu} disabled={!!busy} onClick={() => setMenu(m => !m)}><Icon name="plus" /> {busy || 'Log food'} <Icon name="down" className="hp-caret" /></button>
-          {menu && <div className="hp-menu" role="menu">
+          {menu && telling && <form className="hp-menu hp-tell" onSubmit={describe}>
+            <label htmlFor="hp-tell-input">Tell Athena what you ate</label>
+            <input id="hp-tell-input" autoFocus value={told} onChange={e => setTold(e.target.value)} placeholder="Big Mac from McDonald’s" maxLength={200} enterKeyHint="send" />
+            <div><button type="button" className="hp-link" onClick={() => setTelling(false)}>Back</button><button type="submit" className="dashboard-chat-cta" disabled={!told.trim()}>Log it <span>↗</span></button></div>
+          </form>}
+          {menu && !telling && <div className="hp-menu" role="menu">
             <small className="hp-menu-head">Favorites</small>
             {favorites.length ? favorites.map(f => <button key={f.uuid} type="button" role="menuitem" onClick={() => void logFavorite(f.uuid)}>
               <Icon name="star" className="hp-star-on" /><span>{f.label}</span><em>{kcalOf(f)}</em>
             </button>) : <p className="hp-menu-empty">Star a food in Today’s list to keep it here.</p>}
             <hr />
+            <button type="button" role="menuitem" onClick={() => setTelling(true)}><Icon name="speech" /><span>Tell Athena<small>“Big Mac from McDonald’s”</small></span></button>
             <button type="button" role="menuitem" onClick={() => { setMenu(false); cameraRef.current?.click(); }}><Icon name="camera" /><span>Take a picture<small>The food or its barcode</small></span></button>
             <button type="button" role="menuitem" onClick={() => { setMenu(false); onOpen({ mode: 'manual' }); }}><Icon name="pencil" /><span>Manual entry</span></button>
           </div>}
@@ -570,7 +592,7 @@ type FoodDraft = typeof FOOD_BLANK;
 const str = (v: number | string | null | undefined) => (v == null ? '' : String(v));
 const draftOf = (e: NutritionEntry): FoodDraft => ({ label: e.label, serving: e.serving || '', calories: str(e.calories), protein_g: str(e.protein_g), carbs_g: str(e.carbs_g), fat_g: str(e.fat_g), water_oz: str(e.water_oz) });
 const foodOfDraft = (d: FoodDraft) => ({ label: d.label, serving: d.serving.trim() || null, calories: numOrNull(d.calories), protein_g: numOrNull(d.protein_g), carbs_g: numOrNull(d.carbs_g), fat_g: numOrNull(d.fat_g), water_oz: numOrNull(d.water_oz) });
-const SOURCE_TAG: Partial<Record<EntrySource, string>> = { photo: 'Photo estimate', barcode: 'Barcode', favorite: 'Favorite' };
+const SOURCE_TAG: Partial<Record<EntrySource, string>> = { photo: 'Photo estimate', barcode: 'Barcode', favorite: 'Favorite', described: 'Told Athena' };
 
 /** The food fields shared by the manual form and an entry being corrected. */
 function FoodFields({ draft, setDraft }: { draft: FoodDraft; setDraft: (f: (d: FoodDraft) => FoodDraft) => void }) {
@@ -658,7 +680,7 @@ function FoodLog({ food, open, onClose, onChanged }: { food: NutritionDay | null
       <div><strong>{isToday ? 'Today' : dayLabel}</strong><small>{isToday ? dayLabel : t ? `${Math.round(t.calories).toLocaleString()} kcal · P ${Math.round(t.protein_g)} g · C ${Math.round(t.carbs_g)} g · F ${Math.round(t.fat_g)} g` : ' '}</small></div>
       <button type="button" aria-label="Next day" disabled={isToday || !!busy || loadingDay} onClick={() => go(1)}><Icon name="chevron" /></button>
     </div>
-    {note &&<p className="hp-scan-note" role="status"><Icon name={/^Found/.test(note) ? 'barcode' : 'camera'} />{note} Check it, fix anything that’s off, or remove it.</p>}
+    {note &&<p className="hp-scan-note" role="status"><Icon name={/^Found/.test(note) ? 'barcode' : /^Logged/.test(note) ? 'speech' : 'camera'} />{note} Check it, fix anything that’s off, or remove it.</p>}
     {entries.length ? <ul className="hp-food-list">{entries.map(e => <li key={e.uuid} className={editing?.uuid === e.uuid ? 'hp-food-editing' : ''}>
       {editing?.uuid === e.uuid ? <form className="hp-form hp-food-edit" onSubmit={save}>
         <FoodFields draft={editing.draft} setDraft={f => setEditing(x => x && { ...x, draft: f(x.draft) })} />

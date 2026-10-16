@@ -7,8 +7,12 @@
 .hp-range { display: inline-flex; margin-top: 34px; padding: 3px; border: 1px solid #284865; border-radius: 10px; background: #071628cc; }
 .hp-range button { min-width: 58px; padding: 9px 14px; border-radius: 8px; color: #c7d6e6; font-size: 14px; }
 .hp-range button.active { color: #fff; background: linear-gradient(180deg, #1f7fd6, #1460ad); box-shadow: 0 0 14px #1d8cff55; }
-.hp-avg-hr { display: flex; align-items: center; gap: 8px; }
+.hp-avg-hr { display: flex; align-items: center; justify-content: center; gap: 8px; }
 .hp-ecg { width: 190px; height: 50px; filter: drop-shadow(0 0 4px #3ee4ffaa); }
+.hp-ecg-head { fill: #e9fdff; filter: drop-shadow(0 0 3px #3ee4ff); }
+.hp-live-dot { display: inline-block; width: 7px; height: 7px; margin-right: 6px; border-radius: 50%; background: #ff4f5e; box-shadow: 0 0 6px #ff4f5e; vertical-align: 1px; animation: hp-live-pulse 1.6s ease-in-out infinite; }
+@keyframes hp-live-pulse { 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .hp-live-dot { animation: none; } }
 .hp-avg-hr strong { display: block; font-size: 30px; font-weight: 600; line-height: 1; }
 .hp-avg-hr strong small { font-size: 16px; font-weight: 400; color: #d5e5f5; }
 .hp-avg-hr span { color: var(--hp-sub); font-size: 13px; }
@@ -139,6 +143,14 @@
 .hp-menu-head { padding: 6px 10px 2px; color: var(--hp-dim, #7d93aa); font-size: 10px; letter-spacing: .14em; text-transform: uppercase; }
 .hp-menu-empty { padding: 6px 10px 8px; color: var(--hp-dim, #7d93aa); font-size: 12px; }
 .hp-menu hr { margin: 4px 6px; border: 0; border-top: 1px solid #1d3a57; }
+.hp-tell { gap: 8px; padding: 10px; }
+.hp-tell label { color: var(--hp-dim, #7d93aa); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
+.hp-tell input { min-width: 0; padding: 9px 10px; border: 1px solid #2c6a80; border-radius: 6px; background: #04222eaa; color: #dcecf6; font: inherit; font-size: 14px; }
+.hp-tell div { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.hp-tell div button { width: auto; }
+.hp-tell div button[type="submit"] { padding: 7px 14px; border: 1px solid #2c8db0; background: #0f3a52; color: #e6f4ff; }
+.hp-tell div button[type="submit"]:disabled { opacity: .5; }
+.hp-tell div button.hp-link { padding: 6px 4px; background: none; }
 .hp-star-on { color: #f6c33a; }
 .hp-star-on.hp-icon, .hp-star-on .hp-icon { fill: currentColor; }
 
@@ -205,6 +217,7 @@ em.hp-tone-idle { color: var(--hp-dim); } .hp-tone-dot.hp-tone-idle { background
 .hp-food-edit { margin: 4px 0 6px; }
 .hp-food-tag { margin-left: 8px; padding: 1px 6px; border-radius: 5px; background: #13304f; color: #9fc2e0; font-size: 10px; font-style: normal; vertical-align: 1px; }
 .hp-food-tag-photo { background: #3a2a10; color: #f6c33a; }
+.hp-food-tag-described { background: #10303a; color: #7fd8e6; }
 .hp-scan-note { display: flex; align-items: flex-start; gap: 8px; margin: 4px 0 6px; padding: 10px 12px; border: 1px solid #5a4516; border-radius: 9px; background: #1d1708; color: #f3dfa6; font-size: 13px; }
 .hp-scan-note .hp-icon { flex: none; width: 16px; height: 16px; margin-top: 1px; }
 .hp-form .hp-check { display: flex; flex-direction: row; align-items: center; gap: 8px; }

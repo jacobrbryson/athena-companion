@@ -2,8 +2,9 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { isAndroidCompanion } from '../native/android';
 import { words } from './echo';
 import { connectConversationAudio, supportsRecognitionTrack } from './conversationAudio';
-import { ConversationEcho } from './conversationEcho';
+import { ConversationEcho, ECHO_TAIL_MS } from './conversationEcho';
 import { EchoGate } from './echoGate';
+import { androidTurnListener, browserTurnListener, type TurnListener } from './turnListener';
 import { turnWaitMs } from './turnTaking';
 import type { CutOff, Speech } from './useSpeech';
 import { getCtor, type SpeechRecognitionLike } from './useVoiceInput';
@@ -34,8 +35,15 @@ import { SILENT_DB } from './voiceLevel';
  * turn, so she knows where she was cut off.
  *
  * Turns itself off when the tab is hidden and after AUTO_OFF_MS of quiet.
- * Not in the Android app, whose WebView has no speech recognizer — hands-free
- * is the phone's version of this.
+ *
+ * Elsewhere it goes turn by turn (`startTurns`): the Android app, whose
+ * WebView has no speech recognizer (the phone's own one listens, through
+ * `conversationListen`), and browsers that can't hand their recognizer the
+ * echo-cancelled microphone (phones, tablets, Safari, older Chrome). A
+ * recognizer listens while she is quiet, is closed the moment she starts
+ * talking, and opens again once she has finished. No barge-in there — talking
+ * over her needs the energy detector above, and without echo control the
+ * recognizer would take her voice for yours.
  */
 
 const FRAME_MS = 30;
@@ -81,7 +89,7 @@ export function useConversation(
   onTurn: (text: string, cutOff: CutOff | null) => void
 ): Conversation {
   const [isSupported] = useState(
-    () => !isAndroidCompanion() && getCtor() !== null && !!navigator.mediaDevices?.getUserMedia
+    () => isAndroidCompanion() || getCtor() !== null
   );
   const [active, setActive] = useState(false);
   const [hearing, setHearing] = useState(false);
@@ -102,17 +110,99 @@ export function useConversation(
     runRef.current = null;
   }, []);
 
+  /** One turn at a time, where the recognizer can't have the echo-cancelled mic. */
+  const startTurns = useCallback((listener: TurnListener) => {
+    if (runRef.current) return;
+    const generation = ++startGeneration.current;
+    setError(null);
+    const echo = new ConversationEcho();
+    let disposed = false;
+    let listening = false;
+    let lastActivityAt = Date.now();
+    let herEndedAt = 0;
+    let watch: number | undefined;
+
+    const listen = () => {
+      if (disposed || listening) return;
+      listening = true;
+      const listenedAt = Date.now();
+      setInterim('');
+      const partial = (text: string) => {
+        if (disposed || !listening) return;
+        lastActivityAt = Date.now();
+        setHearing(true);
+        setInterim(text);
+      };
+      listener.listen(partial)
+        .then((said) => {
+          listening = false;
+          setHearing(false);
+          setInterim('');
+          if (disposed || generation !== startGeneration.current || !said) return;
+          lastActivityAt = Date.now();
+          // Her own reply, come back through the speaker: not a turn.
+          if (echo.rejects(said, Date.now(), listenedAt, !!speechRef.current.now())) return;
+          onTurnRef.current(said, null);
+        })
+        .catch((e: Error) => {
+          listening = false;
+          setHearing(false);
+          if (disposed || generation !== startGeneration.current) return;
+          setError(e.message);
+          stop();
+        });
+    };
+
+    const tick = () => {
+      if (disposed) return;
+      const now = Date.now();
+      const her = speechRef.current.now();
+      if (her) {
+        echo.observe(her.text, her.loudness(ECHO_LAG_MS), now);
+        herEndedAt = now;
+        lastActivityAt = now;
+        // It would hear her through the speaker as you.
+        if (listening) listener.cancel();
+        return;
+      }
+      if (now - lastActivityAt > AUTO_OFF_MS) { stop(); return; }
+      // The room still rings with her for a moment after she stops.
+      if (!listening && now - herEndedAt > ECHO_TAIL_MS) listen();
+    };
+
+    const onHidden = () => {
+      if (document.visibilityState === 'hidden') stop();
+    };
+    window.addEventListener('athena-native-pause', stop);
+    document.addEventListener('visibilitychange', onHidden);
+    watch = window.setInterval(tick, 150);
+
+    runRef.current = {
+      dispose: () => {
+        disposed = true;
+        window.clearInterval(watch);
+        window.removeEventListener('athena-native-pause', stop);
+        document.removeEventListener('visibilitychange', onHidden);
+        if (listening) listener.cancel();
+        setActive(false);
+        setHearing(false);
+        setInterim('');
+      },
+    };
+    setActive(true);
+    tick();
+  }, [stop]);
+
   const start = useCallback(async () => {
+    if (isAndroidCompanion()) return startTurns(androidTurnListener());
     const Ctor = getCtor();
     if (runRef.current || startingRef.current || !Ctor) return;
+    // No echo-cancelled mic for the recognizer here: turn by turn instead.
+    // Started inside the tap, which Safari needs for its first listen.
+    if (!supportsRecognitionTrack(navigator.userAgent)) return startTurns(browserTurnListener(Ctor));
     startingRef.current = true;
     const generation = ++startGeneration.current;
     setError(null);
-    if (!supportsRecognitionTrack(navigator.userAgent)) {
-      startingRef.current = false;
-      setError('Conversation mode with echo control needs desktop Chrome or Edge 135 or newer. You can still type or use the mic button.');
-      return;
-    }
     // Made inside the tap, or the browser keeps it suspended.
     let audio: AudioContext;
     try { audio = new AudioContext(); } catch {
@@ -392,7 +482,7 @@ export function useConversation(
       },
     };
     setActive(true);
-  }, [stop]);
+  }, [startTurns, stop]);
 
   const toggle = useCallback(() => {
     if (runRef.current || startingRef.current) stop();

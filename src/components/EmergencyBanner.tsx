@@ -222,7 +222,7 @@ export function EmergencyBanner({
 
       {mapPins.length > 0 && (
         <div className="mx-4 mt-3">
-          <MiniMap pins={mapPins} places={mapPlaces} height={pinned ? 150 : 190} />
+          <MiniMap pins={mapPins} places={mapPlaces} height={pinned ? 150 : 190} zoomable />
         </div>
       )}
 

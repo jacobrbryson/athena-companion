@@ -273,6 +273,9 @@ svg.dashboard-icon-drawn .icon-fill { fill: currentColor; fill-opacity: .9; }
 /* Items settle in after the panel, staggered from inline transition-delay. */
 .athena-menu-items button { opacity: 0; translate: 0 6px; transition: opacity .2s ease, translate .2s ease, background-color .18s ease, color .18s ease; }
 .athena-menu.open .athena-menu-items button { opacity: 1; translate: 0; }
+.athena-sections-menu button { padding: 4px 8px; }
+.athena-sections-menu button>.dashboard-icon:first-child { width: 36px; font-size: inherit; }
+.athena-sections-menu button.active { color: #effcff; background: linear-gradient(110deg,#06486a99,#05233866); box-shadow: inset 0 0 0 1px #168bc0; }
 .athena-menu-signout { margin-top: 8px; padding-top: 12px; border-top: 1px solid #1c4255; border-radius: 0 0 8px 8px; color: #a3c0cf; }
 .companion-chat { height: calc(100dvh - 58px); display: flex; flex-direction: column; background: #02080c; }.companion-chat[hidden] { display: none; }.companion-chat>section:first-child { min-height: 180px; }.briefing-trigger { padding: 7px 10px; border: 1px solid #258fa3; border-radius: 6px; color: #63d8ef; }
 .mobile-wordmark,.mobile-navigation { display: none; }

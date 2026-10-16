@@ -1127,6 +1127,13 @@ async function route(method: string, path: string, body?: any): Promise<any> {
       savePlan(state);
       return { entry, how, note: how === 'barcode' ? `Found ${entry.label} — logged one serving (${entry.serving}).` : 'Estimated from your photo: assumed about 6 oz of salmon and a cup of white rice.', nutrition: mockNutrition(state, today) };
     }
+    if (p === '/api/v1/dashboard/health/nutrition/describe') {
+      await wait(1500);
+      if (!String(body.text || '').trim()) fail(400, 'Tell Athena what you ate.');
+      const entry = log({ label: 'McDonald’s Big Mac', serving: '1 sandwich (219 g)', calories: 590, protein_g: 25, carbs_g: 46, fat_g: 34 }, 'described');
+      savePlan(state);
+      return { entry, how: 'described', note: `Logged ${entry.label} (${entry.serving}). McDonald’s published nutrition.`, nutrition: mockNutrition(state, today) };
+    }
     if (p.startsWith('/api/v1/dashboard/health/nutrition/') && method === 'PATCH') {
       const uuid = decodeURIComponent(p.split('/').pop() || '');
       const e = state.entries.find(x => x.uuid === uuid);

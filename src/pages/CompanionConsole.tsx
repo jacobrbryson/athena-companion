@@ -124,6 +124,8 @@ export function CompanionConsole() {
   const [briefing, setBriefing] = useState(false);
   const [activeSection, setActiveSection] = useState<DashboardSection>('Dashboard');
   const [menuOpen, setMenuOpen] = useState(false);
+  // The phone's stand-in for the left nav: every page the sidebar lists.
+  const [sectionsOpen, setSectionsOpen] = useState(false);
   const [inputOpen, setInputOpen] = useState(false);
   const inputMenuRef = useRef<HTMLDivElement | null>(null);
   const inputToggleRef = useRef<HTMLButtonElement | null>(null);
@@ -143,6 +145,7 @@ export function CompanionConsole() {
   const [consentFor, setConsentFor] = useState<string | null>(null);
   const inputId = useId();
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const sectionsRef = useRef<HTMLDivElement | null>(null);
   /**
    * The conversation as one time-ordered list: her replies, the person's
    * messages, and the things she raised herself.
@@ -405,19 +408,20 @@ export function CompanionConsole() {
   }, [view, chat.messages, chat.isThinking, actions.pending, nudges.nudges]);
 
   useEffect(() => {
-    if (!menuOpen) return;
+    if (!menuOpen && !sectionsOpen) return;
     const onPointer = (e: MouseEvent) => {
       if ((e.target as Element).closest('[data-menu-toggle]')) return;
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
+      if (sectionsRef.current && !sectionsRef.current.contains(e.target as Node)) setSectionsOpen(false);
     };
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setMenuOpen(false);
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { setMenuOpen(false); setSectionsOpen(false); } };
     document.addEventListener('mousedown', onPointer);
     document.addEventListener('keydown', onKey);
     return () => {
       document.removeEventListener('mousedown', onPointer);
       document.removeEventListener('keydown', onKey);
     };
-  }, [menuOpen]);
+  }, [menuOpen, sectionsOpen]);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -484,6 +488,7 @@ export function CompanionConsole() {
    * their own data at all.
    */
   function navigateDashboard(section: DashboardSection) {
+    setSectionsOpen(false);
     setActiveSection(section);
     setView('dashboard');
     // A new page starts at the top; the workspace is what scrolls, not window.
@@ -753,6 +758,7 @@ export function CompanionConsole() {
                         label: `${i.what} — ${i.where}, ${i.miles} mi`,
                       }))}
                       places={entry.nudge.map.places}
+                      zoomable
                     />
                   )}
                   {!entry.nudge.answered && (
@@ -929,12 +935,33 @@ export function CompanionConsole() {
         style={{ position: 'fixed', width: 1, height: 1, opacity: 0, pointerEvents: 'none', bottom: 0, left: 0 }}
       />
       <nav className="mobile-navigation" aria-label="Mobile navigation">
-        <button className={view === 'dashboard' ? 'active' : ''} onClick={() => navigateDashboard('Dashboard')}><DashboardIcon name="Dashboard" /><span>Dashboard</span></button>
+        <button data-menu-toggle className={view === 'dashboard' || sectionsOpen ? 'active' : ''} aria-expanded={sectionsOpen} aria-haspopup="menu" onClick={() => { setMenuOpen(false); setSectionsOpen(v => !v); }}><DashboardIcon name="Dashboard" /><span>Dashboards</span></button>
         <button className={view === 'chat' ? 'active' : ''} onClick={() => setView('chat')}><DashboardIcon name="Chat" /><span>Chat</span></button>
         <button className="mobile-athena" aria-label="Talk to Athena" onClick={() => setView('chat')}><AthenaAvatar /></button>
         <button className="mobile-notifications" onClick={() => openPanel('notifications')}><DashboardIcon name="Notifications" /><span>Alerts</span>{waitingCount > 0 && <i className="topbar-badge">{waitingCount > 9 ? '9+' : waitingCount}</i>}</button>
-        <button data-menu-toggle aria-expanded={menuOpen} onClick={() => setMenuOpen(v => !v)}><DashboardIcon name="More" /><span>More</span></button>
+        <button data-menu-toggle aria-expanded={menuOpen} onClick={() => { setSectionsOpen(false); setMenuOpen(v => !v); }}><DashboardIcon name="More" /><span>More</span></button>
       </nav>
+
+      {/* "Dashboards" on the phone: the same pages, in the same order, as the
+          desktop left nav — which the phone hides. Before this the only way to
+          most of them was a card's "View …" button on the Dashboard. */}
+      <div className={`athena-menu-backdrop ${sectionsOpen ? 'open' : ''}`} onClick={() => setSectionsOpen(false)} aria-hidden />
+      <div ref={sectionsRef} className={`athena-menu athena-sections-menu ${sectionsOpen ? 'open' : ''}`} role="menu" aria-label="Dashboards" aria-hidden={!sectionsOpen} {...(sectionsOpen ? {} : { inert: '' as unknown as boolean })}>
+        <div className="athena-menu-items">
+          {dashboardSections.map((section, i) => (
+            <button
+              key={section}
+              role="menuitem"
+              className={view === 'dashboard' && navSection === section ? 'active' : ''}
+              aria-current={view === 'dashboard' && navSection === section ? 'page' : undefined}
+              onClick={() => navigateDashboard(section)}
+              style={{ transitionDelay: `${sectionsOpen ? 30 + i * 22 : 0}ms` }}
+            >
+              <DashboardIcon name={section} /><span>{section}</span>
+            </button>
+          ))}
+        </div>
+      </div>
 
       {/* One menu for the whole app, opened from the account row on desktop
           and from "More" on mobile. Kept mounted so it can animate out, and
