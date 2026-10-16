@@ -1,6 +1,8 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { isAndroidCompanion } from '../native/android';
 import { heartRateApi } from '../native/heartRate';
+import { heartApi } from '../api/companion';
+import { HEART_LIVE_EVENT } from '../athena/useChat';
 
 /**
  * A heart-monitor trace that beats at `bpm`: a bright head sweeps left to
@@ -117,13 +119,48 @@ export function Ecg({ bpm }: { bpm: number | null }) {
   </svg>;
 }
 
+/** A relayed reading older than this means the stream stopped; show the average again. */
+const RELAY_STALE_MS = 15_000;
+/** Re-ask inside the server's 90 s window so the phone never pauses while the page is open. */
+const WATCH_EVERY_MS = 60_000;
+
 /**
- * The phone's live heart rate while the Android app is reading a band
- * (Phone & car → Heart rate); null anywhere else, or until a reading arrives.
- * Only asks the phone — nothing is sent anywhere.
+ * The live heart rate while their phone is reading a band (Phone & car →
+ * Heart rate); null until a reading arrives, or when nothing is streaming.
+ * In the Android app it asks the phone directly — nothing is sent anywhere.
+ * In a browser it asks the server to wake the phone (only works with heart
+ * rate sharing on) and listens for readings relayed over the chat socket.
  */
 export function useLiveHeartRate(): number | null {
   const [bpm, setBpm] = useState<number | null>(null);
+  useEffect(() => {
+    if (isAndroidCompanion()) return;
+    let alive = true;
+    let lastAt = 0;
+    const onReading = (e: Event) => {
+      const { bpm: value } = (e as CustomEvent<{ bpm: number }>).detail;
+      lastAt = Date.now();
+      setBpm(value);
+    };
+    const watch = () => {
+      if (document.visibilityState !== 'visible') return;
+      // Sharing off, an older server, no signal: the page just shows the average.
+      heartApi.watchLive().catch(() => undefined);
+    };
+    const expire = window.setInterval(() => {
+      if (alive && lastAt && Date.now() - lastAt > RELAY_STALE_MS) { lastAt = 0; setBpm(null); }
+    }, 5000);
+    window.addEventListener(HEART_LIVE_EVENT, onReading);
+    document.addEventListener('visibilitychange', watch);
+    watch();
+    const asker = window.setInterval(watch, WATCH_EVERY_MS);
+    return () => {
+      alive = false;
+      window.clearInterval(expire); window.clearInterval(asker);
+      window.removeEventListener(HEART_LIVE_EVENT, onReading);
+      document.removeEventListener('visibilitychange', watch);
+    };
+  }, []);
   useEffect(() => {
     if (!isAndroidCompanion()) return;
     let alive = true;

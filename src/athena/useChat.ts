@@ -12,6 +12,7 @@ import { localTimezone, wsUrl } from '../config';
  *   POST /api/v1/message { text, sessionId }  -> { message }
  *   WS   /ws?sessionId=...                     -> rpc: addMessage | sessionStatus
  *                                                     | actionProposed | dashboardUpdated
+ *                                                     | heartRateLive
  *
  * Auth rides on the httpOnly session cookie (sent automatically). Because
  * Safari does not reliably attach the cross-site cookie to WebSocket upgrades
@@ -84,6 +85,9 @@ export const ACTION_PROPOSED_EVENT = 'athena-action-proposed';
  * dashboard and the chat share nothing but this socket.
  */
 export const DASHBOARD_REFRESH_EVENT = 'athena-dashboard-refresh';
+
+/** A live heart-rate reading relayed from their phone: detail is { bpm, at }. */
+export const HEART_LIVE_EVENT = 'athena-heart-live';
 
 /**
  * The line she says while she works ("Let me check your calendar, hmm…"),
@@ -373,6 +377,12 @@ export function useChat(profileUuid: string, options?: ChatOptions): ChatState {
           if (msg?.rpc === 'dashboardUpdated') {
             window.dispatchEvent(
               new CustomEvent(DASHBOARD_REFRESH_EVENT, { detail: msg.reason ?? null })
+            );
+          }
+          // Their phone's band, relayed while a Health page is watching.
+          if (msg?.rpc === 'heartRateLive' && typeof msg.bpm === 'number') {
+            window.dispatchEvent(
+              new CustomEvent(HEART_LIVE_EVENT, { detail: { bpm: msg.bpm, at: msg.at } })
             );
           }
         } catch (err) {

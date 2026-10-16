@@ -533,6 +533,8 @@ export interface HeartPref {
 export const heartApi = {
   status: () => api.get<{ pref: HeartPref }>('/api/v1/heart/pref'),
   setPref: (patch: Partial<HeartPref>) => api.put<{ success: true; pref: HeartPref }>('/api/v1/heart/pref', patch),
+  /** A page is watching: wakes the phone to stream for ~90 s. `sharing` false means it never will. */
+  watchLive: () => api.post<{ sharing: boolean; asked: number }>('/api/v1/heart/live/watch'),
 };
 
 // ---------------------------------------------------------------- vision ---
