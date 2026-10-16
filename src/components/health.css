@@ -85,16 +85,6 @@
 .hp-error { color: #ffb1a0; font-size: 12px; }
 .hp-footnote { margin-top: 6px; color: var(--hp-dim); font-size: 11px; }
 
-/* Today's plan */
-.hp-plan-lead { display: flex; align-items: center; gap: 16px; width: 100%; padding: 18px; text-align: left; border: 1px solid #2c8fd8; border-radius: 12px; background: linear-gradient(120deg, #0d3157cc, #0a1e38cc); box-shadow: 0 0 18px #1d8cff22, inset 0 0 24px #1d8cff14; }
-.hp-plan-lead strong { display: block; color: #4fc3ff; font-size: 18px; font-weight: 600; }
-.hp-plan-lead p { margin-top: 6px; color: #c8d7e6; font-size: 14px; line-height: 1.5; }
-.hp-plan ul { margin-top: 6px; }
-.hp-plan li button { display: flex; align-items: center; gap: 18px; width: 100%; padding: 14px 4px; text-align: left; border-bottom: 1px solid #18304a; }
-.hp-plan li:last-child button { border-bottom: 0; }
-.hp-plan li strong { display: block; font-size: 16px; font-weight: 500; }
-.hp-plan li small { display: block; margin-top: 3px; color: var(--hp-sub); font-size: 13px; }
-.hp-plan .hp-badge-lg { width: 52px; height: 52px; }
 
 /* Program week */
 .hp-week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
@@ -133,7 +123,7 @@
 .hp-nutrition-actions .hp-push-right { margin-left: auto; }
 .hp-nutrition-actions .hp-caret { width: 12px; height: 12px; opacity: .7; }
 .hp-menu-wrap { position: relative; }
-.hp-menu { position: absolute; left: 0; bottom: calc(100% + 6px); z-index: 20; display: grid; width: min(290px, 80vw); max-height: 360px; overflow-y: auto; padding: 6px; border: 1px solid #2c5f8d; border-radius: 10px; background: #0a1c31; box-shadow: 0 14px 34px rgba(0, 0, 0, .5); }
+.hp-menu { position: absolute; left: 0; bottom: calc(100% + 6px); z-index: 20; display: grid; width: min(290px, 80vw); padding: 6px; border: 1px solid #2c5f8d; border-radius: 10px; background: #0a1c31; box-shadow: 0 14px 34px rgba(0, 0, 0, .5); }
 .hp-menu button { display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 10px; border: 0; border-radius: 7px; background: none; color: #dbe8f4; font-size: 13px; text-align: left; }
 .hp-menu button:hover, .hp-menu button:focus-visible { background: #13304f; }
 .hp-menu button span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -141,6 +131,7 @@
 .hp-menu button em { color: var(--hp-dim, #7d93aa); font-size: 11px; font-style: normal; }
 .hp-menu .hp-icon { width: 16px; height: 16px; flex: none; }
 .hp-menu-head { padding: 6px 10px 2px; color: var(--hp-dim, #7d93aa); font-size: 10px; letter-spacing: .14em; text-transform: uppercase; }
+.hp-menu-favs { display: grid; max-height: 200px; overflow-y: auto; overscroll-behavior: contain; }
 .hp-menu-empty { padding: 6px 10px 8px; color: var(--hp-dim, #7d93aa); font-size: 12px; }
 .hp-menu hr { margin: 4px 6px; border: 0; border-top: 1px solid #1d3a57; }
 .hp-menu.hp-menu-down { top: calc(100% + 6px); bottom: auto; }
@@ -241,6 +232,11 @@ em.hp-tone-idle { color: var(--hp-dim); } .hp-tone-dot.hp-tone-idle { background
 @media (max-width: 1100px) {
   .hp-tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .hp-grid, .hp-grid-bottom { grid-template-columns: minmax(0, 1fr); }
+  /* One column: Nutrition, the program, Progress, then Wellness last. */
+  .hp-grid-bottom > .hp-stack { display: contents; }
+  .hp-grid-bottom .hp-program { order: 1; }
+  .hp-grid-bottom .hp-progress { order: 2; }
+  .hp-grid-bottom .hp-wellness { order: 3; }
 }
 @media (max-width: 760px) {
   .hp-range { display: flex; margin-top: 22px; }

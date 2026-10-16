@@ -206,38 +206,6 @@ function wellnessOf(recovery: RecoveryDay[], sleep: HealthSleep[]): Wellness[] {
   return out;
 }
 
-const HARD = new Set<SessionKind>(['gym', 'run', 'sport', 'ride']);
-interface PlanItem { icon: string; tone: string; title: string; note: string; ask: string }
-interface PlanLead { icon: string; title: string; note: string; ask: string }
-/** Today's lead and the habits under it, from the program, readiness and targets. */
-function planFor(program: TrainingProgram | null, readiness: HealthReadiness | null, targets: NutritionTargets | null, food: NutritionDay | null): { lead: PlanLead; items: PlanItem[] } {
-  const todays = program?.sessions.filter(s => s.date === localDay()) || [];
-  const session = todays.find(s => s.status !== 'done') || todays[0];
-  const easy = readiness && readiness.level !== 'go';
-  let lead: PlanLead;
-  if (!program) lead = { icon: 'leaf', title: easy ? 'Take it easy today' : 'No program yet', note: easy ? readiness!.headline : 'Set up a training program and today’s session shows here.', ask: 'Help me plan a training program.' };
-  else if (session?.status === 'done') lead = { icon: 'check', title: `${session.title}${session.focus ? ` · ${session.focus}` : ''} — done`, note: session.recorded ? `WHOOP recorded ${session.recorded.minutes} min of ${session.recorded.sport.replace(/[-_]+/g, ' ')}.` : 'You marked it done. Recover well.', ask: 'I finished today’s session — what should recovery look like tonight?' };
-  else if (session && easy && HARD.has(session.kind)) lead = { icon: 'leaf', title: 'Active Recovery Day', note: `${session.title}${session.focus ? ` (${session.focus})` : ''} is planned, but ${readiness!.headline.toLowerCase()}. Swap it for something easy and keep the week moving.`, ask: `My recovery is low and I have ${session.title} planned today. Should I swap it?` };
-  else if (session?.kind === 'recovery' || session?.kind === 'rest') lead = { icon: 'leaf', title: session.kind === 'rest' ? 'Rest Day' : 'Active Recovery Day', note: 'Give your body a chance to recover so you can keep building and stay consistent.', ask: 'What should I do on an active recovery day?' };
-  else if (session) lead = { icon: sessionIcon(session), title: `${session.title}${session.focus ? ` · ${session.focus}` : ''}`, note: session.exercises.length ? session.exercises.join(' · ') : session.detail || 'On the plan for today.', ask: `Walk me through today's ${session.title} session.` };
-  else lead = { icon: 'leaf', title: 'Nothing planned today', note: 'An open day in the program. A walk counts.', ask: 'Nothing is planned today — what would help most?' };
-
-  const items: PlanItem[] = [];
-  const recoveryish = !session || easy || session.kind === 'recovery' || session.kind === 'rest';
-  items.push(recoveryish
-    ? { icon: 'stretch', tone: 'violet', title: 'Mobility / stretching', note: '10–15 min', ask: 'Give me a 10–15 minute mobility routine.' }
-    : { icon: 'stretch', tone: 'violet', title: 'Warm up properly', note: '8–10 min before you start', ask: `Give me a warm-up for ${session!.title}.` });
-  const water = targets?.water_oz;
-  const drank = food?.totals.water_oz || 0;
-  items.push({ icon: 'drop', tone: 'blue', title: 'Hydrate well', note: water ? `${water}+ oz${drank ? ` · ${Math.round(drank)} logged` : ''}` : 'Set a water target', ask: 'How much water should I be drinking on a day like today?' });
-  const protein = targets?.protein_g;
-  const ate = food?.totals.protein_g || 0;
-  items.push({ icon: 'food', tone: 'amber', title: 'Whole foods nutrition', note: protein ? (ate >= protein ? 'Protein target hit — keep it whole foods' : `Hit your calorie and protein targets · ${Math.round(protein - ate)} g protein to go`) : 'Hit your calorie and protein targets', ask: 'What should I eat for the rest of today to hit my targets?' });
-  const sleepGoal = (targets?.sleep_hours ?? 8) + (easy ? 0.5 : 0);
-  items.push({ icon: 'moon', tone: 'violet', title: `Aim for ${sleepGoal}–${sleepGoal + 0.5} hours of sleep`, note: easy ? 'Half an hour more than usual tonight' : '', ask: 'What time should I go to bed tonight?' });
-  return { lead, items };
-}
-
 /** Athena's take: readiness, the week's consistency, and what she'd do. */
 function takeOf(readiness: HealthReadiness | null, program: TrainingProgram | null, targets: NutritionTargets | null): string[] {
   if (!readiness) return ['No scored recovery yet today, so I can’t read how your body is doing. Check back once WHOOP has scored the night.'];
@@ -296,7 +264,6 @@ export function HealthOverview({ recovery, sleep, strain, weighIns, readiness, w
   const program = plan?.program ?? null;
   const targets = plan?.targets ?? null;
   const food = plan?.nutrition ?? null;
-  const { lead, items } = planFor(program, readiness, targets, food);
   const take = takeOf(readiness, program, targets);
   const wellness = wellnessOf(recovery, sleep);
   const whoopLinked = !whoopNote;
@@ -359,39 +326,23 @@ export function HealthOverview({ recovery, sleep, strain, weighIns, readiness, w
 
     {planError && <p className="dashboard-notice" role="status">{planError}</p>}
 
-    <div className="hp-grid">
-      <section className="hp-panel hp-plan">
-        <header><h2>Today’s Plan</h2><span>{new Date().toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}</span></header>
-        <button type="button" className="hp-plan-lead" onClick={() => onAsk(lead.ask)}>
-          <span className="hp-badge hp-green hp-badge-lg"><Icon name={lead.icon} /></span>
-          <div><strong>{lead.title}</strong><p>{lead.note}</p></div>
-          <Icon name="chevron" className="hp-chev" />
-        </button>
-        <ul>{items.map(item => <li key={item.title}><button type="button" onClick={() => onAsk(item.ask)}>
-          <span className={`hp-badge hp-badge-lg hp-${item.tone}`}><Icon name={item.icon} /></span>
-          <div><strong>{item.title}</strong>{item.note && <small>{item.note}</small>}</div>
-          <Icon name="chevron" className="hp-chev" />
-        </button></li>)}</ul>
-        {!program && plan && <button type="button" className="hp-link" onClick={() => setEditing('program')}>Set up a training program <Icon name="arrowRight" /></button>}
-      </section>
-
+    <div className="hp-grid hp-grid-bottom">
+      <div className="hp-stack">
+        <NutritionPanel food={food} targets={targets} loading={!plan && !planError} onOpen={o => { setFoodOpen(o); setEditing('food'); }} onTargets={() => setEditing('targets')} onChanged={n => setPlan(prev => prev && { ...prev, nutrition: n })} />
+        <Progress weighIns={weighIns} workouts={workouts} days={days} targets={targets} weightPlan={weightPlan} bodyNote={bodyNote} onTargets={() => setEditing('targets')} />
+      </div>
       <div className="hp-stack">
         <ProgramWeek program={program} loading={!plan && !planError} onEdit={() => setEditing('program')} onMarked={p => setPlan(prev => prev && { ...prev, program: p })} onAsk={onAsk} onViewAll={onWorkouts} />
-        <NutritionPanel food={food} targets={targets} loading={!plan && !planError} onOpen={o => { setFoodOpen(o); setEditing('food'); }} onTargets={() => setEditing('targets')} onChanged={n => setPlan(prev => prev && { ...prev, nutrition: n })} />
+        <section className="hp-panel hp-wellness">
+          <header><h2>Wellness</h2><button type="button" className="hp-link" onClick={() => onAsk('Give me a read on my overall wellness: energy, immune readiness, sleep and stress.')}>View details <Icon name="arrowRight" /></button></header>
+          <ul>{wellness.map(w => <li key={w.label}><button type="button" onClick={() => onAsk(w.ask)} title={w.why}>
+            <span className={`hp-badge hp-badge-lg hp-w-${w.icon}`}><Icon name={w.icon} /></span>
+            <div><strong>{w.label}</strong><small>{w.why}</small></div>
+            <em className={`hp-tone-${w.tone}`}>{w.word}</em>
+            <span className={`hp-tone-dot hp-tone-${w.tone}`}><Icon name={w.tone === 'good' ? 'check' : w.tone === 'ok' ? 'minus' : w.tone === 'bad' ? 'down' : 'minus'} /></span>
+          </button></li>)}</ul>
+        </section>
       </div>
-    </div>
-
-    <div className="hp-grid hp-grid-bottom">
-      <Progress weighIns={weighIns} workouts={workouts} days={days} targets={targets} weightPlan={weightPlan} bodyNote={bodyNote} onTargets={() => setEditing('targets')} />
-      <section className="hp-panel hp-wellness">
-        <header><h2>Wellness</h2><button type="button" className="hp-link" onClick={() => onAsk('Give me a read on my overall wellness: energy, immune readiness, sleep and stress.')}>View details <Icon name="arrowRight" /></button></header>
-        <ul>{wellness.map(w => <li key={w.label}><button type="button" onClick={() => onAsk(w.ask)} title={w.why}>
-          <span className={`hp-badge hp-badge-lg hp-w-${w.icon}`}><Icon name={w.icon} /></span>
-          <div><strong>{w.label}</strong><small>{w.why}</small></div>
-          <em className={`hp-tone-${w.tone}`}>{w.word}</em>
-          <span className={`hp-tone-dot hp-tone-${w.tone}`}><Icon name={w.tone === 'good' ? 'check' : w.tone === 'ok' ? 'minus' : w.tone === 'bad' ? 'down' : 'minus'} /></span>
-        </button></li>)}</ul>
-      </section>
     </div>
 
     {editing === 'program' && <ProgramEditor program={program} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }} />}
@@ -533,9 +484,10 @@ function LogFoodMenu({ label, busy, disabled, down, favorites, onFavorite, onTel
     {menu && !telling && <div className={place} role="menu">
       {favorites && onFavorite && <>
         <small className="hp-menu-head">Favorites</small>
-        {favorites.length ? favorites.map(f => <button key={f.uuid} type="button" role="menuitem" onClick={() => { setMenu(false); onFavorite(f.uuid); }}>
+        {/* Only the favorites scroll; the three ways to log below stay put. */}
+        {favorites.length ? <div className="hp-menu-favs">{favorites.map(f => <button key={f.uuid} type="button" role="menuitem" onClick={() => { setMenu(false); onFavorite(f.uuid); }}>
           <Icon name="star" className="hp-star-on" /><span>{f.label}</span><em>{kcalOf(f)}</em>
-        </button>) : <p className="hp-menu-empty">Star a food in Today’s list to keep it here.</p>}
+        </button>)}</div> : <p className="hp-menu-empty">Star a food in Today’s list to keep it here.</p>}
         <hr />
       </>}
       <button type="button" role="menuitem" onClick={() => setTelling(true)}><Icon name="speech" /><span>Tell Athena<small>“Big Mac from McDonald’s”</small></span></button>
