@@ -46,6 +46,7 @@ const ICONS: Record<string, string> = {
   google_contacts: '👥',
   websites: '🌐',
   whoop: '💤',
+  nest: '🌡️',
 };
 
 /** What each provider will be able to read, in plain language. */
@@ -57,6 +58,7 @@ const BLURBS: Record<string, string> = {
   websites: 'Reads Search Console and Analytics for the sites you manage, so Athena can show how each is doing. Read-only.',
   google_contacts: 'Reads names, phone numbers, emails, relationships, birthdays and photos, so Athena can link them to the family and people she knows. Read-only.',
   whoop: 'Reads your recovery, sleep and strain scores.',
+  nest: 'Reads whether each thermostat you share is online, plus its temperature, humidity and settings, so Athena can tell you when one goes offline. Google lets you pick which thermostats. Never changes a setting.',
 };
 
 const CONSENT_COPY: Record<string, string> = {

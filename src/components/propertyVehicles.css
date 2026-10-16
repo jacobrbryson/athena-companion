@@ -1,0 +1,26 @@
+/* Vehicles on the Property page (PropertyVehicles.tsx). Forms, drawers and the service log reuse the pi-* issue styles. */
+.pv-list{min-width:0}
+.pv-list ul{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px}
+.pv-card{display:flex;align-items:center;gap:12px;width:100%;min-width:0;padding:12px;border:1px solid #1c3b4a;border-radius:10px;background:#071822;text-align:left}
+.pv-card:hover{border-color:#3b7088}
+.pv-thumb{display:flex;align-items:center;justify-content:center;width:64px;height:64px;flex:0 0 64px;border-radius:8px;overflow:hidden;background:#0d2a3a;color:#7fd6f2}
+.pv-thumb img{width:100%;height:100%;object-fit:cover}.pv-thumb svg{width:34px;height:34px}
+.pv-card-text{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1}
+.pv-card-text strong{font-size:14px;color:#eef8fd;overflow-wrap:anywhere}
+.pv-card-text small{font-size:12px;color:#95b1c0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pv-card-text>.pv-chip{align-self:flex-start;margin-top:6px}
+.pv-chip{display:inline-block;padding:3px 10px;border:1px solid var(--due);border-radius:6px;color:var(--due);background:color-mix(in srgb,var(--due) 12%,transparent);font-size:11px;white-space:nowrap}
+.pv-overdue{--due:#f43f5e}.pv-soon{--due:#facc15}.pv-later{--due:#6ee7b7}
+.pv-row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.pv-row-3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.pi-form .pv-row input[type=date],.pv-service-form input[type=date]{color-scheme:dark}
+.pv-hero{width:100%;max-height:240px;object-fit:cover;border-radius:10px;border:1px solid #23485a}
+.pv-mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.04em}
+.pv-due h3{font-size:13px;font-weight:600;color:#f0f9ff;margin-bottom:8px}
+.pv-due ul{display:flex;flex-direction:column;gap:6px}
+.pv-due li{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:13px}
+.pv-service-form{align-items:stretch!important}
+.pv-service-form>.app-drawer-button{align-self:flex-end}
+.pv-service-form input{width:100%;padding:9px 10px;border:1px solid #23485a;border-radius:8px;background:#06141d;color:#eaf6fc;font-size:13px}
+.pv-service-form input:focus{outline:2px solid #43c9ef66;border-color:#43c9ef}
+@media(max-width:700px){.pv-list ul{grid-template-columns:1fr}.pv-row-3{grid-template-columns:1fr 1fr}.pv-row-3>:first-child{grid-column:1/-1}}

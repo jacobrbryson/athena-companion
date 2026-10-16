@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { RecoveryDay, WeighIn } from '../api/dashboard';
-import { healthPlanApi, localDay, type HealthPlan, type EntrySource, type NutritionDay, type NutritionEntry, type NutritionTargets, type ProgramDraft, type ProgramSession, type SessionKind, type TrainingProgram } from '../api/healthPlan';
+import { healthPlanApi, localDay, type HealthPlan, type EntrySource, type NutritionDay, type NutritionEntry, type NutritionFavorite, type ScanResult, type NutritionTargets, type ProgramDraft, type ProgramSession, type SessionKind, type TrainingProgram } from '../api/healthPlan';
 import { workoutsApi, type Workout } from '../api/workouts';
 import { PageHeader } from './PageHeader';
 import { downscale } from './photoStore';
@@ -488,48 +488,86 @@ async function readBarcode(file: Blob): Promise<string | null> {
 
 const kcalOf = (f: { calories: number | null }) => (f.calories != null ? `${f.calories} kcal` : '');
 
-function NutritionPanel({ food, targets, loading, onOpen, onTargets, onChanged }: { food: NutritionDay | null; targets: NutritionTargets | null; loading: boolean; onOpen: (o: FoodLogOpen) => void; onTargets: () => void; onChanged: (n: NutritionDay) => void }) {
+/**
+ * The Log food menu: favorites (where given), Tell Athena, Take a picture and
+ * Manual entry. Shared by the Nutrition card and the food log's New record so
+ * the two can't drift apart; what each choice does is the caller's.
+ */
+function LogFoodMenu({ label, busy, disabled, down, favorites, onFavorite, onTell, onPhoto, onManual }: {
+  label: ReactNode; busy: string | null; disabled?: boolean; down?: boolean;
+  favorites?: NutritionFavorite[]; onFavorite?: (uuid: string) => void;
+  /** Resolves true when it logged, so the box can clear. */
+  onTell: (text: string) => Promise<boolean>; onPhoto: (file: File) => void; onManual: () => void;
+}) {
   const [menu, setMenu] = useState(false);
   // "Tell Athena" turns the menu into a one-line box: what you ate, in your words.
   const [telling, setTelling] = useState(false);
   const [told, setTold] = useState('');
-  const [busy, setBusy] = useState<string | null>(null);
-  const [error, setError] = useState('');
   const menuRef = useRef<HTMLDivElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
     if (!menu) { setTelling(false); return; }
+    // Opening downward inside a scrolling dialog: bring the menu into view.
+    if (down) menuRef.current?.querySelector('.hp-menu')?.scrollIntoView({ block: 'nearest' });
     const away = (e: Event) => { if (!menuRef.current?.contains(e.target as Node)) setMenu(false); };
     const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') setMenu(false); };
     document.addEventListener('pointerdown', away);
     window.addEventListener('keydown', esc);
     return () => { document.removeEventListener('pointerdown', away); window.removeEventListener('keydown', esc); };
-  }, [menu]);
-  const favorites = food?.favorites || [];
-  const logFavorite = async (uuid: string) => {
-    setMenu(false); setBusy('Logging…'); setError('');
-    try { onChanged((await healthPlanApi.logFavorite(uuid)).nutrition); } catch (e) { setError((e as Error).message || 'Couldn’t log that.'); } finally { setBusy(null); }
-  };
-  const scan = async (file: File) => {
-    setBusy('Athena is looking…'); setError('');
-    try {
-      const [barcode, { base64 }] = await Promise.all([readBarcode(file), downscale(file, 1280, 0.85)]);
-      const r = await healthPlanApi.scan({ barcode, imageBase64: base64, mimeType: 'image/jpeg' });
-      onChanged(r.nutrition);
-      onOpen({ mode: 'check', uuid: r.entry.uuid, note: r.note });
-    } catch (e) { setError((e as Error).message || 'Athena couldn’t read that photo.'); } finally { setBusy(null); }
-  };
-  const describe = async (e: React.FormEvent) => {
+  }, [menu, down]);
+  const tell = async (e: React.FormEvent) => {
     e.preventDefault();
     const text = told.trim();
     if (!text) return;
-    setMenu(false); setBusy('Athena is looking it up…'); setError('');
+    setMenu(false);
+    if (await onTell(text)) setTold('');
+  };
+  const place = down ? 'hp-menu hp-menu-down' : 'hp-menu';
+  return <div className="hp-menu-wrap" ref={menuRef}>
+    <button type="button" className={down ? 'hp-new-record' : undefined} aria-haspopup="menu" aria-expanded={menu} disabled={!!busy || disabled} onClick={() => setMenu(m => !m)}><Icon name="plus" /> {busy || label} <Icon name="down" className="hp-caret" /></button>
+    {menu && telling && <form className={`${place} hp-tell`} onSubmit={tell}>
+      <label htmlFor="hp-tell-input">Tell Athena what you ate</label>
+      <input id="hp-tell-input" autoFocus value={told} onChange={e => setTold(e.target.value)} placeholder="Big Mac from McDonald’s" maxLength={200} enterKeyHint="send" />
+      <div><button type="button" className="hp-link" onClick={() => setTelling(false)}>Back</button><button type="submit" className="dashboard-chat-cta" disabled={!told.trim()}>Log it <span>↗</span></button></div>
+    </form>}
+    {menu && !telling && <div className={place} role="menu">
+      {favorites && onFavorite && <>
+        <small className="hp-menu-head">Favorites</small>
+        {favorites.length ? favorites.map(f => <button key={f.uuid} type="button" role="menuitem" onClick={() => { setMenu(false); onFavorite(f.uuid); }}>
+          <Icon name="star" className="hp-star-on" /><span>{f.label}</span><em>{kcalOf(f)}</em>
+        </button>) : <p className="hp-menu-empty">Star a food in Today’s list to keep it here.</p>}
+        <hr />
+      </>}
+      <button type="button" role="menuitem" onClick={() => setTelling(true)}><Icon name="speech" /><span>Tell Athena<small>“Big Mac from McDonald’s”</small></span></button>
+      <button type="button" role="menuitem" onClick={() => { setMenu(false); cameraRef.current?.click(); }}><Icon name="camera" /><span>Take a picture<small>The food or its barcode</small></span></button>
+      <button type="button" role="menuitem" onClick={() => { setMenu(false); onManual(); }}><Icon name="pencil" /><span>Manual entry</span></button>
+    </div>}
+    <input ref={cameraRef} type="file" accept="image/*" capture="environment" hidden onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) onPhoto(f); }} />
+  </div>;
+}
+
+/** Downscale a food photo and read any barcode on the phone first: what the scan endpoint takes. */
+async function photoBody(file: File) {
+  const [barcode, { base64 }] = await Promise.all([readBarcode(file), downscale(file, 1280, 0.85)]);
+  return { barcode, imageBase64: base64, mimeType: 'image/jpeg' };
+}
+
+function NutritionPanel({ food, targets, loading, onOpen, onTargets, onChanged }: { food: NutritionDay | null; targets: NutritionTargets | null; loading: boolean; onOpen: (o: FoodLogOpen) => void; onTargets: () => void; onChanged: (n: NutritionDay) => void }) {
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState('');
+  const logFavorite = async (uuid: string) => {
+    setBusy('Logging…'); setError('');
+    try { onChanged((await healthPlanApi.logFavorite(uuid)).nutrition); } catch (e) { setError((e as Error).message || 'Couldn’t log that.'); } finally { setBusy(null); }
+  };
+  // A photo or a few words: logged by Athena, then the food log opens on the entry to check.
+  const logged = async (how: string, fn: () => Promise<ScanResult>, fallback: string) => {
+    setBusy(how); setError('');
     try {
-      const r = await healthPlanApi.describe(text);
-      setTold('');
+      const r = await fn();
       onChanged(r.nutrition);
       onOpen({ mode: 'check', uuid: r.entry.uuid, note: r.note });
-    } catch (err) { setError((err as Error).message || 'Athena couldn’t look that up.'); } finally { setBusy(null); }
+      return true;
+    } catch (e) { setError((e as Error).message || fallback); return false; } finally { setBusy(null); }
   };
   return <section className="hp-panel hp-nutrition">
     <header><h2><Icon name="food" className="hp-amber-text" /> Nutrition</h2><button type="button" className="hp-link" onClick={() => onOpen({ mode: 'list' })}>Today <Icon name="arrowRight" /></button></header>
@@ -545,25 +583,10 @@ function NutritionPanel({ food, targets, loading, onOpen, onTargets, onChanged }
         </div>;
       })}</div>
       <div className="hp-nutrition-actions">
-        <div className="hp-menu-wrap" ref={menuRef}>
-          <button type="button" aria-haspopup="menu" aria-expanded={menu} disabled={!!busy} onClick={() => setMenu(m => !m)}><Icon name="plus" /> {busy || 'Log food'} <Icon name="down" className="hp-caret" /></button>
-          {menu && telling && <form className="hp-menu hp-tell" onSubmit={describe}>
-            <label htmlFor="hp-tell-input">Tell Athena what you ate</label>
-            <input id="hp-tell-input" autoFocus value={told} onChange={e => setTold(e.target.value)} placeholder="Big Mac from McDonald’s" maxLength={200} enterKeyHint="send" />
-            <div><button type="button" className="hp-link" onClick={() => setTelling(false)}>Back</button><button type="submit" className="dashboard-chat-cta" disabled={!told.trim()}>Log it <span>↗</span></button></div>
-          </form>}
-          {menu && !telling && <div className="hp-menu" role="menu">
-            <small className="hp-menu-head">Favorites</small>
-            {favorites.length ? favorites.map(f => <button key={f.uuid} type="button" role="menuitem" onClick={() => void logFavorite(f.uuid)}>
-              <Icon name="star" className="hp-star-on" /><span>{f.label}</span><em>{kcalOf(f)}</em>
-            </button>) : <p className="hp-menu-empty">Star a food in Today’s list to keep it here.</p>}
-            <hr />
-            <button type="button" role="menuitem" onClick={() => setTelling(true)}><Icon name="speech" /><span>Tell Athena<small>“Big Mac from McDonald’s”</small></span></button>
-            <button type="button" role="menuitem" onClick={() => { setMenu(false); cameraRef.current?.click(); }}><Icon name="camera" /><span>Take a picture<small>The food or its barcode</small></span></button>
-            <button type="button" role="menuitem" onClick={() => { setMenu(false); onOpen({ mode: 'manual' }); }}><Icon name="pencil" /><span>Manual entry</span></button>
-          </div>}
-          <input ref={cameraRef} type="file" accept="image/*" capture="environment" hidden onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void scan(f); }} />
-        </div>
+        <LogFoodMenu label="Log food" busy={busy} favorites={food?.favorites || []} onFavorite={uuid => void logFavorite(uuid)}
+          onTell={text => logged('Athena is looking it up…', () => healthPlanApi.describe(text), 'Athena couldn’t look that up.')}
+          onPhoto={file => void logged('Athena is looking…', async () => healthPlanApi.scan(await photoBody(file)), 'Athena couldn’t read that photo.')}
+          onManual={() => onOpen({ mode: 'manual' })} />
         <button type="button" className="hp-push-right" onClick={onTargets}>{targets ? 'Targets' : 'Set targets'}</button>
       </div>
       {error && <p className="hp-error" role="status">{error}</p>}
@@ -657,6 +680,23 @@ function FoodLog({ food, open, onClose, onChanged }: { food: NutritionDay | null
       return true;
     } catch (err) { setError((err as Error).message || fallback); return false; } finally { setBusy(null); }
   };
+  // Tell Athena or a photo from New record: logged to the day shown, then opened to check.
+  const [logging, setLogging] = useState<string | null>(null);
+  const logged = async (how: string, fn: () => Promise<ScanResult>, fallback: string) => {
+    setLogging(how); setError(''); setNote('');
+    try {
+      const r = await fn();
+      onChanged(r.nutrition);
+      if (!isToday) await loadDay(date);
+      setEditing({ uuid: r.entry.uuid, draft: draftOf(r.entry) });
+      setNote(r.note);
+      return true;
+    } catch (err) { setError((err as Error).message || fallback); return false; } finally { setLogging(null); }
+  };
+  const openManual = () => {
+    setAdding(true);
+    requestAnimationFrame(() => { manualRef.current?.scrollIntoView({ block: 'nearest' }); manualRef.current?.querySelector('input')?.focus(); });
+  };
   const add = async (e: React.FormEvent) => {
     e.preventDefault();
     if (await run('add', () => healthPlanApi.addEntry({ ...foodOfDraft(draft), eaten_on: date, source: 'manual', favorite: star }), 'Couldn’t log that.')) { setDraft(FOOD_BLANK); setStar(false); setAdding(false); }
@@ -698,7 +738,10 @@ function FoodLog({ food, open, onClose, onChanged }: { food: NutritionDay | null
       </>}
     </li>)}</ul> : <p className="hp-empty">{loadingDay ? 'Loading…' : isToday ? 'Nothing logged yet today.' : 'Nothing logged that day.'}</p>}
     {(editing || !adding) && error && <p className="hp-error" role="status">{error}</p>}
-    {!editing && !adding && <button type="button" className="hp-new-record" disabled={loadingDay} onClick={() => setAdding(true)}><Icon name="plus" /> New record{isToday ? '' : ` for ${noon(date).toLocaleDateString(undefined, { timeZone: 'UTC', month: 'short', day: 'numeric' })}`}</button>}
+    {!editing && !adding && <LogFoodMenu down label={`New record${isToday ? '' : ` for ${noon(date).toLocaleDateString(undefined, { timeZone: 'UTC', month: 'short', day: 'numeric' })}`}`} busy={logging} disabled={loadingDay || !!busy}
+      onTell={text => logged('Athena is looking it up…', () => healthPlanApi.describe(text, date), 'Athena couldn’t look that up.')}
+      onPhoto={file => void logged('Athena is looking…', async () => healthPlanApi.scan({ ...(await photoBody(file)), eaten_on: date }), 'Athena couldn’t read that photo.')}
+      onManual={openManual} />}
     <form ref={manualRef} className="hp-form" hidden={!!editing || !adding} onSubmit={add}>
       <h3 className="hp-span hp-form-head">New record{isToday ? '' : ` · ${dayLabel}`}</h3>
       <FoodFields draft={draft} setDraft={setDraft} />

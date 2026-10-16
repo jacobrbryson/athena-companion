@@ -1122,15 +1122,15 @@ async function route(method: string, path: string, body?: any): Promise<any> {
       const how = localStorage.getItem('mock_scan') || (body.barcode ? 'barcode' : 'photo');
       if (how === 'none') fail(422, 'Couldn’t make out a food or a barcode in that photo. Try again closer, or enter it by hand.');
       const entry = how === 'barcode'
-        ? log({ label: 'Clif Bar Chocolate Chip', serving: '1 bar (68 g)', calories: 250, protein_g: 10, carbs_g: 44, fat_g: 5, barcode: body.barcode || '722252100900' }, 'barcode')
-        : log({ label: 'Grilled salmon and rice', serving: '1 plate (~420 g)', calories: 640, protein_g: 42, carbs_g: 58, fat_g: 24 }, 'photo');
+        ? log({ label: 'Clif Bar Chocolate Chip', serving: '1 bar (68 g)', calories: 250, protein_g: 10, carbs_g: 44, fat_g: 5, barcode: body.barcode || '722252100900', eaten_on: body.eaten_on }, 'barcode')
+        : log({ label: 'Grilled salmon and rice', serving: '1 plate (~420 g)', calories: 640, protein_g: 42, carbs_g: 58, fat_g: 24, eaten_on: body.eaten_on }, 'photo');
       savePlan(state);
       return { entry, how, note: how === 'barcode' ? `Found ${entry.label} — logged one serving (${entry.serving}).` : 'Estimated from your photo: assumed about 6 oz of salmon and a cup of white rice.', nutrition: mockNutrition(state, today) };
     }
     if (p === '/api/v1/dashboard/health/nutrition/describe') {
       await wait(1500);
       if (!String(body.text || '').trim()) fail(400, 'Tell Athena what you ate.');
-      const entry = log({ label: 'McDonald’s Big Mac', serving: '1 sandwich (219 g)', calories: 590, protein_g: 25, carbs_g: 46, fat_g: 34 }, 'described');
+      const entry = log({ label: 'McDonald’s Big Mac', serving: '1 sandwich (219 g)', calories: 590, protein_g: 25, carbs_g: 46, fat_g: 34, eaten_on: body.eaten_on }, 'described');
       savePlan(state);
       return { entry, how: 'described', note: `Logged ${entry.label} (${entry.serving}). McDonald’s published nutrition.`, nutrition: mockNutrition(state, today) };
     }

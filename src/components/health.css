@@ -143,6 +143,7 @@
 .hp-menu-head { padding: 6px 10px 2px; color: var(--hp-dim, #7d93aa); font-size: 10px; letter-spacing: .14em; text-transform: uppercase; }
 .hp-menu-empty { padding: 6px 10px 8px; color: var(--hp-dim, #7d93aa); font-size: 12px; }
 .hp-menu hr { margin: 4px 6px; border: 0; border-top: 1px solid #1d3a57; }
+.hp-menu.hp-menu-down { top: calc(100% + 6px); bottom: auto; }
 .hp-tell { gap: 8px; padding: 10px; }
 .hp-tell label { color: var(--hp-dim, #7d93aa); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
 .hp-tell input { min-width: 0; padding: 9px 10px; border: 1px solid #2c6a80; border-radius: 6px; background: #04222eaa; color: #dcecf6; font: inherit; font-size: 14px; }

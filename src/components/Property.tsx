@@ -7,16 +7,19 @@ import { DrawerButton } from './ActionControls';
 import './property.css';
 
 type Point = { x: number; y: number };
-import { areaHealth, type PropertyArea, type PropertyDetails } from './propertyHealth';
+import { areaHealth, type IssueSignal, type PropertyArea, type PropertyDetails } from './propertyHealth';
 export { propertyHealth } from './propertyHealth';
 const PROPERTY_TABS = [
   { label: 'Overview', id: 'property-overview', icon: 'Home' },
+  { label: 'Issues', id: 'property-issues', icon: 'Issues' },
+  { label: 'Vehicles', id: 'property-vehicles', icon: 'Vehicles' },
   { label: 'Projects', id: 'property-projects', icon: 'PropertyProjects' },
   { label: 'Concerns', id: 'property-concerns', icon: 'Concerns' },
   { label: 'Property Map', id: 'property-map', icon: 'PropertyMap' },
   { label: 'Seasonal focus', id: 'property-season', icon: 'Seasonal' },
  ] as const;
 export type PropertyTab = typeof PROPERTY_TABS[number]['id'];
+export const PROPERTY_TAB_IDS = PROPERTY_TABS.map(t => t.id);
 export function PropertyNavigation({ active, onChange }: { active: PropertyTab; onChange: (tab: PropertyTab) => void }) {
   const buttons = useRef<(HTMLButtonElement | null)[]>([]);
   return <nav className="property-nav" role="tablist" aria-label="Property sections">{PROPERTY_TABS.map((tab, index) => <button key={tab.id} type="button" role="tab" id={`tab-${tab.id}`} aria-controls="property-tab-panel" aria-selected={active === tab.id} tabIndex={active === tab.id ? 0 : -1} ref={el => { buttons.current[index] = el; }} onClick={() => onChange(tab.id)} onKeyDown={e => {
@@ -68,7 +71,7 @@ export function useProperty() {
     setProperty(r.properties[0]); setError('');
   } };
 }
-async function readImage(file: File) {
+export async function readImage(file: File) {
   if (!file.type.startsWith('image/') || file.size > 20 * 1024 * 1024) throw new Error('Choose an image under 20 MB.');
   const url = URL.createObjectURL(file);
   try {
@@ -95,7 +98,7 @@ function PropertyMap({ property, onPoint, onArea }: { property: PropertyDetails;
   </div>;
 }
 
-export function PropertyOverview({ state, snap, projectsLoading, mapOnly = false }: { state: ReturnType<typeof useProperty>; snap: ProjectsSnapshot; projectsLoading: boolean; mapOnly?: boolean }) {
+export function PropertyOverview({ state, snap, issues = [], projectsLoading, mapOnly = false }: { state: ReturnType<typeof useProperty>; snap: ProjectsSnapshot; issues?: IssueSignal[]; projectsLoading: boolean; mapOnly?: boolean }) {
   const [draft, setDraft] = useState<PropertyDetails | null>(null);
   const [editor, setEditor] = useState<'property' | 'areas'>('property');
   const [selected, setSelected] = useState<number | null>(null);
@@ -115,8 +118,8 @@ export function PropertyOverview({ state, snap, projectsLoading, mapOnly = false
         {mapOnly && <DrawerButton onClick={() => editAreas()}>Manage key areas</DrawerButton>}
       </> : !state.error && <div className="property-empty"><h3>Your house, land, and everything around it.</h3><p>Add your property details and an aerial image. Mark structures and areas, then link the work and concerns that belong there.</p><button className="property-button" onClick={edit}>+ Add property</button></div>}
     </section>
-    {p && !mapOnly && <section className="section-panel" id="property-areas"><header><h2>Key areas</h2><DrawerButton onClick={() => editAreas()}>Manage key areas</DrawerButton></header><p className="property-muted">{p.areas.length} areas · Calculated from linked concerns and projects. No links means not assessed.</p><div className="property-areas">{p.areas.map((a, i) => {
-      const h = areaHealth(a, snap);
+    {p && !mapOnly && <section className="section-panel" id="property-areas"><header><h2>Key areas</h2><DrawerButton onClick={() => editAreas()}>Manage key areas</DrawerButton></header><p className="property-muted">{p.areas.length} areas · Calculated from linked concerns and projects, and from open issues reported under an area's name. No links means not assessed.</p><div className="property-areas">{p.areas.map((a, i) => {
+      const h = areaHealth(a, snap, issues);
       return <button key={i} className={`property-area ${h.tone}`} onClick={() => editAreas(i)}><strong>{a.name}</strong><span>{projectsLoading ? 'Loading…' : h.label}</span><div className="property-meter">{h.score !== null && !projectsLoading && <i style={{ width: `${h.score}%` }} />}</div></button>;
     })}</div>{!p.areas.length && <button className="property-button" onClick={() => editAreas()}>+ Add key area</button>}</section>}
     {draft && <Drawer eyebrow="YOUR PROPERTY" title={editor === 'areas' ? 'Manage key areas' : p ? 'Edit property' : 'Add property'} onClose={() => { if (!busy) setDraft(null); }}>

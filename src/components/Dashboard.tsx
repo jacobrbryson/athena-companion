@@ -34,7 +34,10 @@ import { NavigationLink, DrawerButton } from './ActionControls';
 import { plannedToday } from './ProjectData';
 import { useProjects, openProjects, ProjectList, ProjectBoard, ProjectsDrawers, ConcernList, CharterView, StateChip, type ProjectsDrawer } from './Projects';
 import type { Area } from '../api/projects';
-import { useProperty, PropertyOverview, PropertyWeather, PropertyNavigation, propertyHealth, type PropertyTab } from './Property';
+import { useProperty, PropertyOverview, PropertyWeather, PropertyNavigation, propertyHealth, PROPERTY_TAB_IDS, type PropertyTab } from './Property';
+import { usePropertyIssues, ReportIssueDrawer, IssueDetailsDrawer, ActiveIssueBanner, IssueList, troubleshootPrompt, findProPrompt } from './PropertyIssues';
+import type { PropertyIssue } from '../api/propertyIssues';
+import { useVehicles, VehicleList, VehicleDrawer, VehicleDetailsDrawer, vehiclePrompt } from './PropertyVehicles';
 
 /** Enough for a household, so nobody sorted late in the alphabet is cut off the card. */
 const FAMILY_CARD_ROWS = 7;
@@ -704,9 +707,15 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
   // Projects: one load shared by the cards, the pages and the editors.
   const proj = useProjects();
   const property = useProperty();
+  const propertyIssues = usePropertyIssues();
+  const vehicles = useVehicles();
+  // Add, view or edit a vehicle at the property; the uuid names which.
+  const [vehicleDrawer, setVehicleDrawer] = useState<{ kind: 'add' } | { kind: 'view' | 'edit'; uuid: string } | null>(null);
+  // Report, view or edit a property issue; the uuid names which.
+  const [issueDrawer, setIssueDrawer] = useState<{ kind: 'report' } | { kind: 'view' | 'edit'; uuid: string } | null>(null);
   const [propertyTab, setPropertyTab] = useState<PropertyTab>(() => {
     const id = typeof window === 'undefined' ? '' : window.location.hash.slice(1);
-    return ['property-overview', 'property-projects', 'property-concerns', 'property-map', 'property-season'].includes(id) ? id as PropertyTab : 'property-overview';
+    return (PROPERTY_TAB_IDS as readonly string[]).includes(id) ? id as PropertyTab : 'property-overview';
   });
   const [drawer, setDrawer] = useState<ProjectsDrawer>(null);
   const openProject = (uuid: string) => setDrawer({ kind: 'project', uuid });
@@ -1442,15 +1451,32 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
     const concerns = proj.snap.concerns.filter(c => c.area === 'home' && c.status === 'open');
     const critical = concerns.filter(c => c.severity >= 5).length;
     const doneRecently = home.filter(p => p.status === 'done' && p.completedAt && Date.now() - Date.parse(p.completedAt) < 30 * 86_400_000).length;
+    const issueList = propertyIssues.issues;
+    const openIssues = issueList.filter(i => i.status === 'open');
+    const health = propertyHealth(issueList);
+    const seriousIssues = openIssues.filter(i => i.severity === 'high' || i.severity === 'emergency').length;
+    const troubleshoot = (i: PropertyIssue) => onAsk(troubleshootPrompt(i));
+    const findPro = (i: PropertyIssue) => onAsk(findProPrompt(i, property.property?.address || ''));
+    const shownIssue = issueDrawer && issueDrawer.kind !== 'report' ? issueList.find(i => i.uuid === issueDrawer.uuid) : null;
+    const shownVehicle = vehicleDrawer && vehicleDrawer.kind !== 'add' ? vehicles.vehicles.find(v => v.uuid === vehicleDrawer.uuid) : null;
+    // Recent activity: project updates beside issues reported and resolved, newest first.
+    const activity = [
+      ...home.map(p => ({ key: p.uuid, at: p.updatedAt, label: `${p.title} · ${p.status}`, open: () => openProject(p.uuid) })),
+      ...issueList.flatMap(i => [
+        { key: `${i.uuid}:r`, at: i.createdAt, label: `Issue reported · ${i.location}`, open: () => setIssueDrawer({ kind: 'view', uuid: i.uuid }) },
+        ...(i.resolvedAt ? [{ key: `${i.uuid}:x`, at: i.resolvedAt, label: `Issue resolved · ${i.location}`, open: () => setIssueDrawer({ kind: 'view', uuid: i.uuid }) }] : []),
+      ]),
+    ].sort((a, b) => Date.parse(b.at) - Date.parse(a.at)).slice(0, 5);
     const contributorsOf = (uuid: string) => proj.snap.links.filter(l => l.relation === 'contributes_to' && l.to === uuid)
       .map(l => proj.snap.projects.find(p => p.uuid === l.from)).filter((p): p is NonNullable<typeof p> => !!p && p.status !== 'dropped');
     return <SectionPage ctx={ctx}
       eyebrow="HOUSE & LAND" title={property.property?.name || 'Our Property'}
       headerAside={<PropertyWeather address={property.property?.address || ''} />}
       blurb={property.property?.description || 'The house and the land around it: what needs doing, what’s worrying you, and the rules you decide by.'}
-      ask="Look at my home projects and concerns. What should I do next, and how can you help?"
+      ask="Look at my home projects, concerns and open property issues. What should I do next, and how can you help?"
       stats={<>
-        <Stat label="Property health" icon="Home" value={proj.loading || property.loading ? '—' : property.error || proj.error ? 'Unavailable' : propertyHealth(property.property, proj.snap)} note="from linked areas" />
+        <Stat label="Property health" icon="Home" value={propertyIssues.loading ? '—' : propertyIssues.error ? 'Unavailable' : health.label} note={propertyIssues.loading || propertyIssues.error ? 'from active issues' : health.note} tone={propertyIssues.loading || propertyIssues.error ? undefined : health.tone} />
+        <Stat label="Active issues" icon="Issues" value={propertyIssues.loading ? '—' : propertyIssues.error ? 'Unavailable' : openIssues.length} note={seriousIssues ? `${seriousIssues} high or emergency` : openIssues.length ? 'none serious' : 'nothing reported'} tone={seriousIssues ? 'alert' : openIssues.length ? 'ok' : 'good'} />
         <Stat label="Open projects" icon="ProjectList" value={proj.loading && !home.length ? '—' : open.filter(p => p.kind !== 'program').length} note={`${open.filter(p => p.effectiveStatus === 'active').length} active`} />
         <Stat label="Open concerns" icon="Concerns" value={concerns.length} note={critical ? `${critical} critical` : 'none critical'} tone={critical ? 'alert' : concerns.length ? 'ok' : 'good'} />
         <Stat label="Done this month" icon="Completed" value={doneRecently} note="last 30 days" tone={doneRecently ? 'good' : 'idle'} />
@@ -1458,7 +1484,18 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
     >
       <PropertyNavigation active={propertyTab} onChange={setPropertyTab} />
       <div className="property-tab-content" role="tabpanel" id="property-tab-panel" aria-labelledby={`tab-${propertyTab}`} tabIndex={0}>
-      {(propertyTab === 'property-overview' || propertyTab === 'property-map') && <PropertyOverview state={property} snap={proj.snap} projectsLoading={proj.loading || !!proj.error} mapOnly={propertyTab === 'property-map'} />}
+      {(propertyTab === 'property-overview' || propertyTab === 'property-issues') && <ActiveIssueBanner issues={issueList} onOpen={uuid => setIssueDrawer({ kind: 'view', uuid })} onTroubleshoot={troubleshoot} onFindPro={findPro} onShowAll={() => setPropertyTab('property-issues')} />}
+      {(propertyTab === 'property-overview' || propertyTab === 'property-map') && <PropertyOverview state={property} snap={proj.snap} issues={issueList} projectsLoading={proj.loading || !!proj.error} mapOnly={propertyTab === 'property-map'} />}
+      {propertyTab === 'property-overview' && <Panel title="Issues" note="open, most serious first" id="property-issues-summary">
+        <IssueList state={propertyIssues} limit={4} onOpen={uuid => setIssueDrawer({ kind: 'view', uuid })} onReport={() => setIssueDrawer({ kind: 'report' })} />
+        {issueList.length > 0 && <NavigationLink href="#property-issues" onNavigate={() => setPropertyTab('property-issues')}>See all issues ({issueList.length})</NavigationLink>}
+      </Panel>}
+      {propertyTab === 'property-issues' && <Panel title="Issues" note="everything reported, open first" wide>
+        <IssueList state={propertyIssues} onOpen={uuid => setIssueDrawer({ kind: 'view', uuid })} onReport={() => setIssueDrawer({ kind: 'report' })} />
+      </Panel>}
+      {propertyTab === 'property-vehicles' && <Panel title="Vehicles" note={property.property?.name ? `kept at ${property.property.name}` : 'kept at this property'} wide>
+        <VehicleList state={vehicles} propertyName={property.property?.name || ''} hasProperty={!!property.property} onOpen={uuid => setVehicleDrawer({ kind: 'view', uuid })} onAdd={() => setVehicleDrawer({ kind: 'add' })} />
+      </Panel>}
       {propertyTab === 'property-overview' && <Panel title="Up next" note="highest first" id="property-projects">
         {proj.error && <p role="alert">{proj.error} <button onClick={proj.reload}>Retry</button></p>}
         {proj.loading ? <p>Loading projects…</p> : <ProjectList projects={open.slice(0, 3)} snap={proj.snap} onOpen={openProject} />}
@@ -1468,8 +1505,8 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
         </div>
       </Panel>}
       {propertyTab === 'property-projects' && <Panel title="Projects" note="all property projects" wide><ProjectBoard state={proj} onOpen={openProject} onNew={newProject} area="home" /></Panel>}
-      {propertyTab === 'property-overview' && <Panel title="Recent activity" note="latest project updates" id="property-activity">
-        <div className="property-activity">{home.slice().sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt)).slice(0, 5).map(p => <button key={p.uuid} onClick={() => openProject(p.uuid)}><span>{p.title} · {p.status}</span><time>{new Date(p.updatedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</time></button>)}{!home.length && <p>No property project activity yet.</p>}</div>
+      {propertyTab === 'property-overview' && <Panel title="Recent activity" note="project updates and issues" id="property-activity">
+        <div className="property-activity">{activity.map(a => <button key={a.key} onClick={a.open}><span>{a.label}</span><time>{new Date(a.at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</time></button>)}{!activity.length && <p>No property activity yet.</p>}</div>
       </Panel>}
       {(propertyTab === 'property-overview' || propertyTab === 'property-season') && <Panel title="Seasonal focus" note={new Date().toLocaleDateString(undefined, { month: 'long' })} id="property-season" wide={propertyTab === 'property-season'}>
         <ProjectList snap={proj.snap} projects={open.filter(p => p.seasonMonths?.includes(new Date().getMonth() + 1))} onOpen={openProject} />
@@ -1499,6 +1536,12 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
       </Panel>}
       </div>
       {drawers}
+      {issueDrawer?.kind === 'report' && <ReportIssueDrawer state={propertyIssues} areas={property.property?.areas.map(a => a.name) || []} onClose={() => setIssueDrawer(null)} />}
+      {issueDrawer?.kind === 'edit' && shownIssue && <ReportIssueDrawer state={propertyIssues} issue={shownIssue} areas={property.property?.areas.map(a => a.name) || []} onClose={() => setIssueDrawer({ kind: 'view', uuid: shownIssue.uuid })} />}
+      {vehicleDrawer?.kind === 'add' && <VehicleDrawer state={vehicles} propertyUuid={property.property?.uuid || null} onClose={() => setVehicleDrawer(null)} />}
+      {vehicleDrawer?.kind === 'edit' && shownVehicle && <VehicleDrawer state={vehicles} vehicle={shownVehicle} propertyUuid={shownVehicle.propertyUuid} onClose={() => setVehicleDrawer({ kind: 'view', uuid: shownVehicle.uuid })} />}
+      {vehicleDrawer?.kind === 'view' && shownVehicle && <VehicleDetailsDrawer state={vehicles} vehicle={shownVehicle} propertyName={shownVehicle.propertyUuid === property.property?.uuid ? property.property?.name || '' : ''} onClose={() => setVehicleDrawer(null)} onEdit={() => setVehicleDrawer({ kind: 'edit', uuid: shownVehicle.uuid })} onAsk={v => onAsk(vehiclePrompt(v))} />}
+      {issueDrawer?.kind === 'view' && shownIssue && <IssueDetailsDrawer state={propertyIssues} issue={shownIssue} onClose={() => setIssueDrawer(null)} onEdit={() => setIssueDrawer({ kind: 'edit', uuid: shownIssue.uuid })} onTroubleshoot={troubleshoot} onFindPro={findPro} />}
     </SectionPage>;
   }
 

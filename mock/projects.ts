@@ -9,6 +9,12 @@ const now = () => new Date().toISOString();
 let seq = 0;
 let property: Any | null = null;
 const uid = (p: string) => `${p}-${Date.now().toString(36)}-${seq++}`;
+// Property issues (core_api controllers/propertyIssues.js); photos held apart, like the real tables.
+let issues: Any[] = [];
+// Vehicles at the property (core_api controllers/propertyVehicles.js); the photo held apart, like the real column.
+let vehicles: Any[] = [];
+const vehiclePhotos = new Map<string, string>();
+const issuePhotos = new Map<string, string>();
 
 function project(over: Any): Any {
   return {
@@ -144,6 +150,57 @@ export function mockProjectsRoute(method: string, p: string, query: URLSearchPar
   if (p === '/api/v1/projects/property') {
     if (method === 'PUT') property = { ...body, uuid: property?.uuid || uid('property') };
     return { properties: property ? [property] : [] };
+  }
+  if (p.startsWith('/api/v1/projects/property/vehicles')) {
+    const [uuid, sub, entryId] = p.split('/').slice(6).map(decodeURIComponent);
+    const vehicle = uuid ? vehicles.find(v => v.uuid === uuid) || fail(404, 'That vehicle is no longer on your list.') : null;
+    if (sub === 'photo') return { image: vehiclePhotos.get(uuid) || null };
+    if (sub === 'service') {
+      if (method === 'POST') {
+        if (!body?.what?.trim()) fail(400, 'Say what was done.');
+        vehicles = vehicles.map(v => v.uuid !== uuid ? v : {
+          ...v, service: [{ uuid: uid('service'), doneOn: body.doneOn, odometer: body.odometer, what: body.what.trim(), shop: body.shop }, ...v.service].sort((a: Any, b: Any) => b.doneOn.localeCompare(a.doneOn)),
+          ...(body.odometer !== null && (v.odometer === null || body.odometer > v.odometer) ? { odometer: body.odometer, odometerOn: body.doneOn } : {}),
+        });
+      } else if (method === 'DELETE') vehicles = vehicles.map(v => v.uuid === uuid ? { ...v, service: v.service.filter((s: Any) => s.uuid !== entryId) } : v);
+      return { vehicles };
+    }
+    const shape = (b: Any, v: Any = {}) => {
+      const next = { ...v, ...b, photo: undefined, updatedAt: now() };
+      next.name = (b.name ?? v.name ?? '').trim() || [next.year, next.make, next.model].filter(Boolean).join(' ');
+      if (!next.name) fail(400, 'Give the vehicle a name, or its make and model.');
+      for (const k of ['make', 'model', 'color', 'plate', 'vin', 'notes']) next[k] = typeof next[k] === 'string' ? next[k].trim() || null : next[k] ?? null;
+      if (b.odometer !== undefined && b.odometer !== v.odometer) next.odometerOn = b.odometer === null ? null : now().slice(0, 10);
+      if (b.photo !== undefined) { if (b.photo) vehiclePhotos.set(next.uuid, b.photo); else vehiclePhotos.delete(next.uuid); }
+      next.hasPhoto = vehiclePhotos.has(next.uuid);
+      return next;
+    };
+    if (method === 'POST') {
+      if (!property) fail(400, 'Add your property first — vehicles live at a property.');
+      const blank = { uuid: uid('vehicle'), propertyUuid: property.uuid, year: null, make: null, model: null, color: null, plate: null, vin: null, odometer: null, odometerOn: null, registrationDue: null, inspectionDue: null, insuranceDue: null, serviceDue: null, serviceDueMiles: null, notes: null, createdAt: now(), service: [] };
+      vehicles = [...vehicles, shape({ ...body, propertyUuid: body.propertyUuid || property.uuid }, blank)];
+    } else if (method === 'PATCH') vehicles = vehicles.map(v => v.uuid === uuid ? shape(body, v) : v);
+    else if (method === 'DELETE') { vehicles = vehicles.filter(v => v.uuid !== vehicle.uuid); vehiclePhotos.delete(vehicle.uuid); }
+    return { vehicles };
+  }
+  if (p.startsWith('/api/v1/projects/property/issues')) {
+    const [uuid, sub, noteId] = p.split('/').slice(6).map(decodeURIComponent);
+    const issue = uuid ? issues.find(i => i.uuid === uuid) || fail(404, 'That issue is no longer on your list.') : null;
+    if (sub === 'notes') {
+      if (method === 'POST') { if (!body?.body?.trim()) fail(400, 'Add the note.'); issues = issues.map(i => i.uuid === uuid ? { ...i, log: [...i.log, { uuid: uid('note'), body: body.body.trim(), createdAt: now() }] } : i); }
+      else if (method === 'DELETE') issues = issues.map(i => i.uuid === uuid ? { ...i, log: i.log.filter((n: Any) => n.uuid !== noteId) } : i);
+      return { issues };
+    }
+    if (sub === 'photos') return { photos: issue.photos.map((u: string) => ({ uuid: u, image: issuePhotos.get(u) })) };
+    const store = (list: string[] = []) => list.map(image => { const u = uid('photo'); issuePhotos.set(u, image); return u; });
+    if (method === 'POST') issues = [{ uuid: uid('issue'), status: 'open', resolvedAt: null, createdAt: now(), updatedAt: now(), notes: null, ...body, photos: store(body.photos), log: [] }, ...issues];
+    else if (method === 'PATCH') issues = issues.map(i => i.uuid !== uuid ? i : {
+      ...i, ...body, addPhotos: undefined, removePhotos: undefined, updatedAt: now(),
+      resolvedAt: body.status && body.status !== i.status ? (body.status === 'resolved' ? now() : null) : i.resolvedAt,
+      photos: [...i.photos.filter((u: string) => !(body.removePhotos || []).includes(u)), ...store(body.addPhotos)],
+    });
+    else if (method === 'DELETE') issues = issues.filter(i => i.uuid !== issue.uuid);
+    return { issues };
   }
   if (!p.startsWith('/api/v1/projects')) return undefined;
   const parts = p.split('/').slice(4).map(decodeURIComponent); // after /api/v1/projects

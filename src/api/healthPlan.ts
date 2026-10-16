@@ -75,11 +75,11 @@ export const healthPlanApi = {
   day: (date: string) => api.get<{ nutrition: NutritionDay }>(`/api/v1/dashboard/health/nutrition?date=${date}&today=${localDay()}`),
   updateEntry: (uuid: string, entry: EntryDraft) => api.patch<{ nutrition: NutritionDay }>(`/api/v1/dashboard/health/nutrition/${encodeURIComponent(uuid)}`, { ...entry, today: localDay() }),
   /** Log from the camera: a barcode the phone read, the photo, or both (the photo is the fallback). */
-  scan: (body: { imageBase64?: string; mimeType?: string; barcode?: string | null }) =>
-    api.post<ScanResult>('/api/v1/dashboard/health/nutrition/scan', { ...body, eaten_on: localDay(), today: localDay() }),
+  scan: (body: { imageBase64?: string; mimeType?: string; barcode?: string | null; eaten_on?: string }) =>
+    api.post<ScanResult>('/api/v1/dashboard/health/nutrition/scan', { eaten_on: localDay(), ...body, today: localDay() }),
   /** "Tell Athena": a few words ("Big Mac from McDonald's") she looks up and logs. */
-  describe: (text: string) =>
-    api.post<ScanResult>('/api/v1/dashboard/health/nutrition/describe', { text, eaten_on: localDay(), today: localDay() }),
+  describe: (text: string, eatenOn = localDay()) =>
+    api.post<ScanResult>('/api/v1/dashboard/health/nutrition/describe', { text, eaten_on: eatenOn, today: localDay() }),
   saveFavorite: (food: EntryDraft) => api.post<{ nutrition: NutritionDay }>('/api/v1/dashboard/health/favorites', { ...food, today: localDay() }),
   removeFavorite: (uuid: string) => api.del<{ nutrition: NutritionDay }>(`/api/v1/dashboard/health/favorites/${encodeURIComponent(uuid)}?today=${localDay()}`),
   logFavorite: (uuid: string) => api.post<{ nutrition: NutritionDay }>(`/api/v1/dashboard/health/favorites/${encodeURIComponent(uuid)}/log`, { eaten_on: localDay(), today: localDay() }),

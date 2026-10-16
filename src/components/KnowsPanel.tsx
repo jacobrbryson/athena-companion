@@ -15,6 +15,7 @@ const READS: Record<string, { reads: string; writes: string }> = {
   websites: { reads: 'Search Console and Analytics numbers for the sites you list, checked daily and when you press Check now.', writes: 'Nothing — read-only.' },
   google_contacts: { reads: 'Names, numbers, emails, addresses, birthdays and photos, read live.', writes: 'Nothing — read-only.' },
   whoop: { reads: 'Recovery, sleep, strain, resting heart rate, HRV and blood oxygen.', writes: 'Nothing — read-only.' },
+  nest: { reads: 'Whether each shared thermostat is online, and its temperature, humidity, mode and setting.', writes: 'Nothing — read-only.' },
   family_chores: { reads: 'Whose chores are due, what is done, coins earned.', writes: 'Nothing — read-only.' },
   jira: { reads: 'Your assigned open issues.', writes: 'Nothing — read-only.' },
   slack: { reads: 'Recent messages that mention you.', writes: 'Nothing — read-only.' },

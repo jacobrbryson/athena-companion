@@ -1,0 +1,84 @@
+/* Property issues (PropertyIssues.tsx): the Report an issue drawer, the active-issue banner, list and details. */
+.pi-form{display:flex;flex-direction:column;gap:22px;color:#e2f3fb}
+.pi-intro{font-size:13px;line-height:1.6;color:#a9c3d1}
+.pi-form fieldset{display:flex;flex-direction:column;gap:10px;min-width:0;border:0;padding:0;margin:0}
+.pi-form legend,.pi-legend{font-size:13px;font-weight:600;color:#f0f9ff;margin-bottom:10px;padding:0}
+.pi-form legend small,.pi-legend small{font-weight:400;color:#8fb0c2}
+.pi-label{display:flex;flex-direction:column;gap:6px;font-size:12px;color:#a9c3d1}
+.pi-form textarea,.pi-form input:not([type=file]){width:100%;padding:11px 12px;border:1px solid #23485a;border-radius:8px;background:#06141d;color:#eaf6fc;font-size:13px;line-height:1.55;resize:vertical}
+.pi-form textarea:focus,.pi-form input:focus{outline:2px solid #43c9ef66;border-color:#43c9ef}
+.pi-choices{display:grid;gap:8px}
+.pi-choices button,.pi-date{display:flex;align-items:center;gap:9px;min-height:46px;padding:9px 11px;border:1px solid #20404f;border-radius:8px;background:#081a24;color:#cfe4ee;font-size:12px;text-align:left;cursor:pointer;transition:border-color .15s,background .15s}
+.pi-choices button:hover{border-color:#3b7088}
+.pi-choices button[aria-pressed=true],.pi-date.pi-on{border-color:#43c9ef;background:#0f3043;color:#f0fbff;box-shadow:inset 0 0 0 1px #43c9ef55}
+.pi-choices svg{width:18px;height:18px;flex:0 0 18px;color:#7fd6f2}
+.pi-where{grid-template-columns:repeat(2,minmax(0,1fr))}
+.pi-severity{grid-template-columns:repeat(2,minmax(0,1fr))}
+.pi-severity span{display:flex;flex-direction:column;line-height:1.3}
+.pi-severity small{font-size:11px;color:#8fb0c2}
+.pi-severity i{width:16px;height:16px;flex:0 0 16px;border-radius:50%;background:var(--sev);box-shadow:0 0 8px var(--sev)}
+.pi-severity button[aria-pressed=true]{border-color:var(--sev);background:color-mix(in srgb,var(--sev) 14%,#081a24);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--sev) 40%,transparent)}
+.pi-sev-low{--sev:#94a3b8}.pi-sev-medium{--sev:#facc15}.pi-sev-high{--sev:#fb923c}.pi-sev-emergency{--sev:#f43f5e}
+.pi-safety{padding:10px 12px;border:1px solid #f43f5e66;border-radius:8px;background:#4c051933;color:#fecdd3;font-size:12px;line-height:1.5}
+.pi-when{grid-template-columns:auto auto minmax(0,1fr)}
+.pi-when button{justify-content:center;padding-inline:18px}
+.pi-date{padding:0 4px}.pi-form .pi-date input{border:0;background:none;padding:8px;color-scheme:dark}
+.pi-photos{display:flex;flex-wrap:wrap;gap:10px}
+.pi-photos figure{position:relative;width:104px;height:104px;margin:0;border-radius:8px;overflow:hidden;border:1px solid #23485a}
+.pi-photos img{width:100%;height:100%;object-fit:cover;display:block}
+.pi-photos figure button{position:absolute;top:5px;right:5px;width:22px;height:22px;border-radius:50%;background:#000c;color:#fff;font-size:11px;line-height:22px;text-align:center}
+.pi-add-photo{width:104px;height:104px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;border:1px dashed #3b6a80;border-radius:8px;color:#a9c3d1;font-size:12px;cursor:pointer}
+.pi-add-photo:hover{border-color:#43c9ef;color:#e2f3fb}.pi-add-photo span{font-size:22px;line-height:1}
+.pi-add-photo input{position:absolute;width:1px;height:1px;opacity:0}
+.pi-muted{font-size:12px;color:#8fb0c2;line-height:1.5}
+.pi-footer{display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:10px}.pi-footer p{flex:1 0 100%;font-size:12px;color:#fca5a5}
+.pi-footer .app-drawer-button{min-width:110px}
+/* Banner */
+.pi-banner{grid-column:1/-1;display:flex;flex-direction:column;gap:14px;padding:18px 20px;border:1px solid color-mix(in srgb,var(--sev) 70%,transparent);border-radius:12px;background:linear-gradient(180deg,color-mix(in srgb,var(--sev) 16%,#0a141c),#0a131bf2);box-shadow:0 0 22px color-mix(in srgb,var(--sev) 18%,transparent)}
+.pi-banner-head{display:flex;align-items:flex-start;gap:14px}
+.pi-banner-icon{display:flex;align-items:center;justify-content:center;width:48px;height:48px;flex:0 0 48px;border-radius:10px;background:color-mix(in srgb,var(--sev) 22%,transparent);color:var(--sev)}
+.pi-banner-icon svg{width:28px;height:28px}
+.pi-banner-title{flex:1;min-width:0}.pi-banner-title h2{font-size:19px;font-weight:600;color:#f8fafc;overflow-wrap:anywhere}
+.pi-banner-title p{font-size:12px;color:#b6c8d3;margin-top:2px}
+.pi-active{color:#fb923c}
+.pi-chip{flex-shrink:0;padding:4px 12px;border:1px solid var(--sev);border-radius:6px;color:var(--sev);background:color-mix(in srgb,var(--sev) 12%,transparent);font-size:12px}
+.pi-banner-body{font-size:14px;line-height:1.6;color:#e2e8f0;white-space:pre-line}
+.pi-actions{display:flex;flex-wrap:wrap;gap:10px}
+.pi-actions .app-drawer-button{border-color:#3b7088;background:#0b2230;color:#d8f1fb;min-width:120px}
+.pi-actions .pi-view{border-color:var(--sev,#fb923c);color:color-mix(in srgb,var(--sev,#fb923c) 70%,#fff);background:color-mix(in srgb,var(--sev,#fb923c) 14%,transparent)}
+.pi-more{align-self:flex-start;color:#67ddff;font-size:12px;text-decoration:underline;text-underline-offset:3px}
+/* List */
+.pi-list ul{display:flex;flex-direction:column;gap:8px}
+.pi-list li>button{display:flex;align-items:center;gap:12px;width:100%;padding:11px 12px;border:1px solid #1c3b4a;border-radius:9px;background:#071822;text-align:left}
+.pi-list li>button:hover{border-color:#3b7088}
+.pi-dot{width:10px;height:10px;flex:0 0 10px;border-radius:50%;background:var(--sev);box-shadow:0 0 8px var(--sev)}
+.pi-list-text{display:flex;flex-direction:column;min-width:0;flex:1}.pi-list-text strong{font-size:13px;color:#eef8fd}
+.pi-list-text small{font-size:12px;color:#95b1c0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pi-list-meta{display:flex;flex-direction:column;align-items:flex-end;font-size:11px;color:#cfe4ee;flex-shrink:0}.pi-list-meta time{color:#7f9caa}
+.pi-resolved{opacity:.6}.pi-resolved .pi-dot{background:#475569;box-shadow:none}
+.pi-list-foot{display:flex;justify-content:flex-end;margin-top:16px}
+/* Details */
+.pi-details{display:flex;flex-direction:column;gap:16px;color:#e2f3fb}
+.pi-details-status{display:flex;align-items:center;gap:10px;font-size:12px;color:#b6c8d3}
+.pi-details-body{font-size:14px;line-height:1.6;white-space:pre-line}
+.pi-details dl{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;font-size:12px}.pi-details dt{color:#8fb0c2}.pi-details dd{white-space:pre-line}
+.pi-details-manage{display:flex;flex-wrap:wrap;gap:8px;padding-top:12px;border-top:1px solid #1c3b4a}
+.pi-danger{border-color:#f43f5e!important;color:#fecdd3!important;background:#4c051955!important}
+.pi-details [role=alert]{font-size:12px;color:#fca5a5}
+@media(max-width:700px){.pi-banner{padding:14px}.pi-banner-icon{width:38px;height:38px;flex-basis:38px}.pi-banner-title h2{font-size:16px}.pi-actions .app-drawer-button{flex:1 1 auto}.pi-when{grid-template-columns:1fr 1fr}.pi-when .pi-date{grid-column:1/-1}.pi-list-meta{display:none}}
+.property-tab-content>.pi-banner{order:0}.property-tab-content>#property-issues-summary{order:3}
+.pi-banner,.section-panel:has(>.pi-list){min-width:0}.pi-list,.pi-list li>button{min-width:0;max-width:100%}
+/* Notes on an issue */
+.pi-notes{display:flex;flex-direction:column;gap:10px;padding-top:14px;border-top:1px solid #1c3b4a}
+.pi-notes h3{font-size:13px;font-weight:600;color:#f0f9ff}
+.pi-notes ol{display:flex;flex-direction:column;gap:8px}
+.pi-notes li{position:relative;padding:9px 30px 9px 11px;border:1px solid #1c3b4a;border-radius:8px;background:#071822}
+.pi-notes time{display:block;font-size:10px;color:#7f9caa;margin-bottom:3px}
+.pi-notes li p{font-size:13px;line-height:1.5;white-space:pre-line;overflow-wrap:anywhere}
+.pi-notes a{color:#67ddff;text-decoration:underline;text-underline-offset:2px}
+.pi-notes li button{position:absolute;top:7px;right:8px;color:#7f9caa;font-size:11px}.pi-notes li button:hover{color:#fecdd3}
+.pi-notes form{display:flex;flex-direction:column;align-items:flex-end;gap:8px}
+.pi-notes textarea{width:100%;padding:10px 11px;border:1px solid #23485a;border-radius:8px;background:#06141d;color:#eaf6fc;font-size:13px;line-height:1.5;resize:vertical}
+.pi-notes textarea:focus{outline:2px solid #43c9ef66;border-color:#43c9ef}
+.pi-notes [role=alert]{font-size:12px;color:#fca5a5}
+.pi-notes a[href^="tel:"]{white-space:nowrap}

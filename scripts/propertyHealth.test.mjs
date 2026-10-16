@@ -21,8 +21,19 @@ test('resolved concerns count as an assessment and completed overdue work does n
   assert.equal(areaHealth(area, { ...snap, projects: [{ ...project, status: 'done', hardDeadline: '2000-01-01' }] }).label, 'On track');
   assert.equal(areaHealth(area, { ...snap, projects: [{ ...project, hardDeadline: '2000-01-01' }] }).label, 'Needs attention');
 });
-test('overall health preserves missing assessments and prioritizes risk', () => {
-  const property = { areas: [area, { ...area, projects: [] }] };
-  assert.equal(propertyHealth(property, snap), 'Not assessed');
-  assert.equal(propertyHealth(property, { ...snap, concerns: [{ uuid: 'c', projects: ['p'], severity: 5, status: 'open' }] }), 'At risk');
+test('open property issues mark their area and the whole property', () => {
+  const issue = { location: 'house', severity: 'high', status: 'open' };
+  assert.equal(areaHealth(area, snap, [issue]).label, 'At risk');
+  assert.equal(areaHealth({ ...area, projects: [] }, snap, [{ ...issue, severity: 'low' }]).label, 'Needs attention');
+  assert.equal(areaHealth(area, snap, [{ ...issue, status: 'resolved' }]).label, 'On track');
+  assert.equal(areaHealth(area, snap, [{ ...issue, location: 'Pool' }]).label, 'On track');
+});
+test('overall health follows active issues only, worst first', () => {
+  const issue = { location: 'Heating & cooling', severity: 'emergency', status: 'open' };
+  assert.deepEqual(propertyHealth([]), { label: 'Good', tone: 'good', note: 'no active issues' });
+  assert.deepEqual(propertyHealth([{ ...issue, status: 'resolved' }]).label, 'Good');
+  assert.deepEqual(propertyHealth([issue]), { label: 'Emergency', tone: 'alert', note: 'Heating & cooling · emergency' });
+  assert.equal(propertyHealth([{ ...issue, severity: 'high' }]).label, 'At risk');
+  assert.equal(propertyHealth([{ ...issue, severity: 'low' }]).label, 'Needs attention');
+  assert.deepEqual(propertyHealth([{ ...issue, severity: 'low', location: 'Pool' }, issue]).note, '2 active issues · worst: Heating & cooling');
 });
