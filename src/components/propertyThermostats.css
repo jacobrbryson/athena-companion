@@ -1,0 +1,14 @@
+/* Thermostats on the Property Overview (PropertyThermostats.tsx). Cards and chips reuse the pv-* vehicle styles. */
+.pt-list{min-width:0}
+.pt-list ul{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px}
+.pt-card{display:flex;align-items:center;gap:12px;min-width:0;padding:12px;border:1px solid #1c3b4a;border-radius:10px;background:#071822}
+.pt-card.pt-offline{border-color:#f43f5e66}
+.pt-temp{display:flex;align-items:center;justify-content:center;width:64px;height:64px;flex:0 0 64px;border-radius:8px;background:#0d2a3a;color:#7fd6f2;font-size:19px;font-weight:600;font-variant-numeric:tabular-nums}
+.pt-offline .pt-temp{color:#95b1c0}
+.pt-card .pv-card-text>.pv-chip{align-self:flex-start;margin-top:6px}
+.pt-card .pv-card-text small{white-space:normal;overflow:visible}
+.pt-note{font-style:italic}
+.pt-foot{margin-top:10px}
+.pt-link{padding:0;border:0;background:none;color:#7fd6f2;font:inherit;text-decoration:underline;cursor:pointer}
+.pt-link:disabled{opacity:.6;cursor:default}
+@media(max-width:700px){.pt-list ul{grid-template-columns:1fr}}

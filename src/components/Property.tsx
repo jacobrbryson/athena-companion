@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type MouseEvent } from 'react';
+import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import { api } from '../api/client';
 import type { ProjectsSnapshot } from '../api/projects';
 import { Drawer } from './Drawer';
@@ -13,6 +13,7 @@ const PROPERTY_TABS = [
   { label: 'Overview', id: 'property-overview', icon: 'Home' },
   { label: 'Issues', id: 'property-issues', icon: 'Issues' },
   { label: 'Vehicles', id: 'property-vehicles', icon: 'Vehicles' },
+  { label: 'Utilities', id: 'property-utilities', icon: 'Utilities' },
   { label: 'Projects', id: 'property-projects', icon: 'PropertyProjects' },
   { label: 'Concerns', id: 'property-concerns', icon: 'Concerns' },
   { label: 'Property Map', id: 'property-map', icon: 'PropertyMap' },
@@ -98,7 +99,7 @@ function PropertyMap({ property, onPoint, onArea }: { property: PropertyDetails;
   </div>;
 }
 
-export function PropertyOverview({ state, snap, issues = [], projectsLoading, mapOnly = false }: { state: ReturnType<typeof useProperty>; snap: ProjectsSnapshot; issues?: IssueSignal[]; projectsLoading: boolean; mapOnly?: boolean }) {
+export function PropertyOverview({ state, snap, issues = [], projectsLoading, mapOnly = false, charter }: { state: ReturnType<typeof useProperty>; snap: ProjectsSnapshot; issues?: IssueSignal[]; projectsLoading: boolean; mapOnly?: boolean; charter?: (close: () => void) => ReactNode }) {
   const [draft, setDraft] = useState<PropertyDetails | null>(null);
   const [editor, setEditor] = useState<'property' | 'areas'>('property');
   const [selected, setSelected] = useState<number | null>(null);
@@ -118,10 +119,10 @@ export function PropertyOverview({ state, snap, issues = [], projectsLoading, ma
         {mapOnly && <DrawerButton onClick={() => editAreas()}>Manage key areas</DrawerButton>}
       </> : !state.error && <div className="property-empty"><h3>Your house, land, and everything around it.</h3><p>Add your property details and an aerial image. Mark structures and areas, then link the work and concerns that belong there.</p><button className="property-button" onClick={edit}>+ Add property</button></div>}
     </section>
-    {p && !mapOnly && <section className="section-panel" id="property-areas"><header><h2>Key areas</h2><DrawerButton onClick={() => editAreas()}>Manage key areas</DrawerButton></header><p className="property-muted">{p.areas.length} areas · Calculated from linked concerns and projects, and from open issues reported under an area's name. No links means not assessed.</p><div className="property-areas">{p.areas.map((a, i) => {
+    {p && !mapOnly && <section className="section-panel" id="property-areas"><header><h2>Key areas</h2><DrawerButton onClick={() => editAreas()}>Manage key areas</DrawerButton></header><p className="property-muted">{p.areas.length} areas · Calculated from linked concerns and projects, and from open issues reported under an area's name. No links means not assessed.</p><div className="section-panel-body"><div className="property-areas">{p.areas.map((a, i) => {
       const h = areaHealth(a, snap, issues);
       return <button key={i} className={`property-area ${h.tone}`} onClick={() => editAreas(i)}><strong>{a.name}</strong><span>{projectsLoading ? 'Loading…' : h.label}</span><div className="property-meter">{h.score !== null && !projectsLoading && <i style={{ width: `${h.score}%` }} />}</div></button>;
-    })}</div>{!p.areas.length && <button className="property-button" onClick={() => editAreas()}>+ Add key area</button>}</section>}
+    })}</div>{!p.areas.length && <button className="property-button" onClick={() => editAreas()}>+ Add key area</button>}</div></section>}
     {draft && <Drawer eyebrow="YOUR PROPERTY" title={editor === 'areas' ? 'Manage key areas' : p ? 'Edit property' : 'Add property'} onClose={() => { if (!busy) setDraft(null); }}>
       <form className="property-form" onSubmit={async e => { e.preventDefault(); setBusy(true); setError(''); try { await state.save(draft); setDraft(null); } catch (e) { setError((e as Error).message); } finally { setBusy(false); } }}>
         <fieldset disabled={busy}>{editor === 'property' && <>{field('name', 'Property name')}{field('address', 'Address')}{field('description', 'Description')}{field('acreage', 'Acreage')}
@@ -144,6 +145,7 @@ export function PropertyOverview({ state, snap, issues = [], projectsLoading, ma
         </>}
         {error && <p role="alert">{error}</p>}<button className="property-button" type="submit">{busy ? 'Saving…' : editor === 'areas' ? 'Save key areas' : 'Save property'}</button></fieldset>
       </form>
+      {editor === 'property' && charter && <section className="property-charter"><h3>Your charter</h3><p className="property-muted">How you decide what comes first on the property.</p>{charter(() => setDraft(null))}</section>}
     </Drawer>}
   </>;
 }

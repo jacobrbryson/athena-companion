@@ -6,6 +6,7 @@
 type Any = Record<string, any>;
 const CLOSED = new Set(['done', 'dropped']);
 const now = () => new Date().toISOString();
+const iso = (msAgo: number) => new Date(Date.now() - msAgo).toISOString();
 let seq = 0;
 let property: Any | null = null;
 const uid = (p: string) => `${p}-${Date.now().toString(36)}-${seq++}`;
@@ -146,6 +147,15 @@ function cycles(from: string, to: string, relation: string) {
 
 /** Returns the mock answer for /api/v1/projects…, or undefined if the path is not ours. */
 export function mockProjectsRoute(method: string, p: string, query: URLSearchParams, body: Any): Any | undefined {
+  // Linked, one thermostat online and one offline — the case the panel exists for.
+  if (p === '/api/v1/projects/property/thermostats') return { status: 'ready', stale: false, devices: [
+    { name: 'enterprises/mock/devices/up', displayName: null, room: 'Upstairs', type: 'thermostat', connectivity: 'ONLINE', offlineSince: null, onlineSince: iso(86_400_000),
+      readings: { temperatureC: 21.1, humidityPercent: 41, mode: 'HEAT', heatC: 20.5, hvac: 'HEATING', scale: 'FAHRENHEIT' } },
+    { name: 'enterprises/mock/devices/den', displayName: 'Den Thermostat', room: 'Den', type: 'thermostat', connectivity: 'OFFLINE', notReporting: true, offlineSince: iso(40 * 60_000), onlineSince: null,
+      readings: { mode: 'COOL', coolC: 25, eco: 'OFF', hvac: 'OFF', scale: 'FAHRENHEIT', google: 'ONLINE' } },
+    { name: 'enterprises/mock/devices/down', displayName: null, room: 'Downstairs', type: 'thermostat', connectivity: 'OFFLINE', offlineSince: iso(2 * 3_600_000), onlineSince: null,
+      readings: { temperatureC: 19.4, humidityPercent: 45, mode: 'HEATCOOL', heatC: 19, coolC: 24.5, scale: 'FAHRENHEIT' } },
+  ] };
   if (p === '/api/v1/projects/property/weather') return { status: property?.address ? 'ready' : 'no_address', weather: property?.address ? { temperatureF: 62, description: 'Mostly sunny', highF: 68, lowF: 49, checkedAt: now(), periodStart: now() } : null };
   if (p === '/api/v1/projects/property') {
     if (method === 'PUT') property = { ...body, uuid: property?.uuid || uid('property') };

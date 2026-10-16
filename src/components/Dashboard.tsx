@@ -38,6 +38,7 @@ import { useProperty, PropertyOverview, PropertyWeather, PropertyNavigation, pro
 import { usePropertyIssues, ReportIssueDrawer, IssueDetailsDrawer, ActiveIssueBanner, IssueList, troubleshootPrompt, findProPrompt } from './PropertyIssues';
 import type { PropertyIssue } from '../api/propertyIssues';
 import { useVehicles, VehicleList, VehicleDrawer, VehicleDetailsDrawer, vehiclePrompt } from './PropertyVehicles';
+import { useThermostats, ThermostatList } from './PropertyThermostats';
 
 /** Enough for a household, so nobody sorted late in the alphabet is cut off the card. */
 const FAMILY_CARD_ROWS = 7;
@@ -183,8 +184,8 @@ export function Stat({ label, value, note, tone, icon }: { label: string; value:
   const reading = <><span>{label}</span><strong className={icon && typeof value === 'string' && value.length > 8 ? 'stat-small' : undefined}>{value}</strong></>;
   return <div className={`stat-tile${tone ? ` stat-${tone}` : ''}${icon ? ' stat-with-icon' : ''}`} data-icon={icon}>{icon ? <div className="stat-main"><div className="stat-icon"><DashboardIcon name={icon} bare /></div><div className="stat-reading">{reading}</div></div> : reading}{note && <small>{note}</small>}</div>;
 }
-export function Panel({ title, note, children, wide, id }: { title: string; note?: ReactNode; children: ReactNode; wide?: boolean; id?: string }) {
-  return <section id={id} className={`section-panel${wide ? ' section-panel-wide' : ''}`}><header><h2>{title}</h2>{note && <span>{note}</span>}</header>{children}</section>;
+export function Panel({ title, note, children, wide, id, scroll }: { title: string; note?: ReactNode; children: ReactNode; wide?: boolean; id?: string; scroll?: boolean }) {
+  return <section id={id} className={`section-panel${wide ? ' section-panel-wide' : ''}`}><header><h2>{title}</h2>{note && <span>{note}</span>}</header>{scroll ? <div className="section-panel-body">{children}</div> : children}</section>;
 }
 /**
  * A source that cannot be read is the whole answer for its panel, so it is
@@ -717,6 +718,8 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
     const id = typeof window === 'undefined' ? '' : window.location.hash.slice(1);
     return (PROPERTY_TAB_IDS as readonly string[]).includes(id) ? id as PropertyTab : 'property-overview';
   });
+  // Only while the Overview is on screen: a page load may cost a Google read.
+  const thermostats = useThermostats(section === 'Property' && !compact && propertyTab === 'property-utilities');
   const [drawer, setDrawer] = useState<ProjectsDrawer>(null);
   const openProject = (uuid: string) => setDrawer({ kind: 'project', uuid });
   const newProject = (area?: Area) => setDrawer({ kind: 'project', uuid: null, area: area ?? 'home' });
@@ -1485,10 +1488,14 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
       <PropertyNavigation active={propertyTab} onChange={setPropertyTab} />
       <div className="property-tab-content" role="tabpanel" id="property-tab-panel" aria-labelledby={`tab-${propertyTab}`} tabIndex={0}>
       {(propertyTab === 'property-overview' || propertyTab === 'property-issues') && <ActiveIssueBanner issues={issueList} onOpen={uuid => setIssueDrawer({ kind: 'view', uuid })} onTroubleshoot={troubleshoot} onFindPro={findPro} onShowAll={() => setPropertyTab('property-issues')} />}
-      {(propertyTab === 'property-overview' || propertyTab === 'property-map') && <PropertyOverview state={property} snap={proj.snap} issues={issueList} projectsLoading={proj.loading || !!proj.error} mapOnly={propertyTab === 'property-map'} />}
-      {propertyTab === 'property-overview' && <Panel title="Issues" note="open, most serious first" id="property-issues-summary">
+      {(propertyTab === 'property-overview' || propertyTab === 'property-map') && <PropertyOverview state={property} snap={proj.snap} issues={issueList} projectsLoading={proj.loading || !!proj.error} mapOnly={propertyTab === 'property-map'}
+        charter={close => <CharterView state={proj} area="home" onEdit={() => { close(); setDrawer({ kind: 'charter', area: 'home' }); }} />} />}
+      {propertyTab === 'property-overview' && <Panel title="Issues" note="open, most serious first" id="property-issues-summary" scroll>
         <IssueList state={propertyIssues} limit={4} onOpen={uuid => setIssueDrawer({ kind: 'view', uuid })} onReport={() => setIssueDrawer({ kind: 'report' })} />
         {issueList.length > 0 && <NavigationLink href="#property-issues" onNavigate={() => setPropertyTab('property-issues')}>See all issues ({issueList.length})</NavigationLink>}
+      </Panel>}
+      {propertyTab === 'property-utilities' && <Panel title="Thermostats" note="Google Nest" id="property-thermostats" wide>
+        <ThermostatList state={thermostats} onConnect={() => void reconnect('nest')} connecting={reconnecting === 'nest'} />
       </Panel>}
       {propertyTab === 'property-issues' && <Panel title="Issues" note="everything reported, open first" wide>
         <IssueList state={propertyIssues} onOpen={uuid => setIssueDrawer({ kind: 'view', uuid })} onReport={() => setIssueDrawer({ kind: 'report' })} />
@@ -1505,10 +1512,10 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
         </div>
       </Panel>}
       {propertyTab === 'property-projects' && <Panel title="Projects" note="all property projects" wide><ProjectBoard state={proj} onOpen={openProject} onNew={newProject} area="home" /></Panel>}
-      {propertyTab === 'property-overview' && <Panel title="Recent activity" note="project updates and issues" id="property-activity">
+      {propertyTab === 'property-overview' && <Panel title="Recent activity" note="project updates and issues" id="property-activity" scroll>
         <div className="property-activity">{activity.map(a => <button key={a.key} onClick={a.open}><span>{a.label}</span><time>{new Date(a.at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</time></button>)}{!activity.length && <p>No property activity yet.</p>}</div>
       </Panel>}
-      {(propertyTab === 'property-overview' || propertyTab === 'property-season') && <Panel title="Seasonal focus" note={new Date().toLocaleDateString(undefined, { month: 'long' })} id="property-season" wide={propertyTab === 'property-season'}>
+      {(propertyTab === 'property-overview' || propertyTab === 'property-season') && <Panel title="Seasonal focus" note={new Date().toLocaleDateString(undefined, { month: 'long' })} id="property-season" wide={propertyTab === 'property-season'} scroll>
         <ProjectList snap={proj.snap} projects={open.filter(p => p.seasonMonths?.includes(new Date().getMonth() + 1))} onOpen={openProject} />
         {!open.some(p => p.seasonMonths?.includes(new Date().getMonth() + 1)) && <p>No open projects scheduled for this month. Set seasonal months in a project to include it here.</p>}
       </Panel>}
@@ -1530,9 +1537,6 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
       </Panel>}
       {propertyTab === 'property-concerns' && <Panel title="Concerns" note="the problems your projects answer" wide id="property-concerns">
         <ConcernList state={proj} area="home" onOpen={uuid => setDrawer({ kind: 'concern', uuid, area: 'home' })} onNew={() => setDrawer({ kind: 'concern', uuid: null, area: 'home' })} />
-      </Panel>}
-      {(propertyTab === 'property-overview' || propertyTab === 'property-concerns') && <Panel title="Your charter" note="how you decide" wide>
-        <CharterView state={proj} area="home" onEdit={() => setDrawer({ kind: 'charter', area: 'home' })} />
       </Panel>}
       </div>
       {drawers}
