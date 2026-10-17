@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import type { CalendarEvent, Source, JiraIssue, RecoveryDay, WeighIn, DashboardSummary, GcpBilling, TimeSaved, TriageEmail, NearbyIncident, WeatherAlert, WorkplacesOverview } from '../api/dashboard';
 import { dashboardApi } from '../api/dashboard';
@@ -43,7 +43,8 @@ import type { PropertyIssue } from '../api/propertyIssues';
 import { useVehicles, VehicleList, VehicleDrawer, VehicleDetailsDrawer, vehiclePrompt } from './PropertyVehicles';
 import { useThermostats, ThermostatList } from './PropertyThermostats';
 import { SystemOverview, SystemTabs, SYSTEM_TAB_IDS, type SystemTab, type SystemTile } from './SystemPage';
-import { HomeHero, HomeSection, HomeStat, HomeTabs, Spark, useHomeExtras, type HeroNode, type Tone } from './DashboardHome';
+import { HomeHero, HomeChanges, HomeSection, HomeStat, HomeTabs, Spark, useHomeExtras, type HeroNode, type Tone } from './DashboardHome';
+import { freshness, homeUpdates, recoveryChange } from './livingHome';
 import { AREA_LABEL, STATE_LABEL } from '../api/projects';
 
 /** Enough for a household, so nobody sorted late in the alphabet is cut off the card. */
@@ -879,7 +880,7 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
   // Half a pound either way is water and breakfast, not a direction.
   const weightTrend = trendOf(lastMonth, w => lbOf(w.weight_kg), .5);
   const fatTrend = trendOf(lastMonth, w => w.body_fat_percent, .3);
-  const hour = new Date().getHours();
+  const hour = new Date(now).getHours();
   const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
   const ready = (source?: Source<unknown>) => source?.status === 'ready';
   const go = (target: DashboardSection) => () => onNavigate?.(target);
@@ -890,7 +891,7 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
   // The same test WorkBanner draws itself on.
   const working = !!workStatus(events, summary?.calendar.data?.workingLocations, now, timeZone);
   // What on the calendar mentions where they live: soccer practice, the games, the 5K.
-  const today = zonedDay(new Date(), timeZone);
+  const today = zonedDay(new Date(now), timeZone);
   const todayEvents = events.filter(e => eventDay(e, timeZone) === today);
   const nextEvent = events.find(e => !e.allDay && new Date(e.start).getTime() > Date.now()) || todayEvents[0];
   const chores = summary?.familyChores.data?.chores || [];
@@ -1686,6 +1687,10 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
    * down shows its own status and the button that fixes it, never a guess.
    */
   function homeBriefing() {
+    const updates = homeUpdates(summary, home.dreams.data, now);
+    const recoveryDelta = ready(summary?.recovery) ? recoveryChange(summary?.recovery.data ?? []) : null;
+    const checked = (key: keyof DashboardSummary) => ready(summary?.[key]) ? `Checked ${freshness(summary?.[key]?.checkedAt, now)}` : undefined;
+    const calendarLead = ready(summary?.calendar) ? lead : null;
     const openIssues = propertyIssues.issues.filter(i => i.status === 'open');
     const dreams = [...(home.dreams.data || [])].sort((a, b) => b.date.localeCompare(a.date));
     const monthAgo = zonedDay(new Date(Date.now() - 30 * 86400000), timeZone);
@@ -1706,19 +1711,15 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
         status: ready(summary?.jira) ? `${issues.length} open` : summary ? statusText[summary.jira.status] : loadingWord },
       { id: 'property', label: 'Property', icon: 'Home', onOpen: go('Property'),
         tone: openIssues.some(i => i.severity === 'high' || i.severity === 'emergency') ? 'alert' : openIssues.length || homeConcerns.length ? 'warn' : 'good',
-        status: propertyIssues.loading ? loadingWord : openIssues.length ? `${openIssues.length} issue${openIssues.length === 1 ? '' : 's'}` : homeConcerns.length ? `${homeConcerns.length} concern${homeConcerns.length === 1 ? '' : 's'}` : 'All quiet' },
+        status: propertyIssues.loading ? loadingWord : propertyIssues.error || proj.error ? 'Unavailable' : openIssues.length ? `${openIssues.length} issue${openIssues.length === 1 ? '' : 's'}` : homeConcerns.length ? `${homeConcerns.length} concern${homeConcerns.length === 1 ? '' : 's'}` : 'No open issues' },
       { id: 'dreams', label: 'Dreams', icon: 'Dreams', onOpen: go('Dreams'), tone: dreamt.length ? 'good' : 'idle',
-        status: home.dreams.loading ? loadingWord : `${dreamt.length} night${dreamt.length === 1 ? '' : 's'}` },
+        status: home.dreams.loading ? loadingWord : !home.dreams.data ? 'Unavailable' : `${dreamt.length} night${dreamt.length === 1 ? '' : 's'}` },
       { id: 'community', label: 'Community', icon: 'Community', onOpen: go('Community'),
         tone: nearbyWeather.length ? 'alert' : nearbyCalls.length ? 'warn' : 'good',
         status: nearbyWeather.length ? nearbyWeather[0].event : nearbyCalls.length ? `${nearbyCalls.length} call${nearbyCalls.length === 1 ? '' : 's'} nearby`
           : communityCal.length ? `${communityCal.length} coming up` : data.nearby.loading ? loadingWord : 'Quiet' },
     ];
-    const asks = nearbyWeather.length + sickFamily.length + openIssues.length + pending.length;
-    const partOfDay = hour < 12 ? 'morning' : hour < 18 ? 'afternoon' : 'evening';
-    const blurb = asks ? `${asks} thing${asks === 1 ? '' : 's'} could use you. Here’s what matters and what’s next.` : `A calm ${partOfDay}. Here’s what matters and what’s next.`;
-    // Her own line, only when she wrote it — the default is a template, not her.
-    const quote = data.rightNow.data?.source === 'athena' ? data.rightNow.data.headline : null;
+    const blurb = 'Here’s what matters and what’s next.';
 
     // --- Stat strip -------------------------------------------------------
     const program = home.plan.data?.program;
@@ -1727,7 +1728,7 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
     const restDay = !session || session.kind === 'rest';
     const sky = home.weather.data?.weather;
     const temps = (sky?.hours || []).map(h => h.temperatureF).filter((t): t is number => t !== null);
-    const triage = summary?.emailTriage.data;
+
     const inProgress = issues.filter(i => i.statusCategory === 'indeterminate').length;
     const dayWord = (event: CalendarEvent) => {
       const day = eventDay(event, timeZone);
@@ -1735,50 +1736,70 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
       return day === today ? 'Today' : day === tomorrow ? 'Tomorrow' : dateLabel(`${day}T12:00:00Z`, { timeZone: 'UTC', weekday: 'short' });
     };
     const statStrip = <div className="dh-stats">
+      {!working && <RightNowCard data={data.rightNow.data} loading={data.rightNow.loading} error={data.rightNow.error} onAsk={onAsk} onManage={() => setPlansOpen(true)} />}
       <HomeStat icon="Health" label="Recovery" onClick={go('Health')} tone={whoopDown ? 'idle' : readinessTone}
         value={recovery?.recovery_score != null && !whoopDown ? `${recovery.recovery_score}%` : '—'}
         chip={readiness && !whoopDown ? <span className={`readiness readiness-${readiness.level}`}>{readiness.label}</span> : undefined}
-        note={whoopDown ? 'Connect WHOOP' : readiness?.headline || (ready(summary?.recovery) ? 'No scored result' : summary ? statusText[summary.recovery.status] : 'Loading…')} />
+        note={!ready(summary?.recovery) ? (summary ? statusText[summary.recovery.status] : 'Loading…') : recoveryDelta ? `${recoveryDelta.delta > 0 ? '+' : ''}${recoveryDelta.delta} points vs ${recoveryDelta.previous.date}` : readiness?.headline || 'No scored result'}
+        freshness={ready(summary?.recovery) && recovery ? `Reading ${recovery.date}` : undefined}
+        spark={ready(summary?.recovery) && <Spark tone="green" values={week(scoredDays, r => r.recovery_score).map(d => d.value)} label="Recovery over the last seven calendar days" />} />
       <HomeStat icon="Gym" label="Gym" onClick={go('Health')} tone={session?.status === 'done' ? 'good' : 'idle'}
-        value={home.plan.loading ? '—' : !activeProgram ? 'No plan' : restDay ? 'Rest day' : session!.title}
-        note={home.plan.loading ? 'Loading…' : !activeProgram ? 'Set one on Health' : restDay ? activeProgram.name
+        value={home.plan.loading ? '—' : !home.plan.data ? 'Unavailable' : !activeProgram ? 'No plan' : restDay ? 'Rest day' : session!.title}
+        note={home.plan.loading ? 'Loading…' : !home.plan.data ? 'Training plan couldn’t load' : !activeProgram ? 'Set one on Health' : restDay ? activeProgram.name
           : session!.status === 'done' ? 'Done' : session!.status === 'skipped' ? 'Skipped' : session!.focus || 'Today'} />
       <HomeStat icon="Calendar" label={lead ? `Next event · ${lead.ongoing ? 'on now' : dayWord(lead.event)}` : 'Next event'} onClick={go('Calendar')} tone={lead?.ongoing ? 'warn' : 'idle'}
         value={lead ? eventTime(lead.event, timeZone) : ready(summary?.calendar) ? 'Clear' : '—'}
-        note={lead ? lead.event.title : ready(summary?.calendar) ? 'Nothing timed coming up' : summary ? statusText[summary.calendar.status] : 'Loading…'} />
-      <HomeStat icon="Mail" label="Mail" onClick={go('Mail')} tone={needReply ? 'warn' : 'idle'}
-        value={ready(summary?.emailTriage) && triage ? triage.newCount : '—'}
-        note={ready(summary?.emailTriage) && triage ? `to review · ${triage.pendingCount ? `${triage.pendingCount} sorting` : needReply ? `${needReply} need you` : 'all sorted'}` : summary ? statusText[summary.emailTriage.status] : 'Loading…'}
-        spark={triage && <Spark tone="cyan" values={[triage.receiptCount, triage.travelCount, triage.schoolCount, triage.otherCount]} label={`Receipts ${triage.receiptCount}, travel ${triage.travelCount}, school ${triage.schoolCount}, other ${triage.otherCount}`} />} />
+        note={lead ? `${lead.event.title} · ${lead.ongoing ? 'on now' : `in ${untilLabel(lead.ms)}`}` : ready(summary?.calendar) ? 'Nothing timed coming up' : summary ? statusText[summary.calendar.status] : 'Loading…'} freshness={checked('calendar')} />
       <HomeStat icon="Tasks" label="Open tasks" onClick={go('Work')} tone={ready(summary?.jira) && issues.length ? 'warn' : 'idle'}
-        value={ready(summary?.jira) ? issues.length : '—'}
-        note={ready(summary?.jira) ? (inProgress ? `Jira · ${inProgress} in progress` : 'Jira issues') : summary ? statusText[summary.jira.status] : 'Loading…'} />
+        value={ready(summary?.jira) ? `${issues.length}${summary?.jira.data?.capped || summary?.jira.data?.partial ? '+' : ''}` : '—'}
+        note={ready(summary?.jira) ? (inProgress ? `Jira · ${inProgress} in progress` : 'Jira issues') : summary ? statusText[summary.jira.status] : 'Loading…'} freshness={checked('jira')} />
       <HomeStat icon="Weather" label={sky?.town || 'Weather'} onClick={go('Community')}
         value={sky?.now.temperatureF != null ? `${Math.round(sky.now.temperatureF)}°` : '—'}
         note={sky ? `${sky.now.shortForecast || ''}${temps.length ? ` · H ${Math.round(Math.max(...temps))}° L ${Math.round(Math.min(...temps))}°` : ''}`
-          : home.weather.loading ? 'Loading…' : home.weather.data?.status === 'no_place' ? 'Add a home place' : 'Unavailable'} />
+          : home.weather.loading ? 'Loading…' : home.weather.data?.status === 'no_place' ? 'Add a home place' : 'Unavailable'} freshness={sky ? `Forecast checked ${freshness(sky.checkedAt, now)}` : undefined} />
     </div>;
 
     // --- Today's schedule ---------------------------------------------------
     const CAL_TONES = ['#f5a524', '#2fd4a7', '#a77bff', '#39c2ff', '#ff7a90'];
     const calTone = (event: CalendarEvent) => CAL_TONES[[...(event.calendar || 'primary')].reduce((n, c) => n + c.charCodeAt(0), 0) % CAL_TONES.length];
-    const upcoming = events.filter(e => eventDay(e, timeZone) >= today && (e.allDay || new Date(e.end).getTime() > now))
+    const upcoming = events.filter(e => eventDay(e, timeZone) >= today)
       .sort((a, b) => eventDay(a, timeZone).localeCompare(eventDay(b, timeZone)) || Number(b.allDay) - Number(a.allDay) || a.start.localeCompare(b.start));
     const scheduleDays = [...new Set(upcoming.map(e => eventDay(e, timeZone)))].slice(0, 3);
-    let budget = 9;
-    const schedule = <HomeSection id="schedule" icon="Calendar" title="Today’s schedule" action="View calendar" onAction={go('Calendar')}>
+    let budget = 7;
+    const schedule = <HomeSection id="schedule" icon="Calendar" title="Your day" action="View calendar" onAction={go('Calendar')}>
+      {ready(summary?.calendar) && <p className="dh-section-caption">Google Calendar · {checked('calendar')}</p>}
       {!ready(summary?.calendar) ? <SourceNote source={summary?.calendar} name="Google Calendar" fix={fixFor('calendar')} />
         : !scheduleDays.length ? <p className="dashboard-empty">Nothing on the calendar for the next few days.</p>
           : scheduleDays.map(day => {
-            const list = upcoming.filter(e => eventDay(e, timeZone) === day).slice(0, Math.max(0, budget));
+            const dayEvents = upcoming.filter(e => eventDay(e, timeZone) === day);
+            const allDay = dayEvents.filter(e => e.allDay);
+            const timed = dayEvents.filter(e => !e.allDay);
+            const past = timed.filter(e => Date.parse(e.end) <= now);
+            const remaining = timed.filter(e => !(Date.parse(e.end) <= now));
+            const list = [...past.slice(-2), ...remaining].slice(0, Math.max(0, budget));
             budget -= list.length;
-            if (!list.length) return null;
+            if (!list.length && !allDay.length) return null;
+            const nowIndex = list.findIndex(e => !(Date.parse(e.end) <= now));
+            const marker = <li className="dh-now"><time>{new Date(now).toLocaleTimeString(undefined, { timeZone, hour: 'numeric', minute: '2-digit' })}</time><i /><span>Now</span></li>;
             const d = new Date(`${day}T12:00:00Z`);
             return <div className="dh-day" key={day}>
               <div className="dh-day-label"><small>{d.toLocaleDateString(undefined, { timeZone: 'UTC', weekday: 'short' }).toUpperCase()}</small><strong>{d.toLocaleDateString(undefined, { timeZone: 'UTC', month: 'short', day: 'numeric' }).toUpperCase()}</strong></div>
-              <ul>{list.map((e, i) => <li key={`${e.id}-${i}`}>
-                <time>{eventTime(e, timeZone)}</time><i style={{ background: calTone(e) }} /><span title={e.location || undefined}>{e.title}</span>
-              </li>)}</ul>
+              <div className="dh-day-events">
+                {!!allDay.length && <details className="dh-allday"><summary>All day · {allDay.length === 1 ? allDay[0].title : `${allDay.length} events`}</summary>
+                  {allDay.map((e, i) => <button key={`${e.id}-${i}`} type="button" onClick={go('Calendar')}>{e.title}</button>)}</details>}
+                <ul>{list.map((e, i) => <Fragment key={`${e.id}-${i}`}>
+                  {day === today && i === nowIndex && marker}
+                  <li className={Date.parse(e.end) <= now ? 'dh-event-past' : e === calendarLead?.event ? 'dh-event-next' : undefined}>
+                    <time>{eventTime(e, timeZone)}</time><i style={{ background: calTone(e) }} />
+                    <button type="button" className="dh-event" onClick={go('Calendar')}><strong>{e.title}</strong>
+                      {e.location && <small>{e.location}</small>}
+                      {e === calendarLead?.event && <em>{calendarLead.ongoing ? 'On your calendar now' : `In ${untilLabel(calendarLead.ms)}`}</em>}
+                      {Date.parse(e.end) <= now && <small>Ended on calendar</small>}
+                    </button>
+                  </li>
+                </Fragment>)}{day === today && nowIndex === -1 && marker}</ul>
+                {timed.length > list.length && <button type="button" className="dh-more" onClick={go('Calendar')}>View all {timed.length} timed events →</button>}
+              </div>
             </div>;
           })}
     </HomeSection>;
@@ -1794,10 +1815,9 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
       {!ready(summary?.jira) ? <SourceNote source={summary?.jira} name="Jira" fix={fixFor('jira')} />
         : !issues.length ? <p className="dashboard-empty">No assigned open issues.</p>
           : <>
-            <ul className="dh-issues">{siteIssues.slice(0, 5).map(i => <li key={i.key}><ExternalLink url={i.url}>
+            <ul className="dh-issues">{siteIssues.slice(0, 3).map(i => <li key={i.key}><ExternalLink url={i.url}>
               <b className="dh-issue-badge">{i.project.charAt(0)}</b><code>{i.key}</code><span>{i.title}</span><em className={`dh-pill dh-pill-${pill(i)}`}>{i.status}</em>
             </ExternalLink></li>)}</ul>
-            <button type="button" className="dh-more" onClick={go('Work')}>View all {issues.length} issue{issues.length === 1 ? '' : 's'} <span>→</span></button>
           </>}
     </HomeSection>;
 
@@ -1810,13 +1830,13 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
       {proj.error && !proj.snap.projects.length ? <EmptyCta text="Projects couldn’t load." action="Retry" onClick={proj.reload} />
         : proj.loading && !proj.snap.projects.length ? <p className="dashboard-empty">Loading…</p>
           : !shownProjects.length ? <EmptyCta text="No projects yet." action="Start one" onClick={() => newProject()} />
-            : <ul className="dh-projects">{shownProjects.slice(0, 5).map(p => {
+            : <ul className="dh-projects">{shownProjects.slice(0, 3).map(p => {
               const { done, total } = p.progress.steps;
               return <li key={p.uuid}><button type="button" onClick={() => openProject(p.uuid)}>
                 <i className={`dh-area dh-area-${p.primaryArea}`} />
                 <span><strong title={p.title}>{p.title}</strong><small>{AREA_LABEL[p.primaryArea]} · {STATE_LABEL[p.effectiveStatus]}</small></span>
-                <span className="dh-progress" aria-label={total ? `${done} of ${total} steps done` : 'No steps yet'}><span style={{ width: `${total ? (done / total) * 100 : 0}%` }} /></span>
-                <em>{total ? `${done}/${total}` : '—'}</em>
+                {total ? <><span className="dh-progress" aria-label={`${done} of ${total} steps done`}><span style={{ width: `${(done / total) * 100}%` }} /></span><em>{done}/{total}</em></>
+                  : <small className="dh-no-steps">No steps set</small>}
               </button></li>;
             })}</ul>}
     </HomeSection>;
@@ -1882,12 +1902,13 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
     </HomeSection>;
 
     return <>
-      <HomeHero greeting={greeting} firstName={firstName} blurb={blurb} nodes={nodes} quote={quote} />
+      <HomeHero greeting={greeting} firstName={firstName} blurb={blurb} nodes={nodes} />
       {data.summary.error && <p className="dashboard-notice" role="status">Connected data is unavailable. {data.summary.error}</p>}
       <EmergencyBanner onAsk={onAsk} onPlaces={onPlaces} inline />
+      <HomeChanges updates={updates} now={now} onOpen={area => onNavigate?.(area)} compact />
       {statStrip}
       <WorkBanner events={events} workingLocations={summary?.calendar.data?.workingLocations} timeZone={timeZone} now={now} jira={summary?.jira.status === 'ready' ? summary.jira.data : null} onOpen={go('Calendar')} onOpenWork={go('Work')} />
-      {!working && <RightNowCard data={data.rightNow.data} loading={data.rightNow.loading} error={data.rightNow.error} onAsk={onAsk} onManage={() => setPlansOpen(true)} headlineShown={!!quote} />}
+
       <div className="dh-row dh-row-three">{schedule}{work}{projects}</div>
       {/* Health, then Family: the owner's order for the areas of a life. */}
       <div className="dh-row dh-row-four">{health}

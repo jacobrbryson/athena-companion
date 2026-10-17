@@ -1,4 +1,8 @@
 import type { RightNow, Suggestion } from '../api/dashboard';
+import { useState } from 'react';
+import { createPortal } from 'react-dom';
+import { Drawer } from './Drawer';
+import { HomeStat } from './DashboardHome';
 
 /**
  * The first thing on the dashboard, and the only thing on it that answers a
@@ -105,7 +109,38 @@ function timely(option: Suggestion): boolean {
   }
 }
 
-export function RightNowCard({ data, loading, error, onAsk, onManage, headlineShown = false }: {
+type RightNowProps = {
+  data: RightNow | null;
+  loading: boolean;
+  error: string | null;
+  onAsk: (prompt: string) => void;
+  onManage: () => void;
+  headlineShown?: boolean;
+};
+
+export function RightNowCard(props: RightNowProps) {
+  const [open, setOpen] = useState(false);
+  const { data, loading, error } = props;
+  if (loading || error || !data) return null;
+  const imminent = data.window.nextEvent && data.window.nextEvent.inMinutes != null
+    && data.window.nextEvent.inMinutes <= IMMINENT_MINUTES ? data.window.nextEvent : null;
+  const lead = data.lead && timely(data.lead) ? data.lead : null;
+  if (!data.window.busyWith && !imminent && !lead) return null;
+  const free = hours(data.window.freeMinutes);
+  const value = data.window.busyWith ? 'In progress' : imminent
+    ? `In ${Math.max(0, imminent.inMinutes ?? 0)} min` : free ? `${free} free` : 'Suggestion';
+  const note = data.window.busyWith || imminent?.title || lead?.title;
+  return <>
+    <HomeStat icon="Calendar" label="Right Now" value={value} note={note} chip={<span aria-hidden="true"> ↗</span>}
+      tone="good" onClick={() => setOpen(true)} />
+    {open && createPortal(<Drawer eyebrow="Athena" title="Right Now" onClose={() => setOpen(false)}>
+      <RightNowDetails {...props} onAsk={prompt => { setOpen(false); props.onAsk(prompt); }}
+        onManage={() => { setOpen(false); props.onManage(); }} />
+    </Drawer>, document.body)}
+  </>;
+}
+
+function RightNowDetails({ data, loading, error, onAsk, onManage, headlineShown = false }: {
   data: RightNow | null;
   /** The briefing's hero already quotes her headline; lead with the suggestion instead. */
   headlineShown?: boolean;
