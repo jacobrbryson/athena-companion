@@ -1290,7 +1290,7 @@ async function route(method: string, path: string, body?: any): Promise<any> {
   }
   if (p.startsWith('/api/v1/dashboard/workplaces')) {
     type W = { uuid: string; name: string; role: string | null; domain: string | null; primary: boolean; notes: string | null };
-    type L = { uuid: string; workplace: string; credential?: string; email?: string };
+    type L = { uuid: string; workplace: string; credential?: string; email?: string; site?: string; project?: string };
     const conns = [
       { credentialUuid: 'c-jira', provider: 'jira', label: 'Jira Cloud', account: 'vivacitytech.atlassian.net · rbryson@vivacitytech.com', status: 'active' },
       { credentialUuid: 'c-gmail', provider: 'gmail', label: 'Gmail', account: 'sam@example.com', status: 'needs_reauth' },
@@ -1311,6 +1311,8 @@ async function route(method: string, path: string, body?: any): Promise<any> {
           ...w,
           emails: links.filter(l => l.workplace === w.uuid && l.email).map(l => ({ uuid: l.uuid, email: l.email })),
           connections: links.filter(l => l.workplace === w.uuid && l.credential).map(l => ({ uuid: l.uuid, ...conns.find(c => c.credentialUuid === l.credential)! })),
+          sites: links.filter(l => l.workplace === w.uuid && l.site).map(l => ({ uuid: l.uuid, siteUuid: l.site! })),
+          projects: links.filter(l => l.workplace === w.uuid && l.project).map(l => ({ uuid: l.uuid, projectUuid: l.project! })),
         })),
         available: conns.filter(c => !linked.has(c.credentialUuid)).map(c => ({ ...c, suggestedWorkplace: c.account.includes('@vivacitytech.com') ? 'w1' : null })),
       };
@@ -1318,8 +1320,8 @@ async function route(method: string, path: string, body?: any): Promise<any> {
     if (method === 'GET') return keep();
     if (seg[6] === 'links') {
       if (method === 'DELETE') { links = links.filter(l => l.uuid !== decodeURIComponent(seg[7] || '')); return keep(); }
-      const key = body.credential ? 'credential' : 'email';
-      const value = key === 'email' ? String(body.email).trim().toLowerCase() : body.credential;
+      const key = body.site ? 'site' : body.project ? 'project' : body.credential ? 'credential' : 'email';
+      const value = key === 'email' ? String(body.email).trim().toLowerCase() : body[key];
       const owner = links.find(l => l[key] === value);
       if (owner && owner.workplace !== uuid) throw Object.assign(new Error(`That already belongs to ${list.find(w => w.uuid === owner.workplace)?.name}. Unlink it there first.`), { status: 400 });
       if (!owner) links.push({ uuid: `l${Date.now()}`, workplace: uuid, [key]: value });
@@ -1333,6 +1335,14 @@ async function route(method: string, path: string, body?: any): Promise<any> {
     return { workplace: next, ...keep() };
   }
   if (p === '/api/v1/dashboard/websites' && method === 'GET') return { sites: MOCK_SITES };
+  if (p === '/api/v1/dashboard/websites/check') {
+    const ms = (base: number) => Array.from({ length: 12 }, (_, i) => ({ ok: true, ms: base + Math.round(Math.sin(i) * 40) + 40 }));
+    return { sites: MOCK_SITES.map((s, i) => ({ ...s, uptime: { ok: true, statusCode: 200, ms: [189, 221][i] ?? 200, error: null, checkedAt: new Date(Date.now() - 5 * 60_000).toISOString(), recent: ms([150, 180][i] ?? 160) } })) };
+  }
+  if (p === '/api/v1/dashboard/work/agents') return { runs: [
+    { uuid: 'r1', kind: 'investigation', repo: 'jrbryson/athena-core-api', summary: 'Weather card shows yesterday’s high after midnight', state: null, at: new Date(Date.now() - 12 * 60_000).toISOString() },
+    { uuid: 'r2', kind: 'fix', repo: 'jrbryson/athena-companion', summary: 'Keep the map legend from wrapping on phones', state: 'open', at: new Date(Date.now() - 2 * 3600_000).toISOString() },
+  ] };
   if (p === '/api/v1/dashboard/websites/discover') {
     return {
       linked: true,
@@ -1345,6 +1355,15 @@ async function route(method: string, path: string, body?: any): Promise<any> {
   }
   if (p.startsWith('/api/v1/dashboard/websites') && p.endsWith('/refresh')) return { sites: MOCK_SITES };
   if (p === '/api/v1/dashboard/community') return mockCommunity();
+  if (p === '/api/v1/dashboard/community/weather') {
+    const start = new Date(); start.setMinutes(0, 0, 0);
+    const hours = Array.from({ length: 24 }, (_, i) => {
+      const at = new Date(start.getTime() + i * 3600000);
+      const h = at.getHours();
+      return { start: at.toISOString(), temperatureF: Math.round(56 + 12 * Math.sin(((h - 9) / 24) * Math.PI * 2)), precipitationChance: 5, windSpeed: '5 mph', shortForecast: h >= 7 && h < 19 ? (h > 15 ? 'Partly Sunny' : 'Sunny') : 'Clear', isDaytime: h >= 7 && h < 19 };
+    });
+    return { status: 'ready', place: 'Home', weather: { town: 'Troutman, NC', now: hours[0], hours, checkedAt: new Date().toISOString() } };
+  }
   if (p === '/api/v1/dashboard/community/contacts') {
     if (mockContactsOff()) return { linked: false, matches: [] };
     const q = (new URL(path, window.location.origin).searchParams.get('q') || '').trim().toLowerCase();

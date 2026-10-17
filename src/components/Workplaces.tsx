@@ -101,7 +101,7 @@ function LinkForm({ place, available, busy, onLink, onCancel }: {
  * `adding` / `onAdding` let the panel header own the Add button; without them
  * the button sits under the list.
  */
-export function Workplaces({ health = {}, adding, onAdding }: { health?: SourceHealth; adding?: boolean; onAdding?: (adding: boolean) => void }) {
+export function Workplaces({ health = {}, adding, onAdding, onChanged }: { health?: SourceHealth; adding?: boolean; onAdding?: (adding: boolean) => void; /** Every fresh list, so the Work overview above stays in step. */ onChanged?: (o: WorkplacesOverview) => void }) {
   const [places, setPlaces] = useState<Workplace[] | null>(null);
   const [available, setAvailable] = useState<WorkplacesOverview['available']>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -113,7 +113,7 @@ export function Workplaces({ health = {}, adding, onAdding }: { health?: SourceH
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
-  const apply = (o: WorkplacesOverview) => { setPlaces(o.workplaces); setAvailable(o.available); };
+  const apply = (o: WorkplacesOverview) => { setPlaces(o.workplaces); setAvailable(o.available); onChanged?.(o); };
 
   useEffect(() => {
     let live = true;

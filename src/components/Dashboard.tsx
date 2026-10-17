@@ -1,7 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import type { CalendarEvent, Source, JiraIssue, RecoveryDay, WeighIn, DashboardSummary, GcpBilling, TimeSaved, SystemHealthStatus, TriageEmail, NearbyIncident, WeatherAlert } from '../api/dashboard';
+import type { CalendarEvent, Source, JiraIssue, RecoveryDay, WeighIn, DashboardSummary, GcpBilling, TimeSaved, TriageEmail, NearbyIncident, WeatherAlert, WorkplacesOverview } from '../api/dashboard';
 import { dashboardApi } from '../api/dashboard';
+import { localDay } from '../api/healthPlan';
 import { integrationsApi, type Fact } from '../api/companion';
 import { androidCall, isAndroidCompanion } from '../native/android';
 import type { ApiError } from '../api/client';
@@ -19,9 +20,9 @@ import { WorkBanner } from './WorkBanner';
 import { untilLabel, workStatus } from './workStatus';
 import { EmailPanel, CATEGORY_LABEL } from './EmailPanel';
 import { MailBundles } from './MailBundles';
-import { DreamCard, DreamsPage } from './Dreams';
+import { DreamCard, DreamsPage, DreamImage, STATUS_LINE, nightLabel } from './Dreams';
 import { DashboardIcon } from './icons';
-import { CommunityMap, PointsOfInterest, Neighbors, LocalEvents, PlaceReminders, ContactAvatar, eventWhen, isPastEvent } from './Community';
+import { PointsOfInterest, Neighbors, LocalEvents, PlaceReminders, ContactAvatar, eventWhen, isPastEvent } from './Community';
 import { EmergencyAlertSetup } from './EmergencyAlertSetup';
 import { Websites } from './Websites';
 import { Workplaces } from './Workplaces';
@@ -30,22 +31,27 @@ import { HealthOverview } from './HealthPage';
 import { PageHeader } from './PageHeader';
 import { CalendarOverview } from './CalendarPage';
 import { FamilyOverview } from './FamilyPage';
+import { CommunityOverview } from './CommunityPage';
+import { WorkOverview } from './WorkPage';
 import { NavigationLink, DrawerButton } from './ActionControls';
 import { plannedToday } from './ProjectData';
 import { useProjects, openProjects, ProjectList, ProjectBoard, ProjectsDrawers, ConcernList, CharterView, StateChip, type ProjectsDrawer } from './Projects';
 import type { Area } from '../api/projects';
 import { useProperty, PropertyOverview, PropertyWeather, PropertyNavigation, propertyHealth, PROPERTY_TAB_IDS, type PropertyTab } from './Property';
-import { usePropertyIssues, ReportIssueDrawer, IssueDetailsDrawer, ActiveIssueBanner, IssueList, troubleshootPrompt, findProPrompt } from './PropertyIssues';
+import { usePropertyIssues, reportedWhen, ReportIssueDrawer, IssueDetailsDrawer, ActiveIssueBanner, IssueList, troubleshootPrompt, findProPrompt } from './PropertyIssues';
 import type { PropertyIssue } from '../api/propertyIssues';
 import { useVehicles, VehicleList, VehicleDrawer, VehicleDetailsDrawer, vehiclePrompt } from './PropertyVehicles';
 import { useThermostats, ThermostatList } from './PropertyThermostats';
+import { SystemOverview, SystemTabs, SYSTEM_TAB_IDS, type SystemTab, type SystemTile } from './SystemPage';
+import { HomeHero, HomeSection, HomeStat, HomeTabs, Spark, useHomeExtras, type HeroNode, type Tone } from './DashboardHome';
+import { AREA_LABEL, STATE_LABEL } from '../api/projects';
 
 /** Enough for a household, so nobody sorted late in the alphabet is cut off the card. */
 const FAMILY_CARD_ROWS = 7;
 
 /** Open a console panel; `consentFor` opens Connected apps on that provider's consent prompt. */
 export type OpenPanel = (panel: 'integrations' | 'memory' | 'actions' | 'notifications' | 'knows' | 'photo' | 'devices', options?: { consentFor?: string }) => void;
-export type DashboardSection = 'Dashboard' | 'Property' | 'Today' | 'Calendar' | 'Health' | 'Family' | 'Community' | 'Mail' | 'Work' | 'Projects' | 'News' | 'Dreams' | 'System' | 'Workouts';
+export type DashboardSection = 'Dashboard' | 'Property' | 'Today' | 'Calendar' | 'Health' | 'Family' | 'Community' | 'Mail' | 'Work' | 'Projects' | 'News' | 'Dreams' | 'System' | 'Finance' | 'Workouts';
 // Icons live in ./icons — one registry, so a drawn icon looks the same in
 // the nav, on its card and in the phone's bottom bar.
 export { DashboardIcon } from './icons';
@@ -54,7 +60,12 @@ export { DashboardIcon } from './icons';
 // Quick Actions entry, which now lives on as the bell in the
 // top bar (the Notifications card was removed by the owner, 2026-09-27).
 // Today remains an internal page for now but is not a left-navigation entry.
-export const dashboardSections: DashboardSection[] = ['Dashboard', 'Calendar', 'Health', 'Family', 'Community', 'Property', 'Mail', 'Work', 'Projects', 'News', 'Dreams', 'System'];
+// Calendar, Mail, Projects, News and Dreams moved under System as its tabs
+// (owner, 2026-10-16), beside Finance; their pages are unchanged.
+export const dashboardSections: DashboardSection[] = ['Dashboard', 'Health', 'Family', 'Community', 'Property', 'Work', 'System'];
+/** The nav entry a page lights up: a System tab lights System, a workout lights Health. */
+export const navSectionOf = (section: DashboardSection): DashboardSection =>
+  section === 'Workouts' ? 'Health' : SYSTEM_TAB_IDS.includes(section) ? 'System' : section;
 // The card set, in the one order the dashboard uses. Fixed by the owner
 // (2026-09-26): Health & Performance first, and Athena no longer re-sorts it.
 // The first row is the owner's hierarchy (2026-09-27): take care of yourself,
@@ -250,15 +261,20 @@ export interface SectionContext {
  * whole subtree each time, and the news-sources panel would lose what was
  * being typed into it.
  */
-export function SectionPage({ eyebrow, title, blurb, stats, children, ask, ctx, headerAside, hero }: {
+export function SectionPage({ eyebrow, title, blurb, stats, children, ask, ctx, headerAside, hero, tabs, backdrop }: {
   eyebrow: string; title: string; blurb: string; stats?: ReactNode; children: ReactNode; ask: string; ctx: SectionContext; headerAside?: ReactNode;
+  /** A banner the head dissolves out of (PageHeader's backdrop) — Property's house. */
+  backdrop?: string;
+  /** The tab strip of the section this page belongs to (System's), above everything else on it. */
+  tabs?: ReactNode;
   /** A page that draws its own head (Health) passes it here — built on PageHeader too — and it replaces the title, blurb and stat row. */
   hero?: ReactNode;
 }) {
   return <main className="dashboard-content dashboard-section">
     <div id={headerAside ? 'property-overview' : undefined}>
     <div className="dashboard-toolbar"><time dateTime={new Date().toISOString()}>{new Date().toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}</time><button onClick={() => ctx.onAsk('')} className="ask-athena">ϟ <span>Ask Athena…</span> ↗</button></div>
-    {hero ?? <PageHeader eyebrow={eyebrow} title={title} blurb={blurb} aside={headerAside} />}
+    {tabs && <div className="section-page-tabs">{tabs}</div>}
+    {hero ?? <PageHeader eyebrow={eyebrow} title={title} blurb={blurb} aside={headerAside} backdrop={backdrop} />}
     {ctx.error && <p className="dashboard-notice" role="status">Connected data is unavailable. {ctx.error}</p>}
     {!hero && stats && <div className="stat-row">{stats}</div>}
     </div>
@@ -270,7 +286,7 @@ export function SectionPage({ eyebrow, title, blurb, stats, children, ask, ctx, 
 }
 
 /** One provider read for the System page. Each loads on its own, so one failing never blanks the others. */
-function useSystemRead<T>(load: () => Promise<T>) {
+export function useSystemRead<T>(load: () => Promise<T>) {
   const [state, setState] = useState<{ data: T | null; loading: boolean; error: string | null }>({ data: null, loading: true, error: null });
   useEffect(() => {
     let alive = true;
@@ -309,11 +325,6 @@ const GCP_SETUP: Record<NonNullable<GcpBilling['reason']>, string> = {
   no_export: 'Cloud Billing export is not switched on yet, or has not delivered its first rows.',
 };
 
-const HEALTH_LABEL: Record<SystemHealthStatus, { word: string; tone: 'good' | 'ok' | 'low' }> = {
-  ok: { word: 'Good', tone: 'good' },
-  degraded: { word: 'Degraded', tone: 'ok' },
-  down: { word: 'Down', tone: 'low' },
-};
 
 /**
  * Several providers' figures as one amount. A provider that couldn't be read
@@ -326,7 +337,6 @@ function combined(parts: { name: string; currency?: string | null; value?: numbe
   return { value: money(read[0].currency, read.reduce((sum, p) => sum + (p.value as number), 0)), missing: parts.filter(p => !read.includes(p)).map(p => p.name) };
 }
 const without = (missing: string[]) => missing.length ? ` · without ${missing.join(', ')}` : '';
-const clock = (iso: string) => new Date(iso).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
 
 /** A new export backfills oldest-first; until it reaches this month, this month reads as nothing. */
 function exportBehind(cloud: GcpBilling | null) {
@@ -357,8 +367,12 @@ function TimeSavedPanel({ saved }: { saved: { data: TimeSaved | null; loading: b
   </Panel>;
 }
 
-function SystemPage({ ctx }: { ctx: SectionContext }) {
-  const health = useSystemRead(dashboardApi.systemHealth);
+/**
+ * The System page's Finance tab: what Athena has saved and what she costs.
+ * This was the whole System page until 2026-10-16; her health moved to the
+ * System Overview, which reads the same check.
+ */
+function FinancePage({ ctx, tabs }: { ctx: SectionContext; tabs: ReactNode }) {
   const twilio = useSystemRead(dashboardApi.systemTwilio);
   const openai = useSystemRead(dashboardApi.systemOpenAI);
   const gcp = useSystemRead(dashboardApi.systemGcp);
@@ -369,8 +383,6 @@ function SystemPage({ ctx }: { ctx: SectionContext }) {
   const ai = openai.data?.configured ? openai.data : null;
   const cloud = gcp.data?.configured ? gcp.data : null;
   const behind = exportBehind(cloud);
-  const state = health.data ? HEALTH_LABEL[health.data.status] : null;
-  const failing = health.data?.checks.filter(c => c.status !== 'ok').length ?? 0;
   const lifetime = combined([
     { name: 'Twilio', currency: billing?.balance?.currency, value: billing?.configured ? billing.costAllTime : null },
     { name: 'OpenAI', currency: ai?.currency, value: ai?.costAllTime },
@@ -380,13 +392,10 @@ function SystemPage({ ctx }: { ctx: SectionContext }) {
     { name: 'OpenAI', currency: ai?.currency, value: ai?.costThisMonth },
     { name: 'Gemini', currency: cloud?.currency, value: cloud?.llmThisMonth },
   ]);
-  return <SectionPage ctx={ctx}
-    eyebrow="ATHENA SYSTEM" title="System" blurb="A small, live view of how Athena is doing, the time she has saved you, and what the services she runs on are costing."
-    ask="What should I know about the Athena system right now?"
+  return <SectionPage ctx={ctx} tabs={tabs}
+    eyebrow="ATHENA SYSTEM" title="Finance" blurb="The time Athena has saved you, and what the services she runs on are costing."
+    ask="How much is Athena costing me, and is it worth it for the time she saves?"
     stats={<>
-      <Stat label="Athena's health" value={health.loading ? '…' : state?.word ?? 'Unknown'} tone={state?.tone ?? 'idle'}
-        note={health.loading ? 'Checking…' : health.data?.status === 'ok' ? `Last check ${clock(health.data.checkedAt)}`
-          : <a href="#system-health" onClick={e => { e.preventDefault(); document.getElementById('system-health')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}>{health.data ? `Why? ${failing} check${failing === 1 ? ' needs' : 's need'} attention` : 'Why? The health check did not answer'} ↓</a>} />
       <Stat label="Time saved" value={saved.loading ? '…' : saved.data ? duration(saved.data.minutesThisMonth) : '—'}
         note={saved.data ? `This month · ${saved.data.actionsThisMonth} approved action${saved.data.actionsThisMonth === 1 ? '' : 's'}` : saved.error || 'Approved actions only'} tone={saved.data?.minutesThisMonth ? 'good' : 'idle'} />
       <Stat label="Total spend" value={twilio.loading || openai.loading || gcp.loading ? '…' : lifetime.value}
@@ -397,11 +406,6 @@ function SystemPage({ ctx }: { ctx: SectionContext }) {
         note={!cloud ? 'Billing export not ready' : behind ? `Export catching up · data through ${behind}` : 'This month · Google Cloud, excluding Gemini'} tone={cloud && !behind ? undefined : 'idle'} />
     </>}
   >
-    <Panel id="system-health" title="Health" note={health.data ? `checked ${clock(health.data.checkedAt)}` : 'live check'} wide>
-      {health.loading ? <p className="dashboard-empty">Checking Athena…</p>
-        : !health.data ? <div className="section-unavailable"><p className="dashboard-empty">{health.error || 'The health check did not answer.'}</p><p className="source-detail">If this persists, Athena's API itself may be down, and the rest of this page will be unavailable too.</p></div>
-        : <ul className="dashboard-data-list">{health.data.checks.map(c => <li key={c.id}><strong>{HEALTH_LABEL[c.status].word} · {c.label}</strong><small>{c.detail}</small></li>)}</ul>}
-    </Panel>
     <TimeSavedPanel saved={saved} />
     <Panel title="OpenAI" note="organization costs · month to date" wide>
       {openai.loading ? <p className="dashboard-empty">Reading OpenAI costs…</p>
@@ -568,9 +572,11 @@ function TrendArrow({ trend, better, unit, decimals = 0 }: { trend: Trending | n
  * all true and all worth having, but none of them are worth a row on a card
  * this size, so they wait behind the marker beside the label.
  */
-function HeartMetric({ label, value, display, unit, goal, better, trend, decimals = 0, note }: {
+function HeartMetric({ label, value, display, unit, goal, better, trend, decimals = 0, note, spark }: {
   label: string; value?: number | null; display?: ReactNode; unit: string;
   goal?: number; better: Better; trend?: Trending | null; decimals?: number; note?: string | null;
+  /** The briefing draws the recent run of the number under it. */
+  spark?: ReactNode;
 }) {
   const has = typeof value === 'number' && Number.isFinite(value);
   const met = has && goal !== undefined && (better === 'lower' ? value! <= goal : value! >= goal);
@@ -584,6 +590,7 @@ function HeartMetric({ label, value, display, unit, goal, better, trend, decimal
     <span>{label}<Hint label={`About ${label.toLowerCase()}`} title={label.toUpperCase()} lines={[note, goalLine, trendLine]} /></span>
     <strong>{display ?? (has ? value!.toFixed(decimals) : '—')}{display === undefined && <em className={unit === '%' ? 'heart-unit-tight' : undefined}>{unit}</em>}</strong>
     <TrendArrow trend={trend} better={better} unit={unit} decimals={decimals} />
+    {spark}
   </div>;
 }
 
@@ -692,6 +699,8 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
   const summary = data.summary.data;
   const [sourcesOpen, setSourcesOpen] = useState(false);
   const [addingWorkplace, setAddingWorkplace] = useState(false);
+  // What the Workplaces panel last loaded, so the Work overview above it stays in step.
+  const [workOverview, setWorkOverview] = useState<WorkplacesOverview | null>(null);
   const [plansOpen, setPlansOpen] = useState(false);
   const [selectedEmail, setSelectedEmail] = useState<string | null>(null);
   // Bumped after propose/confirm/decline/dismiss so MailPage's own list refetches —
@@ -741,6 +750,10 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
     </Panel>;
   };
   const now = useNow(30000);
+  // The briefing's own reads and filters; nothing is fetched on the section pages.
+  const home = useHomeExtras(section === 'Dashboard' && !compact);
+  const [workSite, setWorkSite] = useState('');
+  const [projectArea, setProjectArea] = useState<Area | 'all'>('all');
   const [collapsedMap, setCollapsedMap] = useState<Record<string, boolean>>(loadCollapsed);
   const isCollapsed = (id: string) => collapsedMap[id] ?? isPhoneWidth();
   const toggleCollapsed = (id: string) => {
@@ -1144,6 +1157,79 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
     sourcesOpen, setSourcesOpen, refresh: () => void data.refresh(),
   };
 
+  /** System's tab strip, on each page that is one of its tabs. */
+  const systemTabs = (active: SystemTab) => <SystemTabs active={active} onChange={tab => onNavigate?.(tab)} />;
+
+  /**
+   * System's Overview: a tile per tab, read from the same data each tab
+   * shows. A source that can't be read leaves its tile at "—" and says why.
+   */
+  function SystemPage() {
+    const DAY = 86_400_000;
+    const calendarDays = summary?.calendar.data?.days ?? 7;
+    const calendarBars = Array.from({ length: calendarDays }, (_, i) => {
+      const day = zonedDay(new Date(Date.now() + i * DAY), timeZone);
+      const count = events.filter(e => eventDay(e, timeZone) === day).length;
+      return { key: day, value: count, title: `${dateLabel(`${day}T12:00:00`, { weekday: 'short' })}: ${count} event${count === 1 ? '' : 's'}` };
+    });
+    const triage = summary?.emailTriage.data;
+    const openList = proj.snap.projects.filter(p => !['done', 'dropped'].includes(p.status));
+    const projectCount = (states: string[]) => openList.filter(p => states.includes(p.effectiveStatus)).length;
+    const newsBars = Array.from({ length: 7 }, (_, i) => {
+      const day = localDay(new Date(Date.now() - (6 - i) * DAY));
+      const count = news.filter(n => localDay(new Date(n.firstSeen)) === day).length;
+      return { key: day, value: count, title: `${dateLabel(`${day}T12:00:00`, { weekday: 'short' })}: ${count} headline${count === 1 ? '' : 's'}` };
+    });
+    const notReady = (source?: Source<unknown>) => source ? statusText[source.status] : 'Loading…';
+    const calendarOk = ready(summary?.calendar);
+    const mailOk = ready(summary?.emailTriage) && !!triage;
+    const tiles: SystemTile[] = [
+      { id: 'Calendar', title: 'Calendar', icon: 'calendar', tone: 'blue', unit: 'events',
+        value: calendarOk ? events.length : '—',
+        sub: calendarOk ? `Next ${calendarDays} days` : notReady(summary?.calendar),
+        bars: calendarOk ? calendarBars : undefined },
+      { id: 'Mail', title: 'Mail', icon: 'mail', tone: 'red', unit: 'to review',
+        value: mailOk ? triage!.newCount : '—',
+        sub: !mailOk ? notReady(summary?.emailTriage) : triage!.pendingCount ? `${triage!.pendingCount} sorting` : 'all sorted',
+        bars: mailOk ? [
+          { key: 'receipts', value: triage!.receiptCount, title: `Receipts: ${triage!.receiptCount}` },
+          { key: 'travel', value: triage!.travelCount, title: `Travel: ${triage!.travelCount}` },
+          { key: 'school', value: triage!.schoolCount, title: `School: ${triage!.schoolCount}` },
+          { key: 'other', value: triage!.otherCount, title: `Other: ${triage!.otherCount}` },
+        ] : undefined },
+      { id: 'Projects', title: 'Projects', icon: 'list', tone: 'green', unit: 'open',
+        value: proj.loading && !proj.snap.projects.length ? '—' : openList.length,
+        sub: proj.error ? 'Couldn’t load projects' : `${projectCount(['active'])} active · ${projectCount(['blocked'])} blocked`,
+        segments: [
+          { key: 'active', value: projectCount(['active']), tone: 'green', title: `Active: ${projectCount(['active'])}` },
+          { key: 'ready', value: projectCount(['ready', 'planning', 'idea']), tone: 'blue', title: `Ready, planning or idea: ${projectCount(['ready', 'planning', 'idea'])}` },
+          { key: 'waiting', value: projectCount(['waiting']), tone: 'idle', title: `Waiting: ${projectCount(['waiting'])}` },
+          { key: 'blocked', value: projectCount(['blocked']), tone: 'amber', title: `Blocked: ${projectCount(['blocked'])}` },
+        ] },
+      { id: 'News', title: 'News', icon: 'news', tone: 'violet', unit: 'headlines',
+        value: data.news.loading && !news.length ? '—' : news.length,
+        sub: data.news.error ? 'News couldn’t load' : 'Read this week', bars: newsBars },
+    ];
+    // One entry per provider (WHOOP feeds three sources), plus the scale.
+    const providers = new Map<string, Source<unknown>[]>();
+    for (const [key, provider] of Object.entries(SOURCE_PROVIDER)) {
+      const source = summary?.[key as keyof DashboardSummary] as Source<unknown> | undefined;
+      if (source && provider) providers.set(provider, [...(providers.get(provider) || []), source]);
+    }
+    if (summary?.body) providers.set('vesync', [summary.body]);
+    const linked = [...providers.entries()].filter(([, list]) => list.some(x => x.status !== 'not_connected'));
+    const NAMES: Record<string, string> = { google_calendar: 'Google Calendar', gmail: 'Gmail', whoop: 'WHOOP', jira: 'Jira', slack: 'Slack', family_chores: 'Family Chores', vesync: 'VeSync scale' };
+    const attention = linked.filter(([, list]) => list.some(x => x.status !== 'ready' && x.status !== 'not_connected')).map(([p]) => NAMES[p] || p);
+    return <main className="dashboard-content dashboard-section">
+      <div className="dashboard-toolbar"><time dateTime={new Date().toISOString()}>{new Date().toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}</time><button onClick={() => onAsk('')} className="ask-athena">ϟ <span>Ask Athena…</span> ↗</button></div>
+      {data.summary.error && <p className="dashboard-notice" role="status">Connected data is unavailable. {data.summary.error}</p>}
+      <SystemOverview tiles={tiles} integrations={{ connected: linked.length, attention }}
+        onTab={tab => onNavigate?.(tab)} onAsk={onAsk} onPanel={onPanel} onNewTask={() => setDrawer({ kind: 'project', uuid: null, area: 'work' })} />
+      <footer className="dashboard-footer"><span><i /> YOUR SPACE. YOUR PACE.</span><span>LIVE · UPDATES ARRIVE ON THEIR OWN</span></footer>
+      {drawers}
+    </main>;
+  }
+
   function TodayPage() {
     const headlines = news.slice(0, 6);
     return <SectionPage ctx={ctx}
@@ -1181,7 +1267,7 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
 
   function CalendarPage() {
     // The concept's page (CalendarPage.tsx): the week, the chosen day, the month and the calendars.
-    return <SectionPage ctx={ctx}
+    return <SectionPage ctx={ctx} tabs={systemTabs('Calendar')}
       eyebrow="" title="Calendar" blurb=""
       ask="Help me review my calendar for the week ahead."
       hero={<CalendarOverview events={events} timeZone={timeZone} days={summary?.calendar.data?.days ?? 7} now={now}
@@ -1260,27 +1346,26 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
     // say the same thing, and the retry is the same button.
     const waiting = data.community.error ? <EmptyCta text="Your community list couldn’t load." action="Retry" onClick={retryData} />
       : !community ? <p className="dashboard-empty">Loading…</p> : null;
+    const toSection = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    // The concept's page up top (CommunityPage.tsx); the editable lists stay below it.
     return <SectionPage ctx={ctx}
-      eyebrow="THE PLACE AROUND YOU" title="Community"
-      blurb="The places, people and goings-on that make up where you live. Everything on this page is in my mind whenever we talk."
+      eyebrow="" title="Community" blurb=""
       ask="What’s going on around my community that I should know about?"
-      stats={<>
-        <Stat label="Points of interest" value={community ? places.filter(p => p.enabled).length : '—'} note="watched day and night" />
-        <Stat label="Neighbors" value={community ? community.neighbors.length : '—'} note="people you know nearby" />
-        <Stat label="Coming up" value={community ? upcoming.length : '—'} note={upcoming[0] ? `${upcoming[0].title} · ${eventWhen(upcoming[0])}` : community?.events.length ? 'Nothing on the calendar yet' : 'No local events saved'} />
-        <Stat label="Calls nearby" value={data.nearby.data ? nearbyCalls.length : '—'} note={serious ? `${serious} serious` : 'near your places'} tone={serious ? 'low' : nearbyCalls.length ? 'ok' : 'idle'} />
-      </>}
+      hero={<CommunityOverview community={community ?? null} waiting={waiting} calls={nearbyCalls} weatherAlerts={nearbyWeather}
+        nearbyReady={!!data.nearby.data} calendar={communityCal} onAsk={onAsk} onNeighbors={next => patch({ neighbors: next })}
+        onSection={toSection} onAddNews={() => setSourcesOpen(true)} />}
     >
+      <h2 className="fp-details-head section-panel-wide">THE DETAIL</h2>
       <Panel id="community-places" title="Points of interest" note="watched day and night" wide>
         <p className="community-blurb">I keep watch around every place on this list, all the time. A 911 call or a severe-weather warning inside a ring reaches you straight away — here, on your phone, and by text — and I pick out news about these places from the pages I read for you. Home, your church, the kids’ school, the town square: the more you add, the more of your community I can look after.</p>
-        {waiting || <><CommunityMap places={places} neighbors={community!.neighbors} onNeighbors={next => patch({ neighbors: next })} /><PointsOfInterest places={places} onPlaces={next => patch({ places: next })} /></>}
+        {waiting || <PointsOfInterest places={places} onPlaces={next => patch({ places: next })} />}
       </Panel>
       <Panel title="On your calendar" note={communityCal.length ? 'events that mention your community' : undefined} wide>
         {waiting || (!ready(summary?.calendar) ? unavailable('calendar', 'Google Calendar')
           : communityCal.length ? <ul className="dashboard-data-list calendar-events">{communityCal.map((c, i) => <li key={`${c.event.id}-${i}`}><span className="event-dot" /><div><strong>{c.what}</strong><small>{c.when}{c.who ? ` · ${c.who}` : ''}{c.event.location ? ` · ${c.event.location}` : ''}</small></div></li>)}</ul>
             : <p className="dashboard-empty">{places.some(p => p.enabled) ? 'Nothing on your calendar in the next 7 days mentions your community.' : 'Add a point of interest and I’ll look for it on your calendar.'}</p>)}
       </Panel>
-      <Panel title="Near your places" note={updated ? `updated ${updated}` : undefined} wide>
+      <Panel id="community-nearby" title="Near your places" note={updated ? `updated ${updated}` : undefined} wide>
         {data.nearby.loading ? <p className="dashboard-empty">Checking nearby…</p>
           : data.nearby.error ? <EmptyCta text="Nearby activity couldn’t load." action="Retry" onClick={retryData} />
             : <>
@@ -1294,13 +1379,13 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
       <Panel title="Reminders" note="at a place or a time" wide>
         <PlaceReminders onAsk={onAsk} />
       </Panel>
-      <Panel title="Local events" note="church, school, town">
+      <Panel id="community-events" title="Local events" note="church, school, town">
         {waiting || <LocalEvents events={community!.events} places={places} onEvents={next => patch({ events: next })} />}
       </Panel>
-      <Panel title="Neighbors" note="who lives around you">
+      <Panel id="community-neighbors" title="Neighbors" note="who lives around you">
         {waiting || <Neighbors neighbors={community!.neighbors} places={places} onNeighbors={next => patch({ neighbors: next })} onConnectContacts={() => onPanel('integrations')} />}
       </Panel>
-      <Panel title="Local news" note="from the pages I read for you" wide>
+      <Panel id="community-news" title="Local news" note="from the pages I read for you" wide>
         {waiting || (localNews === null ? <EmptyCta text="News couldn’t load." action="Retry" onClick={retryData} />
           : localNews?.length ? <ul className="dashboard-data-list">{localNews.map((n, i) => <li key={`${n.url}-${i}`}><ExternalLink url={n.url}><strong>{n.title}</strong><small>{n.source} · mentions {n.matched} · {dateLabel(n.firstSeen)}</small></ExternalLink></li>)}</ul>
             : <EmptyCta text={newsSources.length ? 'Nothing this week mentions your towns or places. A local paper or your town’s page widens what I can catch.' : 'Give me a local paper or your town’s news page and I’ll pick out anything about your places.'} action="Add a local news page" onClick={() => setSourcesOpen(true)} />)}
@@ -1322,20 +1407,23 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
   function WorkPage() {
     const mentions = summary?.slack.data?.messages || [];
     const byStatus = [...new Set(issues.map(i => i.status))];
+    const toSection = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    // The concept's page up top (WorkPage.tsx); the editable lists stay below it.
     return <SectionPage ctx={ctx}
-      eyebrow="WHAT WORK IS ASKING FOR" title="Work"
-      blurb="Where you work, your assigned Jira issues and the Slack threads that named you."
+      eyebrow="" title="Work" blurb=""
       ask="Help me review my Jira issues and Slack mentions."
-      stats={<>
-        <Stat label="Open issues" value={ready(summary?.jira) ? issues.length : '—'} note="assigned to you" />
-        <Stat label="Mentions" value={ready(summary?.slack) ? mentions.length : '—'} note={summary?.slack.data?.workspace || 'Slack not connected'} />
-        <Stat label="Projects" value={ready(summary?.jira) ? new Set(issues.map(i => i.project)).size : '—'} note="in this snapshot" />
-      </>}
+      hero={<WorkOverview issues={issues} jiraNote={ready(summary?.jira) ? null : unavailable('jira', 'Jira')}
+        slack={ready(summary?.slack) ? summary?.slack.data ?? null : null} slackNote={ready(summary?.slack) ? null : unavailable('slack', 'Slack')}
+        projects={proj.loading && !proj.snap.projects.length ? null : proj.snap.projects.filter(p => p.areas.some(a => a.area === 'work'))}
+        events={events} timeZone={timeZone} now={now} workplaces={workOverview} onWorkplaces={setWorkOverview}
+        onAsk={onAsk} onOpenProject={openProject} onNewProject={() => newProject('work')} onConnect={() => onPanel('integrations')}
+        onMemory={() => onPanel('memory')} onSection={toSection} />}
     >
-      <Panel title="Workplaces" wide note={<>where you work and your role <button type="button" className="workplace-add" onClick={() => setAddingWorkplace(true)} disabled={addingWorkplace}>＋ Add</button></>}>
-        <Workplaces adding={addingWorkplace} onAdding={setAddingWorkplace} health={{ jira: summary?.jira, slack: summary?.slack, gmail: summary?.emailTriage, google_calendar: summary?.calendar }} />
+      <h2 className="fp-details-head section-panel-wide">THE DETAIL</h2>
+      <Panel id="work-workplaces" title="Workspaces" wide note={<>where you work and your role <button type="button" className="workplace-add" onClick={() => setAddingWorkplace(true)} disabled={addingWorkplace}>＋ Add</button></>}>
+        <Workplaces adding={addingWorkplace} onAdding={setAddingWorkplace} onChanged={setWorkOverview} health={{ jira: summary?.jira, slack: summary?.slack, gmail: summary?.emailTriage, google_calendar: summary?.calendar }} />
       </Panel>
-      <Panel title="Jira" note={summary?.jira.data?.partial ? 'Some sites could not be included' : 'assigned open issues'} wide>
+      <Panel id="work-jira" title="Jira" note={summary?.jira.data?.partial ? 'Some sites could not be included' : 'assigned open issues'} wide>
         {!ready(summary?.jira) ? unavailable('jira', 'Jira')
           : !issues.length ? <p className="dashboard-empty">No assigned open issues returned.</p>
             : byStatus.map(status => <div className="day-group" key={status}>
@@ -1343,7 +1431,7 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
               <Issues issues={issues.filter(i => i.status === status)} />
             </div>)}
       </Panel>
-      <Panel title="Slack" note={summary?.slack.data?.workspace}>
+      <Panel id="work-slack" title="Slack" note={summary?.slack.data?.workspace}>
         {!ready(summary?.slack) ? unavailable('slack', 'Slack')
           : !mentions.length ? <p className="dashboard-empty">No mentions returned in the last 7 days.</p>
             : <ul className="dashboard-data-list">{mentions.map(m => <li key={m.timestamp}><ExternalLink url={m.url}><strong>#{m.channel}</strong><small>{m.text}</small></ExternalLink></li>)}</ul>}
@@ -1351,8 +1439,11 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
       <Panel title="Saved work context" note="what Athena remembers" wide>
         {facts.filter(f => f.category === 'work').length ? <Facts facts={facts.filter(f => f.category === 'work')} /> : <><p className="dashboard-empty">Nothing saved about your work yet.</p><button className="dashboard-chat-cta" onClick={() => onAsk('Let me tell you about my work.')}>Tell her <span>↗</span></button></>}
       </Panel>
-      <Panel title="Work projects" note="kept here, off the Dashboard" wide>
+      <Panel id="work-projects" title="Work projects" note="kept here, off the Dashboard" wide>
         <ProjectBoard state={proj} onOpen={openProject} onNew={newProject} area="work" />
+      </Panel>
+      <Panel id="work-sites" title="Sites" note="up, how fast, and their Google numbers" wide>
+        <Websites onConnect={() => onPanel('integrations')} />
       </Panel>
       {drawers}
     </SectionPage>;
@@ -1373,7 +1464,7 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
     const groupEntries = [...grouped.entries()];
     const bundles = summary?.emailTriage.data?.bundles;
     return <>
-    <SectionPage ctx={ctx}
+    <SectionPage ctx={ctx} tabs={systemTabs('Mail')}
       eyebrow="SORTING YOUR INBOX" title="Mail"
       blurb="What Athena proposes for your inbox, and everything she has sorted. Nothing in Gmail changes until you approve it."
       ask="Help me get through my mail triage list."
@@ -1413,7 +1504,7 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
     const open = all.filter(p => !['done', 'dropped'].includes(p.status));
     const deadlines = open.filter(p => p.hardDeadline).sort((x, y) => (x.hardDeadline! < y.hardDeadline! ? -1 : 1));
     const names = [...new Set(issues.map(i => i.project))];
-    return <SectionPage ctx={ctx}
+    return <SectionPage ctx={ctx} tabs={systemTabs('Projects')}
       eyebrow="WHAT YOU ARE BUILDING" title="Projects"
       blurb="Everything you’re working on, across every part of your life — ordered by what matters most, editable here."
       ask="Look at my projects. What should I focus on next, and how can you help?"
@@ -1473,7 +1564,7 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
     const contributorsOf = (uuid: string) => proj.snap.links.filter(l => l.relation === 'contributes_to' && l.to === uuid)
       .map(l => proj.snap.projects.find(p => p.uuid === l.from)).filter((p): p is NonNullable<typeof p> => !!p && p.status !== 'dropped');
     return <SectionPage ctx={ctx}
-      eyebrow="HOUSE & LAND" title={property.property?.name || 'Our Property'}
+      eyebrow="HOUSE & LAND" title={property.property?.name || 'Our Property'} backdrop="/assets/e9e9086f-a18a-43d4-8b99-789f10dcc7cf.png"
       headerAside={<PropertyWeather address={property.property?.address || ''} />}
       blurb={property.property?.description || 'The house and the land around it: what needs doing, what’s worrying you, and the rules you decide by.'}
       ask="Look at my home projects, concerns and open property issues. What should I do next, and how can you help?"
@@ -1556,7 +1647,7 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
     // The fastest rhythm on the list, which is the honest answer to "how close
     // to live is this page?" — and the one she raises herself when it matters.
     const fastest = watching.reduce<typeof watching[number] | null>((best, s) => (!best || s.everyMinutes < best.everyMinutes ? s : best), null);
-    return <SectionPage ctx={ctx}
+    return <SectionPage ctx={ctx} tabs={systemTabs('News')}
       eyebrow="YOUR DAILY READING" title="News & Updates"
       blurb="Everything I’ve read on your pages, newest first. You choose the pages; I choose how often to go back."
       ask="Help me catch up on news relevant to my interests."
@@ -1588,6 +1679,223 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
     </SectionPage>;
   }
 
+  /**
+   * The briefing, full width: Athena at the centre of the areas of a life,
+   * the six numbers people glance at, then a card per area. Every value is
+   * read from the same derivations the section pages use; a source that is
+   * down shows its own status and the button that fixes it, never a guess.
+   */
+  function homeBriefing() {
+    const openIssues = propertyIssues.issues.filter(i => i.status === 'open');
+    const dreams = [...(home.dreams.data || [])].sort((a, b) => b.date.localeCompare(a.date));
+    const monthAgo = zonedDay(new Date(Date.now() - 30 * 86400000), timeZone);
+    const dreamt = dreams.filter(d => d.date > monthAgo && (d.status === 'ok' || d.status === 'partial'));
+    const lastDream = dreams.find(d => d.status !== 'running');
+    const readinessTone: Tone = readiness?.level === 'warning' ? 'alert' : readiness?.level === 'rest' ? 'warn' : readiness ? 'good' : 'idle';
+    const loadingWord = '…';
+
+    // --- Hero -------------------------------------------------------------
+    const nodes: HeroNode[] = [
+      { id: 'health', label: 'Health', icon: 'Health', onOpen: go('Health'), tone: whoopDown ? 'idle' : readinessTone,
+        status: whoopDown ? 'Connect WHOOP' : recovery?.recovery_score != null ? `${readiness ? `${readiness.label} · ` : ''}${recovery.recovery_score}%` : data.summary.loading ? loadingWord : 'No score yet' },
+      { id: 'family', label: 'Family', icon: 'Family', onOpen: go('Family'),
+        tone: sickFamily.length ? 'alert' : roster[0]?.signal.kind === 'birthday' ? 'warn' : roster.length ? 'good' : 'idle',
+        status: sickFamily.length ? `${sickFamily.length} unwell` : roster[0]?.signal.kind === 'birthday' ? `${roster[0].name} · ${roster[0].signal.label}` : roster.length ? `${roster.length} in your corner` : data.facts.loading ? loadingWord : 'Tell her' },
+      { id: 'work', label: 'Work', icon: 'Work', onOpen: go('Work'),
+        tone: !ready(summary?.jira) ? 'idle' : issues.length ? 'warn' : 'good',
+        status: ready(summary?.jira) ? `${issues.length} open` : summary ? statusText[summary.jira.status] : loadingWord },
+      { id: 'property', label: 'Property', icon: 'Home', onOpen: go('Property'),
+        tone: openIssues.some(i => i.severity === 'high' || i.severity === 'emergency') ? 'alert' : openIssues.length || homeConcerns.length ? 'warn' : 'good',
+        status: propertyIssues.loading ? loadingWord : openIssues.length ? `${openIssues.length} issue${openIssues.length === 1 ? '' : 's'}` : homeConcerns.length ? `${homeConcerns.length} concern${homeConcerns.length === 1 ? '' : 's'}` : 'All quiet' },
+      { id: 'dreams', label: 'Dreams', icon: 'Dreams', onOpen: go('Dreams'), tone: dreamt.length ? 'good' : 'idle',
+        status: home.dreams.loading ? loadingWord : `${dreamt.length} night${dreamt.length === 1 ? '' : 's'}` },
+      { id: 'community', label: 'Community', icon: 'Community', onOpen: go('Community'),
+        tone: nearbyWeather.length ? 'alert' : nearbyCalls.length ? 'warn' : 'good',
+        status: nearbyWeather.length ? nearbyWeather[0].event : nearbyCalls.length ? `${nearbyCalls.length} call${nearbyCalls.length === 1 ? '' : 's'} nearby`
+          : communityCal.length ? `${communityCal.length} coming up` : data.nearby.loading ? loadingWord : 'Quiet' },
+    ];
+    const asks = nearbyWeather.length + sickFamily.length + openIssues.length + pending.length;
+    const partOfDay = hour < 12 ? 'morning' : hour < 18 ? 'afternoon' : 'evening';
+    const blurb = asks ? `${asks} thing${asks === 1 ? '' : 's'} could use you. Here’s what matters and what’s next.` : `A calm ${partOfDay}. Here’s what matters and what’s next.`;
+    // Her own line, only when she wrote it — the default is a template, not her.
+    const quote = data.rightNow.data?.source === 'athena' ? data.rightNow.data.headline : null;
+
+    // --- Stat strip -------------------------------------------------------
+    const program = home.plan.data?.program;
+    const activeProgram = program && !program.ended && !program.before_start ? program : null;
+    const session = activeProgram?.sessions.find(s => s.date === localDay());
+    const restDay = !session || session.kind === 'rest';
+    const sky = home.weather.data?.weather;
+    const temps = (sky?.hours || []).map(h => h.temperatureF).filter((t): t is number => t !== null);
+    const triage = summary?.emailTriage.data;
+    const inProgress = issues.filter(i => i.statusCategory === 'indeterminate').length;
+    const dayWord = (event: CalendarEvent) => {
+      const day = eventDay(event, timeZone);
+      const tomorrow = zonedDay(new Date(Date.now() + 86400000), timeZone);
+      return day === today ? 'Today' : day === tomorrow ? 'Tomorrow' : dateLabel(`${day}T12:00:00Z`, { timeZone: 'UTC', weekday: 'short' });
+    };
+    const statStrip = <div className="dh-stats">
+      <HomeStat icon="Health" label="Recovery" onClick={go('Health')} tone={whoopDown ? 'idle' : readinessTone}
+        value={recovery?.recovery_score != null && !whoopDown ? `${recovery.recovery_score}%` : '—'}
+        chip={readiness && !whoopDown ? <span className={`readiness readiness-${readiness.level}`}>{readiness.label}</span> : undefined}
+        note={whoopDown ? 'Connect WHOOP' : readiness?.headline || (ready(summary?.recovery) ? 'No scored result' : summary ? statusText[summary.recovery.status] : 'Loading…')} />
+      <HomeStat icon="Gym" label="Gym" onClick={go('Health')} tone={session?.status === 'done' ? 'good' : 'idle'}
+        value={home.plan.loading ? '—' : !activeProgram ? 'No plan' : restDay ? 'Rest day' : session!.title}
+        note={home.plan.loading ? 'Loading…' : !activeProgram ? 'Set one on Health' : restDay ? activeProgram.name
+          : session!.status === 'done' ? 'Done' : session!.status === 'skipped' ? 'Skipped' : session!.focus || 'Today'} />
+      <HomeStat icon="Calendar" label={lead ? `Next event · ${lead.ongoing ? 'on now' : dayWord(lead.event)}` : 'Next event'} onClick={go('Calendar')} tone={lead?.ongoing ? 'warn' : 'idle'}
+        value={lead ? eventTime(lead.event, timeZone) : ready(summary?.calendar) ? 'Clear' : '—'}
+        note={lead ? lead.event.title : ready(summary?.calendar) ? 'Nothing timed coming up' : summary ? statusText[summary.calendar.status] : 'Loading…'} />
+      <HomeStat icon="Mail" label="Mail" onClick={go('Mail')} tone={needReply ? 'warn' : 'idle'}
+        value={ready(summary?.emailTriage) && triage ? triage.newCount : '—'}
+        note={ready(summary?.emailTriage) && triage ? `to review · ${triage.pendingCount ? `${triage.pendingCount} sorting` : needReply ? `${needReply} need you` : 'all sorted'}` : summary ? statusText[summary.emailTriage.status] : 'Loading…'}
+        spark={triage && <Spark tone="cyan" values={[triage.receiptCount, triage.travelCount, triage.schoolCount, triage.otherCount]} label={`Receipts ${triage.receiptCount}, travel ${triage.travelCount}, school ${triage.schoolCount}, other ${triage.otherCount}`} />} />
+      <HomeStat icon="Tasks" label="Open tasks" onClick={go('Work')} tone={ready(summary?.jira) && issues.length ? 'warn' : 'idle'}
+        value={ready(summary?.jira) ? issues.length : '—'}
+        note={ready(summary?.jira) ? (inProgress ? `Jira · ${inProgress} in progress` : 'Jira issues') : summary ? statusText[summary.jira.status] : 'Loading…'} />
+      <HomeStat icon="Weather" label={sky?.town || 'Weather'} onClick={go('Community')}
+        value={sky?.now.temperatureF != null ? `${Math.round(sky.now.temperatureF)}°` : '—'}
+        note={sky ? `${sky.now.shortForecast || ''}${temps.length ? ` · H ${Math.round(Math.max(...temps))}° L ${Math.round(Math.min(...temps))}°` : ''}`
+          : home.weather.loading ? 'Loading…' : home.weather.data?.status === 'no_place' ? 'Add a home place' : 'Unavailable'} />
+    </div>;
+
+    // --- Today's schedule ---------------------------------------------------
+    const CAL_TONES = ['#f5a524', '#2fd4a7', '#a77bff', '#39c2ff', '#ff7a90'];
+    const calTone = (event: CalendarEvent) => CAL_TONES[[...(event.calendar || 'primary')].reduce((n, c) => n + c.charCodeAt(0), 0) % CAL_TONES.length];
+    const upcoming = events.filter(e => eventDay(e, timeZone) >= today && (e.allDay || new Date(e.end).getTime() > now))
+      .sort((a, b) => eventDay(a, timeZone).localeCompare(eventDay(b, timeZone)) || Number(b.allDay) - Number(a.allDay) || a.start.localeCompare(b.start));
+    const scheduleDays = [...new Set(upcoming.map(e => eventDay(e, timeZone)))].slice(0, 3);
+    let budget = 9;
+    const schedule = <HomeSection id="schedule" icon="Calendar" title="Today’s schedule" action="View calendar" onAction={go('Calendar')}>
+      {!ready(summary?.calendar) ? <SourceNote source={summary?.calendar} name="Google Calendar" fix={fixFor('calendar')} />
+        : !scheduleDays.length ? <p className="dashboard-empty">Nothing on the calendar for the next few days.</p>
+          : scheduleDays.map(day => {
+            const list = upcoming.filter(e => eventDay(e, timeZone) === day).slice(0, Math.max(0, budget));
+            budget -= list.length;
+            if (!list.length) return null;
+            const d = new Date(`${day}T12:00:00Z`);
+            return <div className="dh-day" key={day}>
+              <div className="dh-day-label"><small>{d.toLocaleDateString(undefined, { timeZone: 'UTC', weekday: 'short' }).toUpperCase()}</small><strong>{d.toLocaleDateString(undefined, { timeZone: 'UTC', month: 'short', day: 'numeric' }).toUpperCase()}</strong></div>
+              <ul>{list.map((e, i) => <li key={`${e.id}-${i}`}>
+                <time>{eventTime(e, timeZone)}</time><i style={{ background: calTone(e) }} /><span title={e.location || undefined}>{e.title}</span>
+              </li>)}</ul>
+            </div>;
+          })}
+    </HomeSection>;
+
+    // --- Work ---------------------------------------------------------------
+    const sites = [...new Set(issues.map(i => i.site))];
+    const siteName = (site: string) => site.replace(/^https?:\/\//, '').replace(/\.atlassian\.net.*$/, '').split(/[-_.]/).map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+    const activeSite = sites.includes(workSite) ? workSite : sites[0];
+    const siteIssues = issues.filter(i => i.site === activeSite);
+    const pill = (i: JiraIssue) => i.statusCategory === 'indeterminate' ? 'progress' : i.statusCategory === 'done' ? 'done' : /review/i.test(i.status) ? 'review' : 'todo';
+    const work = <HomeSection id="work" icon="Work" title="Work" onAction={go('Work')}
+      tabs={ready(summary?.jira) && <HomeTabs label="Jira sites" tabs={sites.map(s => ({ id: s, label: siteName(s), count: issues.filter(i => i.site === s).length }))} active={activeSite} onChange={setWorkSite} />}>
+      {!ready(summary?.jira) ? <SourceNote source={summary?.jira} name="Jira" fix={fixFor('jira')} />
+        : !issues.length ? <p className="dashboard-empty">No assigned open issues.</p>
+          : <>
+            <ul className="dh-issues">{siteIssues.slice(0, 5).map(i => <li key={i.key}><ExternalLink url={i.url}>
+              <b className="dh-issue-badge">{i.project.charAt(0)}</b><code>{i.key}</code><span>{i.title}</span><em className={`dh-pill dh-pill-${pill(i)}`}>{i.status}</em>
+            </ExternalLink></li>)}</ul>
+            <button type="button" className="dh-more" onClick={go('Work')}>View all {issues.length} issue{issues.length === 1 ? '' : 's'} <span>→</span></button>
+          </>}
+    </HomeSection>;
+
+    // --- Projects (never work ones: those live on Work, owner 2026-10-13) ----
+    const projectAreas = [...new Set(dashProjects.map(p => p.primaryArea))];
+    const areaFilter = projectArea !== 'all' && projectAreas.includes(projectArea) ? projectArea : 'all';
+    const shownProjects = dashProjects.filter(p => areaFilter === 'all' || p.primaryArea === areaFilter);
+    const projects = <HomeSection id="projects" icon="Projects" title="Projects" onAction={go('Projects')}
+      tabs={<HomeTabs<Area | 'all'> label="Project areas" tabs={[{ id: 'all', label: 'All' }, ...projectAreas.map(a => ({ id: a, label: AREA_LABEL[a] }))]} active={areaFilter} onChange={setProjectArea} />}>
+      {proj.error && !proj.snap.projects.length ? <EmptyCta text="Projects couldn’t load." action="Retry" onClick={proj.reload} />
+        : proj.loading && !proj.snap.projects.length ? <p className="dashboard-empty">Loading…</p>
+          : !shownProjects.length ? <EmptyCta text="No projects yet." action="Start one" onClick={() => newProject()} />
+            : <ul className="dh-projects">{shownProjects.slice(0, 5).map(p => {
+              const { done, total } = p.progress.steps;
+              return <li key={p.uuid}><button type="button" onClick={() => openProject(p.uuid)}>
+                <i className={`dh-area dh-area-${p.primaryArea}`} />
+                <span><strong title={p.title}>{p.title}</strong><small>{AREA_LABEL[p.primaryArea]} · {STATE_LABEL[p.effectiveStatus]}</small></span>
+                <span className="dh-progress" aria-label={total ? `${done} of ${total} steps done` : 'No steps yet'}><span style={{ width: `${total ? (done / total) * 100 : 0}%` }} /></span>
+                <em>{total ? `${done}/${total}` : '—'}</em>
+              </button></li>;
+            })}</ul>}
+    </HomeSection>;
+
+    // --- Health -------------------------------------------------------------
+    const run = <T,>(rows: T[], pick: (row: T) => number | null | undefined) => rows.slice(0, 14).reverse().map(r => pick(r) ?? null);
+    const whoopUnlinked = (['recovery', 'sleep', 'strain'] as const).every(key => summary?.[key]?.status === 'not_connected');
+    const health = <HomeSection id="health" icon="Health" title="Health & Performance" action="View details" onAction={go('Health')}>
+      {!whoopUnlinked && <div className="dh-readiness"><RecoveryRing score={recovery?.recovery_score} />
+        <div className="dh-readiness-label">{readiness && <span className={`readiness readiness-${readiness.level}`}>{readiness.label}</span>}<small>{recovery ? dateLabel(`${recovery.date}T12:00:00Z`, { timeZone: 'UTC' }) : 'No scored result'}</small></div>
+        {readiness && <p>{readiness.reason}</p>}</div>}
+      {whoopNotes()}
+      <div className="dh-metrics">
+        {!whoopUnlinked && <>
+          <HeartMetric label="Resting HR" value={recovery?.resting_heart_rate} unit="bpm" goal={HEART_GOALS.restingHeartRate} better="lower" trend={rhrTrend}
+            spark={<Spark tone="green" values={run(scoredDays, r => r.resting_heart_rate)} />} />
+          <HeartMetric label="HRV" value={recovery?.hrv_ms} unit="ms" goal={HEART_GOALS.hrvMs} better="higher" trend={hrvTrend}
+            spark={<Spark tone="green" values={run(scoredDays, r => r.hrv_ms)} />} />
+          <HeartMetric label="Sleep" value={sleep?.hours_asleep} display={sleep ? hoursMinutes(sleep.hours_asleep) : undefined} unit="h" better="higher" trend={sleepTrend} decimals={1}
+            spark={<Spark tone="violet" values={run(sleepDays, s => s.hours_asleep)} />} />
+        </>}
+        {weighIn && <HeartMetric label="Weight" value={lbOf(weighIn.weight_kg)} unit="lb" better="flat" trend={weightTrend} decimals={1}
+          spark={<Spark tone="green" values={run(weighDays, w => lbOf(w.weight_kg))} />} />}
+      </div>
+    </HomeSection>;
+
+    // --- Property -----------------------------------------------------------
+    const banner = property.property?.headerImage;
+    const propertyCard = <HomeSection id="property" icon="Home" title="Property" onAction={go('Property')}>
+      {banner && <div className="dh-property-banner" style={{ backgroundImage: `url("${banner}")` }} role="img" aria-label={property.property?.name || 'The property'} />}
+      {propertyIssues.loading ? <p className="dashboard-empty">Loading…</p>
+        : propertyIssues.error ? <EmptyCta text="Issues couldn’t load." action="Retry" onClick={propertyIssues.retry} />
+          : <ul className="dh-status-list">
+            {openIssues.slice(0, 2).map(i => <li key={i.uuid} className={`dh-status-${i.severity === 'high' || i.severity === 'emergency' ? 'alert' : 'warn'}`}>
+              <button type="button" onClick={go('Property')}><i>!</i><span><strong>{i.description}</strong><small>{i.location} · reported {reportedWhen(i.createdAt)}</small></span></button>
+            </li>)}
+            {homeConcerns.slice(0, openIssues.length ? 1 : 2).map(c => <li key={c.uuid} className="dh-status-warn">
+              <button type="button" onClick={go('Property')}><i>?</i><span><strong>{c.title}</strong><small>Open concern{c.frequency ? ` · ${c.frequency}` : ''}</small></span></button>
+            </li>)}
+            {!openIssues.length && <li className="dh-status-good"><button type="button" onClick={go('Property')}><i>✓</i><span><strong>No open issues</strong><small>{homeOpen.length ? `${homeOpen.length} house project${homeOpen.length === 1 ? '' : 's'} open` : 'Nothing reported'}</small></span></button></li>}
+          </ul>}
+    </HomeSection>;
+
+    // --- Dreams -------------------------------------------------------------
+    const nights = Array.from({ length: 30 }, (_, i) => zonedDay(new Date(Date.now() - (29 - i) * 86400000), timeZone));
+    const byNight = new Map(dreams.map(d => [d.date, d]));
+    const excerpt = (text: string) => { const plain = text.replace(/`/g, '').replace(/\s+/g, ' ').trim(); return plain.length > 150 ? `${plain.slice(0, 150).replace(/\s+\S*$/, '')}…` : plain; };
+    const dreamsCard = <HomeSection id="dreams" icon="Dreams" title="Dreams" onAction={go('Dreams')}>
+      {home.dreams.loading ? <p className="dashboard-empty">Loading…</p>
+        : !home.dreams.data ? <p className="dashboard-empty">Dreams couldn’t load.</p>
+          : <>
+            <div className="dh-dream-count"><p><strong>{dreamt.length}</strong> night{dreamt.length === 1 ? '' : 's'}<small>in the last 30 days</small></p>
+              <Spark tone="violet" values={nights.map(n => { const d = byNight.get(n); if (!d || d.status === 'skipped') return null; const s = d.stats || {}; return Math.max(1, (s.steps_ok ?? 0) + (s.steps_failed ?? 0)); })} label={`${dreamt.length} nights dreamt in the last 30 days`} /></div>
+            {!lastDream ? <p className="dashboard-empty">I haven’t dreamed yet. Once I do, I’ll tell you about it here.</p>
+              : <div className="dh-dream">
+                <header><strong>Most recent dream</strong><span>{STATUS_LINE[lastDream.status]}</span></header>
+                <small>{nightLabel(lastDream.date)}</small>
+                {lastDream.hasImage && <DreamImage uuid={lastDream.uuid} className="dh-dream-image" />}
+                <p>{excerpt(lastDream.narrative || lastDream.summary || 'I looked things over and left them as they were.')}</p>
+                <button type="button" className="source-fix" onClick={() => onAsk('Tell me about what you dreamed last night.')}>Ask her about it <span>↗</span></button>
+              </div>}
+          </>}
+    </HomeSection>;
+
+    return <>
+      <HomeHero greeting={greeting} firstName={firstName} blurb={blurb} nodes={nodes} quote={quote} />
+      {data.summary.error && <p className="dashboard-notice" role="status">Connected data is unavailable. {data.summary.error}</p>}
+      <EmergencyBanner onAsk={onAsk} onPlaces={onPlaces} inline />
+      {statStrip}
+      <WorkBanner events={events} workingLocations={summary?.calendar.data?.workingLocations} timeZone={timeZone} now={now} jira={summary?.jira.status === 'ready' ? summary.jira.data : null} onOpen={go('Calendar')} onOpenWork={go('Work')} />
+      {!working && <RightNowCard data={data.rightNow.data} loading={data.rightNow.loading} error={data.rightNow.error} onAsk={onAsk} onManage={() => setPlansOpen(true)} headlineShown={!!quote} />}
+      <div className="dh-row dh-row-three">{schedule}{work}{projects}</div>
+      {/* Health, then Family: the owner's order for the areas of a life. */}
+      <div className="dh-row dh-row-four">{health}
+        <HomeSection id="family" icon="Family" title="Family" onAction={go('Family')}>{familyCardBody()}</HomeSection>
+        {propertyCard}{dreamsCard}</div>
+    </>;
+  }
+
   // The briefing is what Home and the drawer show; every other nav entry has
   // a page of its own.
   if (!compact && section !== 'Dashboard') {
@@ -1602,10 +1910,23 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
     if (section === 'Projects') return ProjectsPage();
     if (section === 'Property') return HomePage();
     if (section === 'News') return NewsPage();
-    if (section === 'Dreams') return <DreamsPage ctx={ctx} />;
-    if (section === 'System') return <SystemPage ctx={ctx} />;
+    if (section === 'Dreams') return <DreamsPage ctx={ctx} tabs={systemTabs('Dreams')} />;
+    if (section === 'Finance') return <FinancePage ctx={ctx} tabs={systemTabs('Finance')} />;
+    if (section === 'System') return SystemPage();
   }
 
+  if (!compact) return <main className="dashboard-content dashboard-home">
+    <div className="dashboard-toolbar"><time dateTime={new Date().toISOString()}>{new Date().toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}</time><button onClick={() => onAsk('')} className="ask-athena">ϟ <span>Ask Athena…</span> ↗</button></div>
+    {homeBriefing()}
+    <section className="dashboard-bottom"><div><span className="dashboard-eyebrow">A MOMENT WITH ATHENA</span><h2>Whatever’s on your mind,<br />you don’t have to carry it alone.</h2><button className="dashboard-chat-cta" onClick={() => onAsk('')}>Let’s talk <span>↗</span></button></div><div className="dashboard-utilities"><button onClick={() => onPanel('memory')}>Explore memories <span>↗</span></button><button onClick={() => onPanel('photo')}>Share a moment <span>↗</span></button><button onClick={() => onPanel('integrations')}>Connected apps <span>↗</span></button><button onClick={() => setSourcesOpen(true)}>News sources <span>↗</span></button><button onClick={() => setPlansOpen(true)}>Places <span>↗</span></button></div></section>
+    <footer className="dashboard-footer"><span><i /> YOUR SPACE. YOUR PACE.</span><span>LIVE · UPDATES ARRIVE ON THEIR OWN</span></footer>
+    {sourcesOpen && <NewsSourcesPanel onClose={() => setSourcesOpen(false)} onSaved={() => void data.refresh()} />}
+    {plansOpen && <PlansPanel onClose={() => setPlansOpen(false)} onSaved={() => void data.refresh()} />}
+    {drawers}
+    {selectedEmail && <EmailPanel uuid={selectedEmail} onClose={() => setSelectedEmail(null)} onChanged={() => { setMailRefresh(n => n + 1); void data.refresh(); }} />}
+  </main>;
+
+  // The compact drawer keeps the folded cards: one headline each, in the fixed order.
   return <main className={`dashboard-content ${compact ? 'dashboard-compact' : ''}`}>
     <div className="dashboard-toolbar"><time dateTime={new Date().toISOString()}>{new Date().toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}</time><button onClick={() => onAsk('')} className="ask-athena">ϟ <span>Ask Athena…</span> ↗</button></div>
     <PageHeader eyebrow="YOUR DAILY BRIEFING" title={`${greeting}, ${firstName}`} blurb="Here’s what’s on your radar today." />

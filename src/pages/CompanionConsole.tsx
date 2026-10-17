@@ -34,7 +34,7 @@ import {
 import { ARRIVAL_MESSAGES, buildGreeting, emergencyGreeting } from '../athena/sequences';
 import { dashboardApi, type EmergencyAlert } from '../api/dashboard';
 import type { MemoryEvent, Scene } from '../api/companion';
-import { Dashboard, DashboardIcon, dashboardSections, type DashboardSection } from '../components/Dashboard';
+import { Dashboard, DashboardIcon, dashboardSections, navSectionOf, type DashboardSection } from '../components/Dashboard';
 import { AthenaAvatar } from '../components/AthenaAvatar';
 import { ProfileAvatar } from '../components/ProfileAvatar';
 import { Drawer } from '../components/Drawer';
@@ -504,8 +504,9 @@ export function CompanionConsole() {
     setView('dashboard');
     window.setTimeout(() => document.getElementById('community-places')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
   }
-  // Workouts is a page under Health, not a nav entry of its own.
-  const navSection: DashboardSection = activeSection === 'Workouts' ? 'Health' : activeSection;
+  // Workouts is a page under Health, and Calendar, Mail, Projects, News, Dreams
+  // and Finance are tabs of System — none is a nav entry of its own.
+  const navSection: DashboardSection = navSectionOf(activeSection);
   const menuItems: { icon: string; label: string; onClick: () => void; right?: string }[] = [
     { icon: '🧠', label: 'Memories', onClick: () => openPanel('memory') },
     // The phone has no left nav; this is its way to the Dreams page.

@@ -253,6 +253,7 @@ export function FamilyOverview({ roster, children, events, timeZone, now, chores
 
   return <div className="hp cp fp">
     <PageHeader eyebrow="THE PEOPLE IN YOUR CORNER" title="Family" blurb="People, plans, chores, and the moments that matter most."
+      backdrop="/assets/family.png" backdropBeside
       take={{ lines: [take.join(' ')], ask: 'Help me think about my family this week — what should I be paying attention to?', onAsk }} />
 
     <section className="cp-stats" aria-label="Your family at a glance">

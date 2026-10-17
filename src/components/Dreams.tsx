@@ -19,7 +19,7 @@ function inline(text: string): ReactNode[] {
       ? <code key={i}>{part.slice(1, -1)}</code>
       : <Fragment key={i}>{part}</Fragment>);
 }
-function Paragraphs({ text, className }: { text: string; className?: string }) {
+export function Paragraphs({ text, className }: { text: string; className?: string }) {
   return <>{text.split(/\n\s*\n/).map(p => p.trim()).filter(Boolean).map((p, i) => <p key={i} className={className}>{inline(p)}</p>)}</>;
 }
 
@@ -30,7 +30,7 @@ function Paragraphs({ text, className }: { text: string; className?: string }) {
  * The thumbnail is cropped to fit beside the story; clicking it opens the
  * whole painting over the page.
  */
-function DreamImage({ uuid, className }: { uuid: string; className?: string }) {
+export function DreamImage({ uuid, className }: { uuid: string; className?: string }) {
   const [src, setSrc] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
   useEffect(() => {
@@ -66,13 +66,13 @@ function DreamLightbox({ src, onClose }: { src: string; onClose: () => void }) {
   </div>, document.body);
 }
 
-const nightLabel = (date: string) => {
+export const nightLabel = (date: string) => {
   const d = new Date(`${date}T12:00:00`);
   return Number.isFinite(d.getTime()) ? d.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' }) : date;
 };
 
 /** The few numbers that say how busy a night was, as chips. */
-function statChips(d: Dream): string[] {
+export function statChips(d: Dream): string[] {
   const s = d.stats || {};
   const chips: string[] = [];
   const steps = (s.steps_ok ?? 0) + (s.steps_failed ?? 0);
@@ -83,7 +83,7 @@ function statChips(d: Dream): string[] {
   return chips;
 }
 
-const STATUS_LINE: Record<Dream['status'], string> = {
+export const STATUS_LINE: Record<Dream['status'], string> = {
   ok: 'a full night',
   partial: 'a restless night — some steps stumbled',
   failed: 'a night that didn’t hold together',
@@ -190,7 +190,7 @@ function NightEntry({ dream }: { dream: Dream }) {
 }
 
 /** The Dreams page: the last 30 nights, newest first. */
-export function DreamsPage({ ctx }: { ctx: SectionContext }) {
+export function DreamsPage({ ctx, tabs }: { ctx: SectionContext; tabs?: ReactNode }) {
   const [dreams, setDreams] = useState<Dream[] | null>(null);
   const [questions, setQuestions] = useState<DreamQuestion[]>([]);
   const [error, setError] = useState('');
@@ -209,7 +209,7 @@ export function DreamsPage({ ctx }: { ctx: SectionContext }) {
   const answered = questions.filter(q => q.status === 'answered');
   const steps = dreamt.reduce((n, d) => n + (d.stats?.steps_ok ?? 0) + (d.stats?.steps_failed ?? 0), 0);
 
-  return <SectionPage ctx={ctx}
+  return <SectionPage ctx={ctx} tabs={tabs}
     eyebrow="WHILE YOU SLEPT" title="Dreams"
     blurb="Each night I go back over what you’ve told me and give it shape — tables, connections, the odd tidy-up. Here’s every night from the last thirty, as I dreamed it and as it actually happened."
     ask="Tell me about what you dreamed last night, and what you organized."

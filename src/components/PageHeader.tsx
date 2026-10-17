@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import { Icon } from './HealthPage';
 import './pageHeader.css';
 
@@ -8,12 +8,16 @@ import './pageHeader.css';
  * page's own controls under that, art glowing behind it, and a side column —
  * a reading of the page's own and/or Athena's Take.
  */
-export function PageHeader({ eyebrow, title, blurb, art, controls, aside, take }: {
+export function PageHeader({ eyebrow, title, blurb, art, backdrop, backdropBeside = false, controls, aside, take }: {
   eyebrow?: string;
   title: ReactNode;
   blurb?: ReactNode;
   /** Decorative image drawn behind the head (the Health page's heart). */
   art?: string;
+  /** A photo the whole head sits on, darkened behind the words (the Community page's lake). */
+  backdrop?: string;
+  /** A banner whose subject sits on its right (the Family page's): kept clear of the side column instead of behind it. */
+  backdropBeside?: boolean;
   /** Sits under the blurb — the Health page's time range. */
   controls?: ReactNode;
   /** Top of the side column, above Athena's Take. */
@@ -22,7 +26,8 @@ export function PageHeader({ eyebrow, title, blurb, art, controls, aside, take }
   take?: { lines: ReactNode[]; ask: string; onAsk: (text: string) => void };
 }) {
   const side = aside || take;
-  return <section className={`ph${side ? ' ph-with-side' : ''}${art ? ' ph-with-art' : ''}`}>
+  return <section className={`ph${side ? ' ph-with-side' : ''}${art ? ' ph-with-art' : ''}${backdrop ? ' ph-with-backdrop' : ''}${backdrop && backdropBeside ? ' ph-backdrop-beside' : ''}`}
+    style={backdrop ? { '--ph-backdrop': `url("${backdrop}")` } as CSSProperties : undefined}>
     {art && <img className="ph-art" src={art} alt="" />}
     <div className="ph-copy">
       {eyebrow && <span className="ph-eyebrow">{eyebrow}</span>}

@@ -105,8 +105,10 @@ function timely(option: Suggestion): boolean {
   }
 }
 
-export function RightNowCard({ data, loading, error, onAsk, onManage }: {
+export function RightNowCard({ data, loading, error, onAsk, onManage, headlineShown = false }: {
   data: RightNow | null;
+  /** The briefing's hero already quotes her headline; lead with the suggestion instead. */
+  headlineShown?: boolean;
   loading: boolean;
   error: string | null;
   onAsk: (prompt: string) => void;
@@ -149,7 +151,7 @@ export function RightNowCard({ data, loading, error, onAsk, onManage }: {
       <p className="right-now-window">{windowLine}</p>
     </header>
 
-    <h2 className="right-now-headline">{data.headline || lead.title}</h2>
+    <h2 className="right-now-headline">{(!headlineShown && data.headline) || lead.title}</h2>
     {/* Athena's reason, in her words. Shown as a sentence, never acted on. */}
     {lead.why && <p className="right-now-why">{lead.why}</p>}
 

@@ -24,9 +24,12 @@ const LABEL_ZOOM = 16;
 const NEIGHBOR = '#22c55e';
 const PICKED = '#f59e0b';
 
-export function NeighborMap({ places, neighbors, icon, onNeighbors, height = 320 }: {
+/** Esri's World Imagery, for the satellite view; its credit replaces OpenStreetMap's while it shows. */
+const SATELLITE = (z: number, x: number, y: number) => `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`;
+
+export function NeighborMap({ places, neighbors, icon, onNeighbors, height = 320, satellite = false }: {
   places: WatchPlace[]; neighbors: Neighbor[]; icon: (kind: string) => string;
-  onNeighbors?: (neighbors: Neighbor[]) => void; height?: number;
+  onNeighbors?: (neighbors: Neighbor[]) => void; height?: number; satellite?: boolean;
 }) {
   const shownPlaces = useMemo<MapPlaceItem[]>(() => places.filter(p => p.enabled && located(p)).map(p => ({ uuid: p.uuid, name: p.name, icon: icon(p.kind), latitude: p.latitude, longitude: p.longitude, radiusMiles: p.radiusMiles })), [places, icon]);
   const homes = useMemo<MapNeighbor[]>(() => neighbors.filter(located).map(n => ({
@@ -144,7 +147,8 @@ export function NeighborMap({ places, neighbors, icon, onNeighbors, height = 320
     for (let tx = Math.floor(left / TILE); tx <= Math.floor((left + width) / TILE); tx++) {
       for (let ty = Math.floor(top / TILE); ty <= Math.floor((top + height) / TILE); ty++) {
         if (ty < 0 || ty >= max) continue;
-        tiles.push({ key: `${view.zoom}/${tx}/${ty}`, src: `https://tile.openstreetmap.org/${view.zoom}/${((tx % max) + max) % max}/${ty}.png`, x: tx * TILE - left, y: ty * TILE - top });
+        const wrapped = ((tx % max) + max) % max;
+        tiles.push({ key: `${satellite ? 's' : 'm'}/${view.zoom}/${tx}/${ty}`, src: satellite ? SATELLITE(view.zoom, wrapped, ty) : `https://tile.openstreetmap.org/${view.zoom}/${wrapped}/${ty}.png`, x: tx * TILE - left, y: ty * TILE - top });
       }
     }
     const at = (lat: number, lon: number) => { const p = project(lat, lon, view.zoom); return { x: p.x - left, y: p.y - top }; };
@@ -156,7 +160,7 @@ export function NeighborMap({ places, neighbors, icon, onNeighbors, height = 320
       homes: homes.map(h => ({ ...h, ...at(h.latitude, h.longitude) })).filter(inside),
       mpp: (lat: number) => metersPerPixel(lat, view.zoom),
     };
-  }, [view, width, height, shownPlaces, homes]);
+  }, [view, width, height, shownPlaces, homes, satellite]);
 
   async function locateThem() {
     setBusy(true); setNote(null);
@@ -229,7 +233,9 @@ export function NeighborMap({ places, neighbors, icon, onNeighbors, height = 320
         <button type="button" aria-label="Zoom out" disabled={zoom <= MIN_ZOOM} onClick={() => zoomBy(-1)}>−</button>
         <button type="button" aria-label="Show everything" title="Show everything" onClick={refit}>⤢</button>
       </div>
-      <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer" className="neighbor-credit">© OpenStreetMap</a>
+      {satellite
+        ? <a href="https://www.esri.com/en-us/legal/terms/data-attributions" target="_blank" rel="noreferrer" className="neighbor-credit">Imagery © Esri, Maxar, Earthstar Geographics</a>
+        : <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer" className="neighbor-credit">© OpenStreetMap</a>}
     </div>
     <small className="community-hint neighbor-legend">
       <span className="neighbor-swatch" aria-hidden /> {homes.length} neighbor{homes.length === 1 ? '' : 's'} on the map — zoom in to see each house{touch ? '; use two fingers to move the map' : ''}

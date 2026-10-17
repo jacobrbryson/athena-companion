@@ -37,6 +37,17 @@ const DRAWN: Record<string, { tone: Tone; art: ReactNode }> = {
   // The house section (the briefing keeps the sprite's tile as Dashboard).
   Home: { tone: 'blue', art: <><path d="M3.6 11.2 12 4.6l8.4 6.6" /><path d="M5.8 9.6v9.6h12.4V9.6" /><path d="M10.2 19.2v-4.6h3.6v4.6" /><path d="M15.6 7.4V5.2h1.8v3.6" /></> },
   Mail: { tone: 'blue', art: <><rect x="3.6" y="6" width="16.8" height="12" rx="1.4" /><path d="m4.2 6.8 7.8 6 7.8-6" /></> },
+  // The System page's tabs. Drawn so they sit in its tab strip like Property's;
+  // the sprite's Calendar/Projects/News tiles stay in the nav and on cards.
+  SystemOverview: { tone: 'blue', art: <><path d="M3.6 11.2 12 4.6l8.4 6.6" /><path d="M5.8 9.6v9.6h12.4V9.6" /><path d="M10.2 19.2v-4.6h3.6v4.6" /></> },
+  SystemCalendar: { tone: 'blue', art: <><rect x="4" y="5" width="16" height="15" rx="2" /><path d="M4 10h16M8.5 3v4M15.5 3v4M10 15h4M12 13v4" /></> },
+  SystemProjects: { tone: 'blue', art: <><rect x="4" y="4" width="16" height="16" rx="2" /><path d="m8 12 3 3 5-6" /></> },
+  SystemNews: { tone: 'blue', art: <><path d="M6 3.5h8.5L19 8v12.5H6Z" /><path d="M14 3.5V8h5M9 12h7M9 15.5h7M9 8.5h3" /></> },
+  Finance: { tone: 'blue', art: <path d="M5 20v-6M10 20V9M15 20v-4M20 20V5M3.5 20h17" /> },
+  // The briefing's stat strip.
+  Gym: { tone: 'blue', art: <path d="M3 12h18M6.5 7.5v9M4 9.5v5M17.5 7.5v9M20 9.5v5" /> },
+  Weather: { tone: 'blue', art: <path d="M7 18.5h10.2a3.8 3.8 0 0 0 .5-7.6 5.5 5.5 0 0 0-10.6 1.4A3.1 3.1 0 0 0 7 18.5Z" /> },
+  Tasks: { tone: 'blue', art: <><rect x="4" y="4" width="16" height="16" rx="3" /><path d="m8.5 12 2.5 2.5 4.5-5" /></> },
   Dreams: { tone: 'violet', art: <><path className="icon-fill" d="M15.6 4.4a7.6 7.6 0 1 0 4 10.6 6.2 6.2 0 0 1-4-10.6Z" /><path d="M18.4 4.2v2.4M17.2 5.4h2.4" /><path d="M20.6 9.4v1.2M20 10h1.2" /></> },
 };
 

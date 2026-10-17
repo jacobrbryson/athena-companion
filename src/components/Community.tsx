@@ -43,7 +43,7 @@ export const PLACE_KINDS: Record<PlaceKind, { label: string; icon: string }> = {
   park: { label: 'Park', icon: '🌳' },
   other: { label: 'Other', icon: '📍' },
 };
-const kindOf = (kind?: string) => PLACE_KINDS[kind as PlaceKind] || PLACE_KINDS.other;
+export const kindOf = (kind?: string) => PLACE_KINDS[kind as PlaceKind] || PLACE_KINDS.other;
 
 const RADII = [1, 2, 3, 5, 10];
 
@@ -65,8 +65,8 @@ function Problem({ text }: { text: string | null }) {
 
 /** The map on the Community page: every point of interest with its ring, and every neighbor you know. Move it, zoom it. */
 const kindIcon = (kind: string) => kindOf(kind).icon;
-export function CommunityMap({ places, neighbors = [], onNeighbors, height = 320 }: { places: WatchPlace[]; neighbors?: Neighbor[]; onNeighbors?: (neighbors: Neighbor[]) => void; height?: number }) {
-  return <NeighborMap places={places} neighbors={neighbors} icon={kindIcon} onNeighbors={onNeighbors} height={height} />;
+export function CommunityMap({ places, neighbors = [], onNeighbors, height = 320, satellite }: { places: WatchPlace[]; neighbors?: Neighbor[]; onNeighbors?: (neighbors: Neighbor[]) => void; height?: number; satellite?: boolean }) {
+  return <NeighborMap places={places} neighbors={neighbors} icon={kindIcon} onNeighbors={onNeighbors} height={height} satellite={satellite} />;
 }
 
 export function PointsOfInterest({ places, onPlaces }: { places: WatchPlace[]; onPlaces: (places: WatchPlace[]) => void }) {
@@ -282,7 +282,7 @@ const LINK_PROBLEM: Record<string, string> = {
 const streetOf = (address: string | null) => (address || '').split(',')[0].trim();
 
 /** What a household is called: its name, else who lives there, else its street. */
-function householdLabel(n: Pick<Neighbor, 'name' | 'address' | 'contacts'>) {
+export function householdLabel(n: Pick<Neighbor, 'name' | 'address' | 'contacts'>) {
   if (n.name) return n.name;
   const people = n.contacts.map(c => c.name).filter(Boolean) as string[];
   if (people.length) return people.length > 2 ? `${people.slice(0, 2).join(', ')} +${people.length - 2}` : people.join(' & ');

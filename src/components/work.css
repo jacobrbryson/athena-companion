@@ -1,0 +1,137 @@
+/* Work page (WorkPage.tsx) — the 2026-10-16 concept. Built on the Health
+   page's panels (.hp), the Calendar page's tiles and rows (.cp) and the Family
+   page's empty states and dated lists (.fp); only what work adds is here. */
+
+.wp .hp-panel>header h2 span { margin-left: 4px; color: var(--hp-sub); font-size: 14px; font-weight: 400; }
+.wp-head-icon { width: 26px; height: 26px; color: #4fb5ff; }
+.wp-blue { color: #4fb5ff; }
+.wp-violet { color: #b38bff; }
+.wp-sub { color: var(--hp-sub); font-size: 13px; }
+.wp-row { margin-top: 16px; align-items: stretch; }
+.wp-tabs { display: flex; flex-wrap: wrap; margin-bottom: 12px; }
+.wp-tabs button { padding: 6px 12px; font-size: 13px; }
+.wp-dot { width: 11px; height: 11px; flex-shrink: 0; border-radius: 50%; box-shadow: 0 0 8px currentColor; }
+.wp-clamp { display: -webkit-box !important; overflow: hidden; white-space: normal !important; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.wp-clamp-1 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wp-when { flex-shrink: 0; color: var(--hp-sub); font-size: 12px; white-space: nowrap; }
+.wp-ok { color: #33e0a1 !important; }
+.wp-bad { color: #ff5d6c !important; }
+
+/* Status chips */
+.wp-chip { flex-shrink: 0; padding: 3px 9px; border-radius: 6px; font-size: 12px; font-style: normal; white-space: nowrap; }
+.wp-chip-blue { background: #11408a; color: #cfe4ff; }
+.wp-chip-amber { background: #4a2a0c; color: #ffb35c; }
+.wp-chip-violet { background: #34206a; color: #c9b0ff; }
+.wp-chip-green { background: #0f3a2a; color: #45e3a4; }
+
+/* --- Workspaces ------------------------------------------------------------------- */
+.wp-spaces { margin-top: 16px; }
+.wp-spaces>header { flex-wrap: wrap; }
+.wp-spaces>header .cp-outline { gap: 8px; }
+.wp-space-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; }
+.wp-space-cards>li { display: flex; flex-direction: column; gap: 14px; padding: 16px; border: 1px solid #1d3550; border-radius: 12px; background: #0a1a2e; }
+.wp-space-head { display: flex; align-items: flex-start; gap: 14px; }
+.wp-space-head>div { flex: 1; min-width: 0; }
+.wp-space-mark { display: grid; place-items: center; width: 52px; height: 52px; flex-shrink: 0; border: 2px solid var(--wp-tone); border-radius: 50%; background: color-mix(in srgb, var(--wp-tone) 18%, #0a1a2e); color: var(--wp-tone); font-size: 22px; font-weight: 700; box-shadow: 0 0 16px color-mix(in srgb, var(--wp-tone) 35%, transparent); }
+.wp-space-head strong { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 18px; font-weight: 600; }
+.wp-space-head small { display: block; margin-top: 2px; color: #c8d7e6; font-size: 13px; }
+.wp-space-head a { display: inline-flex; align-items: center; gap: 4px; margin-top: 3px; color: #4fb5ff; font-size: 13px; text-decoration: none; }
+.wp-space-head a .hp-icon { width: 12px; height: 12px; transform: rotate(-45deg); }
+.wp-primary { padding: 1px 8px; border: 1px solid #2c8fd8; border-radius: 6px; color: #7cc6ff; font-size: 12px; font-style: normal; font-weight: 400; }
+.wp-kebab { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 8px; color: var(--hp-sub); }
+.wp-kebab:hover { background: #13304f; color: #fff; }
+.wp-conn { display: flex; flex-wrap: wrap; gap: 8px; min-height: 30px; }
+.wp-conn>span { display: inline-flex; align-items: center; gap: 7px; padding: 5px 11px; border: 1px solid #1d3a57; border-radius: 8px; background: #071628; font-size: 13px; }
+.wp-conn>span i { width: 9px; height: 9px; border-radius: 50%; background: #33e0a1; box-shadow: 0 0 6px #33e0a1; }
+.wp-conn>span.wp-conn-bad i { background: #f6c33a; box-shadow: 0 0 6px #f6c33a; }
+.wp-conn small { color: var(--hp-dim); font-size: 13px; }
+.wp-space-foot { display: flex; align-items: center; gap: 18px; margin-top: auto; padding-top: 12px; border-top: 1px solid #18304a; color: #c8d7e6; font-size: 13px; text-align: left; }
+.wp-space-foot .hp-chev { margin-left: auto; }
+
+/* --- Jira / Slack / Agents ------------------------------------------------------------ */
+.wp-issues { display: grid; }
+.wp-issues a { display: flex; align-items: center; gap: 12px; padding: 10px 2px; border-bottom: 1px solid #18304a; color: inherit; text-decoration: none; }
+.wp-issues li:last-child a { border-bottom: 0; }
+.wp-issues a:hover strong { color: #7cc6ff; }
+.wp-key { flex-shrink: 0; width: 86px; font-size: 13px; font-weight: 600; }
+.wp-issues div { flex: 1; min-width: 0; }
+.wp-issues strong { display: block; overflow: hidden; font-size: 14px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.wp-issues small { color: var(--hp-sub); font-size: 12px; }
+.wp-rows { display: grid; gap: 4px; }
+.wp-rows li>a, .wp-rows li>button { display: flex; align-items: flex-start; gap: 12px; width: 100%; padding: 10px 4px; border-bottom: 1px solid #18304a; color: inherit; text-align: left; text-decoration: none; }
+.wp-rows li:last-child>a, .wp-rows li:last-child>button { border-bottom: 0; }
+.wp-rows li>*>div { flex: 1; min-width: 0; }
+.wp-rows strong { display: block; font-size: 15px; font-weight: 600; }
+.wp-rows small { display: block; color: var(--hp-sub); font-size: 13px; line-height: 1.4; }
+.wp-live { display: inline-block; width: 8px; height: 8px; margin-right: 6px; border-radius: 50%; background: #33e0a1; box-shadow: 0 0 6px #33e0a1; }
+.wp-live-bad { background: #ff5d6c; box-shadow: 0 0 6px #ff5d6c; }
+.wp-live-done { background: #4fb5ff; box-shadow: 0 0 6px #4fb5ff; }
+.wp-agents .wp-when, .wp-slack .wp-when { padding-top: 2px; }
+.wp-slack .fp-empty-hero, .wp-sites .fp-empty-hero { padding: 30px 14px; }
+
+/* --- Projects / Sites / Upcoming --------------------------------------------------------- */
+.wp-row-b { grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) minmax(0, 1fr); }
+.wp-project-list { display: grid; }
+.wp-project-list button { display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px 2px; border-bottom: 1px solid #18304a; color: inherit; text-align: left; }
+.wp-project-list li:last-child button { border-bottom: 0; }
+.wp-project-name { flex: 1; min-width: 0; overflow: hidden; font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
+.wp-project-name small { color: var(--hp-sub); font-size: 13px; }
+.wp-bar { width: 22%; max-width: 120px; margin-top: 0; flex-shrink: 0; }
+.wp-count { width: 34px; flex-shrink: 0; color: #c8d7e6; font-size: 13px; text-align: right; }
+.wp-site-list { display: grid; }
+.wp-site-list li { display: flex; align-items: center; gap: 12px; padding: 10px 2px; border-bottom: 1px solid #18304a; }
+.wp-site-list li:last-child { border-bottom: 0; }
+.wp-site-list div { flex: 1; min-width: 0; }
+.wp-site-list strong { display: block; overflow: hidden; font-size: 14px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.wp-site-list small { display: block; color: var(--hp-sub); font-size: 12px; }
+.wp-site-state { display: grid; place-items: center; width: 24px; height: 24px; flex-shrink: 0; border-radius: 50%; color: #071222; }
+.wp-site-state .hp-icon { width: 14px; height: 14px; stroke-width: 2.8; }
+.wp-site-ok { background: #33e0a1; box-shadow: 0 0 10px #33e0a188; }
+.wp-site-bad { background: #ff5d6c; box-shadow: 0 0 10px #ff5d6c88; }
+.wp-site-idle { background: #35506a; }
+.wp-spark { display: flex; align-items: flex-end; gap: 2px; width: 64px; height: 28px; flex-shrink: 0; }
+.wp-spark i { flex: 1; border-radius: 1px; background: #3aa6ff; }
+.wp-spark i.wp-spark-bad, .wp-spark i.wp-spark-miss { background: #ff5d6c; }
+.wp-dated li button { padding: 6px 8px; }
+.wp-dated .fp-date small { font-size: 10px; }
+
+/* --- Activity and quick actions -------------------------------------------------------- */
+.wp-activity, .wp-quick { margin-top: 16px; }
+.wp-activity>ul { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
+.wp-activity button { display: flex; align-items: flex-start; gap: 12px; width: 100%; height: 100%; padding: 12px; border: 1px solid #1d3550; border-radius: 10px; background: #0a1a2e; color: inherit; text-align: left; }
+.wp-activity button:hover, .wp-quick button:hover { border-color: #2c8fd8; }
+.wp-activity div { flex: 1; min-width: 0; }
+.wp-activity strong { display: block; font-size: 14px; font-weight: 600; }
+.wp-activity small { display: block; color: var(--hp-sub); font-size: 12px; }
+.wp-badge-blue { color: #3aa6ff; background: #11284a; }
+.wp-badge-violet { color: #c58bff; background: #2d1d4a; }
+.wp-badge-indigo { color: #8f7bff; background: #1f1f4a; }
+.wp-badge-green { color: #33e0a1; background: #0f3a33; }
+.wp-badge-red { color: #ff5d6c; background: #3d1720; }
+.wp-quick ul { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; }
+.wp-quick button { display: flex; align-items: center; gap: 12px; width: 100%; padding: 14px; border: 1px solid #1d3550; border-radius: 10px; background: #0a1a2e; color: #e8f3ff; font-size: 14px; text-align: left; }
+.wp-quick .hp-icon { width: 22px; height: 22px; color: #4fb5ff; }
+
+/* --- Manage a workspace ------------------------------------------------------------------- */
+.wp-manage h3 { margin: 16px 0 6px; color: #dbe8f4; font-size: 14px; font-weight: 600; }
+.wp-manage ul { display: grid; gap: 2px; }
+.wp-manage label { display: flex; align-items: center; gap: 10px; padding: 7px 4px; color: #dbe8f4; font-size: 14px; }
+.wp-manage label input { width: 16px; height: 16px; accent-color: #1d8cff; }
+.wp-manage label small { color: var(--hp-dim); }
+.wp-manage .wp-taken { opacity: .55; }
+.wp-manage .hp-form-actions { margin-top: 18px; justify-content: space-between; }
+
+/* --- Narrower screens ------------------------------------------------------------------------ */
+@media (max-width: 1250px) {
+  .wp-row-b { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .wp-row-b .wp-projects { grid-column: 1 / -1; }
+  .wp-activity>ul { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .wp-quick ul { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 760px) {
+  .wp-row-b { grid-template-columns: minmax(0, 1fr); }
+  .wp-activity>ul, .wp-quick ul { grid-template-columns: minmax(0, 1fr); }
+  .wp-quick ul { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .wp-key { width: auto; }
+  .wp-bar { display: none; }
+}

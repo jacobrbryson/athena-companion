@@ -204,7 +204,12 @@ export interface Website {
   uuid: string; domain: string; label: string | null; searchSite: string | null; gaProperty: string | null;
   notes: string | null; lastCheckedAt: string | null; lastError: string | null;
   search: SearchStats | null; analytics: AnalyticsStats | null;
+  /** The newest uptime check and the last few (oldest first); null before the first check. */
+  uptime?: SiteUptime | null;
 }
+export interface SiteUptime { ok: boolean; statusCode: number | null; ms: number | null; error: string | null; checkedAt: string; recent: { ok: boolean; ms: number | null }[] }
+/** A code investigation or fix the person approved this week, as the Work page's agents panel shows it. */
+export interface AgentRun { uuid: string; kind: 'fix' | 'investigation'; repo: string | null; summary: string | null; state: 'working' | 'no_change' | 'failed' | 'open' | 'merged' | 'closed' | 'unknown' | null; at: string }
 export type WebsiteInput = { domain: string; label?: string | null; searchSite?: string | null; gaProperty?: string | null; notes?: string | null };
 /** A connection (Jira, Gmail…) as a workplace sees it: metadata only. `provider: null` means it was removed since it was linked. */
 export interface WorkplaceConnection { credentialUuid: string; provider: string | null; label: string; account: string | null; status: string }
@@ -213,6 +218,9 @@ export interface Workplace {
   uuid: string; name: string; role: string | null; domain: string | null; primary: boolean; notes: string | null;
   emails: { uuid: string; email: string }[];
   connections: (WorkplaceConnection & { uuid: string })[];
+  /** The sites and projects that are this workplace's (link uuid, and the site's or project's own). Absent before migration 0079. */
+  sites?: { uuid: string; siteUuid: string }[];
+  projects?: { uuid: string; projectUuid: string }[];
 }
 /** Workplaces, and the connections not linked to any — with the one their sign-in's domain suggests. */
 export interface WorkplacesOverview { workplaces: Workplace[]; available: (WorkplaceConnection & { suggestedWorkplace: string | null })[] }
@@ -227,6 +235,10 @@ export interface WebsiteDiscovery {
 
 /** Calendar events that mention the community's towns and places, read wide (not from the 25-event summary). */
 export interface CommunityCalendar { connected: boolean; terms: string[]; events: CalendarEvent[] }
+/** One hour of the NWS forecast at home. */
+export interface ForecastHour { start: string; temperatureF: number | null; precipitationChance: number | null; windSpeed: string | null; shortForecast: string | null; isDaytime?: boolean | null }
+/** The next 24 hours at the home point of interest; weather is null when there's no place or NWS can't answer. */
+export interface CommunityWeather { status: 'ready' | 'unavailable' | 'no_place'; place: string | null; weather: { town: string | null; now: ForecastHour; hours: ForecastHour[]; checkedAt: string } | null }
 export interface CommunityOverview { places: WatchPlace[]; neighbors: Neighbor[]; events: CommunityEvent[]; localNews: LocalNewsItem[] | null; kinds: PlaceKind[] }
 /** A ring on the map: where a watched place is and how far it reaches. */
 export interface AlertPlace { name: string; latitude: number; longitude: number; radiusMiles: number; live?: boolean }
@@ -415,6 +427,10 @@ export const dashboardApi = {
     : api.post<{ site: Website }>('/api/v1/dashboard/websites', input),
   removeWebsite: (uuid: string) => api.del<{ sites: Website[] }>(`/api/v1/dashboard/websites/${encodeURIComponent(uuid)}`),
   /** Read Google now: one site, or all of them. Throttled server-side to one a minute. */
+  /** Check whichever sites haven't been checked in ten minutes (is it up, how fast), then list them. */
+  checkWebsites: () => api.post<{ sites: Website[] }>('/api/v1/dashboard/websites/check', {}),
+  /** The code investigations and fixes approved this week, with each fix's state. */
+  workAgents: () => api.get<{ runs: AgentRun[] }>('/api/v1/dashboard/work/agents'),
   refreshWebsites: (uuid?: string) => api.post<{ sites: Website[] }>(uuid ? `/api/v1/dashboard/websites/${encodeURIComponent(uuid)}/refresh` : '/api/v1/dashboard/websites/refresh', {}),
   /** Workplaces on the Work page. Every write can move the primary flag or a link, so the whole overview comes back. */
   workplaces: () => api.get<WorkplacesOverview>('/api/v1/dashboard/workplaces'),
@@ -423,12 +439,13 @@ export const dashboardApi = {
     : api.post<WorkplacesOverview>('/api/v1/dashboard/workplaces', input),
   removeWorkplace: (uuid: string) => api.del<WorkplacesOverview>(`/api/v1/dashboard/workplaces/${encodeURIComponent(uuid)}`),
   /** Give a workplace a connection or an email address. Exclusive: one already on another workplace is refused. */
-  linkWorkplace: (uuid: string, link: { credential: string } | { email: string }) =>
+  linkWorkplace: (uuid: string, link: { credential: string } | { email: string } | { site: string } | { project: string }) =>
     api.post<WorkplacesOverview>(`/api/v1/dashboard/workplaces/${encodeURIComponent(uuid)}/links`, link),
   unlinkWorkplace: (uuid: string, linkUuid: string) =>
     api.del<WorkplacesOverview>(`/api/v1/dashboard/workplaces/${encodeURIComponent(uuid)}/links/${encodeURIComponent(linkUuid)}`),
   /** The Community page: points of interest, neighbours, events and local headlines. */
   community: () => api.get<CommunityOverview>('/api/v1/dashboard/community'),
+  communityWeather: () => api.get<CommunityWeather>('/api/v1/dashboard/community/weather'),
   communityCalendar: () => api.get<CommunityCalendar>('/api/v1/dashboard/community/calendar'),
   saveNeighbor: (input: NeighborInput, uuid?: string) => uuid
     ? api.patch<{ neighbors: Neighbor[] }>(`/api/v1/dashboard/community/neighbors/${encodeURIComponent(uuid)}`, input)
