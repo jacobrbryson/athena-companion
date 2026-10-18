@@ -792,6 +792,16 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
     busy: !!reconnecting && reconnecting === SOURCE_PROVIDER[key],
   });
   const unavailable = (key: keyof DashboardSummary, name: string) => <Unavailable source={summary?.[key] as Source<unknown> | undefined} name={name} fix={fixFor(key)} />;
+  // Keep has no Connect button: the list is shared with Athena's own Google
+  // account in Keep and the owner links it by script, so the fix is asking her
+  // how (her capability file, google-keep.md, has the steps).
+  const groceriesUnavailable = () => <Unavailable source={summary?.groceries} name="Grocery list (Google Keep)" fix={{
+    reconnect: () => onAsk(summary?.groceries?.status === 'needs_reauth'
+      ? 'The grocery list on the Family page says Google Keep needs reconnecting. What do I do?'
+      : 'How do I share our Google Keep grocery list with you?'),
+    panel: () => onPanel('integrations'),
+    retry: retryData,
+  }} />;
   const retryData = () => void data.refresh();
 
   // Only fetched while the Mail page is actually open — 2,000 emails do not
@@ -896,6 +906,8 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
   const todayEvents = events.filter(e => eventDay(e, timeZone) === today);
   const nextEvent = events.find(e => !e.allDay && new Date(e.start).getTime() > Date.now()) || todayEvents[0];
   const chores = summary?.familyChores.data?.chores || [];
+  // What the family is out of, across their shared Keep food lists.
+  const outOf = (summary?.groceries?.data?.lists || []).flatMap(l => l.toBuy);
   const sickFamily = summary?.familyHealth.data?.active || [];
   const choresDone = chores.filter(c => c.completed).length;
   const familyPeople = data.familyPeople.data;
@@ -1050,6 +1062,7 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
       <ul className="dashboard-data-list roster-list">{roster.slice(0, FAMILY_CARD_ROWS).map(rosterRow)}</ul>
       {healthError && <p className="dashboard-notice" role="status">{healthError}</p>}
       {roster.length > FAMILY_CARD_ROWS && <p className="source-note">+{roster.length - FAMILY_CARD_ROWS} more on the Family page</p>}
+      {outOf.length > 0 && <p className="source-note">Grocery list: {outOf.slice(0, 3).join(', ')}{outOf.length > 3 ? ` +${outOf.length - 3} more` : ''}</p>}
       <button type="button" className="source-fix" onClick={() => onAsk('I want to add someone to my family. Ask me who they are and what you should know.')}>Add someone <span>↗</span></button>
     </>;
   }
@@ -1219,8 +1232,9 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
       if (source && provider) providers.set(provider, [...(providers.get(provider) || []), source]);
     }
     if (summary?.body) providers.set('vesync', [summary.body]);
+    if (summary?.groceries) providers.set('google_keep', [summary.groceries]);
     const linked = [...providers.entries()].filter(([, list]) => list.some(x => x.status !== 'not_connected'));
-    const NAMES: Record<string, string> = { google_calendar: 'Google Calendar', gmail: 'Gmail', whoop: 'WHOOP', jira: 'Jira', slack: 'Slack', family_chores: 'Family Chores', vesync: 'VeSync scale' };
+    const NAMES: Record<string, string> = { google_calendar: 'Google Calendar', gmail: 'Gmail', whoop: 'WHOOP', jira: 'Jira', slack: 'Slack', family_chores: 'Family Chores', vesync: 'VeSync scale', google_keep: 'Google Keep' };
     const attention = linked.filter(([, list]) => list.some(x => x.status !== 'ready' && x.status !== 'not_connected')).map(([p]) => NAMES[p] || p);
     return <main className="dashboard-content dashboard-section">
       <div className="dashboard-toolbar"><time dateTime={new Date().toISOString()}>{new Date().toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}</time><button onClick={() => onAsk('')} className="ask-athena">ϟ <span>Ask Athena…</span> ↗</button></div>
@@ -1322,6 +1336,8 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
         canCompleteChores={!!summary?.familyChores.data?.canComplete} choresReconnectUrl={summary?.familyChores.data?.reconnectUrl}
         choresNote={ready(summary?.familyChores) ? null : unavailable('familyChores', 'Family Chores')}
         calendarNote={ready(summary?.calendar) ? null : unavailable('calendar', 'Google Calendar')}
+        groceries={summary?.groceries?.data?.lists || []} groceriesUrl={summary?.groceries?.data?.appUrl}
+        groceriesNote={ready(summary?.groceries) ? null : groceriesUnavailable()}
         health={!summary && data.summary.loading ? { label: 'Loading…', tone: 'idle', note: 'Reading health reports' } : health}
         sick={sickFamily} onAsk={onAsk} onCalendar={go('Calendar')} onDetails={toDetails} />}
     >

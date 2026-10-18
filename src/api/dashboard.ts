@@ -46,7 +46,12 @@ export interface DashboardSummary {
   /** VeSync scale, 90 days newest first. Optional so an older server's
    *  payload (no `body`) still renders. */
   body?: Source<{ latest: WeighIn | null; weighIns: WeighIn[]; calibration?: BodyCalibrationState; references?: BodyReference[] }>;
+  /** Google Keep lists shared with Athena that look like food lists. `toBuy` is
+   *  what the family is out of; `usualCount` how many regulars sit ticked on it.
+   *  Optional so an older server's payload still renders. */
+  groceries?: Source<{ lists: GroceryList[]; appUrl?: string | null }>;
 }
+export interface GroceryList { title: string; toBuy: string[]; usualCount: number }
 /** One weigh-in, metric; null where the scale didn't measure it. */
 export interface WeighIn {
   at: string; weight_kg: number; bmi: number | null; body_fat_percent: number | null;

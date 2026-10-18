@@ -14,6 +14,16 @@ button.cp-stat { text-align: left; color: inherit; }
 /* --- Main grid -------------------------------------------------------------- */
 .fp-grid { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(300px, 1fr); gap: 16px; margin-top: 18px; align-items: stretch; }
 .fp-grid h2 span { margin-left: 6px; color: #c8d7e6; font-size: 16px; font-weight: 400; }
+/* Grocery list: full width under the two-by-two grid. */
+.fp-groceries { grid-column: 1 / -1; }
+.fp-groceries-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(220px, 300px); gap: 18px; align-items: start; }
+.fp-groceries-label { display: block; margin-bottom: 8px; color: #8fa6bf; font-size: 13px; letter-spacing: .04em; text-transform: uppercase; }
+.fp-groceries-items { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.fp-groceries-items li { padding: 6px 12px; border: 1px solid #1f3a58; border-radius: 999px; background: #0a1a2e; color: #e8f3ff; font-size: 14px; }
+.fp-groceries-items .fp-groceries-more { border-style: dashed; color: #8fa6bf; }
+.fp-groceries-side { display: flex; flex-direction: column; gap: 12px; color: #c8d7e6; font-size: 14px; }
+.fp-groceries-side p { margin: 0; }
+.fp-groceries-side strong { color: #e8f3ff; }
 .fp-wide { justify-content: center; width: 100%; margin-top: 14px; padding: 11px 14px; }
 
 /* Chores */
@@ -117,6 +127,7 @@ button.cp-stat { text-align: left; color: inherit; }
   .fp-grid { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 760px) {
+  .fp-groceries-body { grid-template-columns: minmax(0, 1fr); }
   .fp-avatar-lg { width: 72px; height: 72px; font-size: 26px; }
   .fp-day li { grid-template-columns: 58px 3px 20px minmax(0, 1fr); gap: 8px; }
   .fp-day time { font-size: 12px; }

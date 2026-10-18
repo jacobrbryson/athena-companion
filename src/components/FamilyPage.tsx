@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import type { CalendarEvent, FamilyChild, FamilyHealthStatus } from '../api/dashboard';
+import type { CalendarEvent, FamilyChild, FamilyHealthStatus, GroceryList } from '../api/dashboard';
 import { actionsApi } from '../api/companion';
 import type { ApiError } from '../api/client';
 import { Icon } from './HealthPage';
@@ -22,6 +22,42 @@ import './family.css';
  */
 
 type Chore = { id?: string | null; title: string; completed: boolean; status: string | null; dueDate: string | null };
+
+/**
+ * The family's shared Google Keep grocery list (2026-10-18), full width under
+ * the grid. Read-only: Keep stays where things get added and ticked. It shows
+ * what the family is out of; the ticked regulars are only counted — on a list
+ * kept since 2018 there are hundreds, and they are what Athena plans meals
+ * from, not something to read through here.
+ */
+function GroceriesPanel({ lists, url, note, onAsk }: { lists: GroceryList[]; url?: string | null; note: ReactNode; onAsk: (text: string) => void }) {
+  const outOf = lists.flatMap(l => l.toBuy);
+  const usual = lists.reduce((n, l) => n + l.usualCount, 0);
+  const title = lists.length === 1 ? lists[0].title : '';
+  return <section className="hp-panel fp-groceries">
+    <header><h2>Grocery list <span>{title}</span></h2>{url && !note
+      ? <a className="hp-link" href={url} target="_blank" rel="noopener noreferrer">Open in Keep <Icon name="arrowRight" /></a>
+      : <span>Google Keep</span>}</header>
+    {note ? note
+      : !lists.length ? <div className="fp-empty-hero">
+        <strong>No grocery list shared yet</strong>
+        <p>Share your Google Keep grocery list with Athena and it shows up here.</p>
+        <button type="button" className="cp-outline" onClick={() => onAsk('How do I share our Google Keep grocery list with you?')}>Ask Athena how <Icon name="arrowRight" /></button>
+      </div>
+        : <div className="fp-groceries-body">
+          <div>
+            <small className="fp-groceries-label">{outOf.length ? `Out of ${outOf.length === 1 ? '1 thing' : `${outOf.length} things`}` : 'Nothing on the list'}</small>
+            {outOf.length ? <ul className="fp-groceries-items">{outOf.slice(0, 24).map((item, i) => <li key={`${item}-${i}`}>{item}</li>)}
+              {outOf.length > 24 && <li className="fp-groceries-more">+{outOf.length - 24} more</li>}</ul>
+              : <p className="hp-empty">You’re stocked up — nothing waiting to be bought.</p>}
+          </div>
+          <div className="fp-groceries-side">
+            {usual > 0 && <p><strong>{usual}</strong> regulars on the list — Athena plans meals around what you usually buy.</p>}
+            <button type="button" className="cp-outline" onClick={() => onAsk('What can we make for dinner tonight with what we usually have? Keep it easy.')}>What can we make tonight? <Icon name="arrowRight" /></button>
+          </div>
+        </div>}
+  </section>;
+}
 interface Props {
   roster: RosterRow[];
   children: FamilyChild[];
@@ -40,6 +76,11 @@ interface Props {
   choresNote: ReactNode;
   /** Why the calendar can't be read; null when it can. */
   calendarNote: ReactNode;
+  /** Shared Google Keep food lists (connectors/googleKeep). */
+  groceries: GroceryList[];
+  groceriesUrl?: string | null;
+  /** Why the list can't be read, with its fix; null when it can. */
+  groceriesNote: ReactNode;
   health: { label: string; tone: string; note: string };
   sick: FamilyHealthStatus[];
   onAsk: (text: string) => void;
@@ -183,7 +224,7 @@ function Avatar({ name, photoUrl, size }: { name: string; photoUrl?: string | nu
   </span>;
 }
 
-export function FamilyOverview({ roster, children, events, timeZone, now, chores: choresIn, household, choresUrl, canCompleteChores, choresReconnectUrl, choresNote, calendarNote, health, sick, onAsk, onCalendar, onDetails }: Props) {
+export function FamilyOverview({ roster, children, events, timeZone, now, chores: choresIn, household, choresUrl, canCompleteChores, choresReconnectUrl, choresNote, calendarNote, groceries, groceriesUrl, groceriesNote, health, sick, onAsk, onCalendar, onDetails }: Props) {
   const ticks = useChoreTicks(choresIn);
   const chores = ticks.live;
   const today = zonedDay(new Date(now), timeZone);
@@ -357,6 +398,8 @@ export function FamilyOverview({ roster, children, events, timeZone, now, chores
             })}</ul>}
         {upcoming.length > 4 && <button type="button" className="cp-outline fp-wide" onClick={onCalendar}>{upcoming.length - 4} more this week <Icon name="arrowRight" /></button>}
       </section>
+
+      <GroceriesPanel lists={groceries} url={groceriesUrl} note={groceriesNote} onAsk={onAsk} />
     </div>
 
     <div className="cp-bottom">

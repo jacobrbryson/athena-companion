@@ -713,7 +713,8 @@ function FoodLog({ food, open, onClose, onChanged }: { food: NutritionDay | null
       </>}
     </li>)}</ul> : <p className="hp-empty">{loadingDay ? 'Loading…' : isToday ? 'Nothing logged yet today.' : 'Nothing logged that day.'}</p>}
     {(editing || !adding) && error && <p className="hp-error" role="status">{error}</p>}
-    {!editing && !adding && <LogFoodMenu down label={`New record${isToday ? '' : ` for ${noon(date).toLocaleDateString(undefined, { timeZone: 'UTC', month: 'short', day: 'numeric' })}`}`} busy={logging} disabled={loadingDay || !!busy}
+    {!editing && !adding && <LogFoodMenu down label={`New record${isToday ? '' : ` for ${noon(date).toLocaleDateString(undefined, { timeZone: 'UTC', month: 'short', day: 'numeric' })}`}`} busy={busy === 'favorite' ? 'Logging…' : logging} disabled={loadingDay || !!busy}
+      favorites={food?.favorites || []} onFavorite={uuid => void run('favorite', () => healthPlanApi.logFavorite(uuid, date), 'Couldn’t log that.')}
       onTell={text => logged('Athena is looking it up…', () => healthPlanApi.describe(text, date), 'Athena couldn’t look that up.')}
       onPhoto={file => void logged('Athena is looking…', async () => healthPlanApi.scan({ ...(await photoBody(file)), eaten_on: date }), 'Athena couldn’t read that photo.')}
       onManual={openManual} />}

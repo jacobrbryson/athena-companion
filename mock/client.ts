@@ -415,6 +415,7 @@ function dashboardSummary() {
     slack: unready('not_connected'),
     emailTriage: ready(mailSummary()),
     familyHealth: ready({ active: mockHealth() }),
+    groceries: ready({ appUrl: 'https://keep.google.com/', lists: [{ title: 'Groceries', toBuy: ['Turkey', 'Milk', 'Tortillas', 'Shredded cheese', 'Bananas'], usualCount: 214 }] }),
   };
 }
 

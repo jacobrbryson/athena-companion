@@ -82,5 +82,5 @@ export const healthPlanApi = {
     api.post<ScanResult>('/api/v1/dashboard/health/nutrition/describe', { text, eaten_on: eatenOn, today: localDay() }),
   saveFavorite: (food: EntryDraft) => api.post<{ nutrition: NutritionDay }>('/api/v1/dashboard/health/favorites', { ...food, today: localDay() }),
   removeFavorite: (uuid: string) => api.del<{ nutrition: NutritionDay }>(`/api/v1/dashboard/health/favorites/${encodeURIComponent(uuid)}?today=${localDay()}`),
-  logFavorite: (uuid: string) => api.post<{ nutrition: NutritionDay }>(`/api/v1/dashboard/health/favorites/${encodeURIComponent(uuid)}/log`, { eaten_on: localDay(), today: localDay() }),
+  logFavorite: (uuid: string, eatenOn = localDay()) => api.post<{ nutrition: NutritionDay }>(`/api/v1/dashboard/health/favorites/${encodeURIComponent(uuid)}/log`, { eaten_on: eatenOn, today: localDay() }),
 };
