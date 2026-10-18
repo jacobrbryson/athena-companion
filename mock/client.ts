@@ -2062,6 +2062,35 @@ Sam` };
       all_required_accepted: true,
     };
   }
+  // Property -> Security: a ready bridge with the household's devices and kept media.
+  if (method === 'GET' && p === '/api/v1/projects/property/security') {
+    const ago = (m: number) => new Date(Date.now() - m * 60_000).toISOString();
+    const cam = (serial: string, name: string, model: string, battery: number | null, seen: number, clip = true) => ({ serial, name, model, bound: true, stationSerial: 'T8010P', lastSeenAt: ago(seen), capabilities: ['camera', 'battery', 'motion'], batteryPercent: battery, charging: false, freshSnapshotAvailable: true, storedThumbnailAvailable: false, clipAvailable: clip });
+    return { status: 'ready', updatedAt: ago(1), devices: [
+      { serial: 'T8010P', name: 'HomeBase 2', model: 'T8010', bound: true, stationSerial: null, lastSeenAt: ago(2), capabilities: ['station'], batteryPercent: null, charging: null, freshSnapshotAvailable: false, storedThumbnailAvailable: false },
+      { ...cam('T8213D', 'Doorbell', 'T8213', 100, 60 * 30), capabilities: ['camera', 'doorbell', 'battery'] },
+      cam('T8171S', 'Side Yard', 'T8171', 100, 120), cam('T8171B', 'Backyard', 'T8171', 98, 120),
+    ], events: [
+      { id: 'e1', kind: 'motion', deviceSn: 'T8171B', at: ago(7) }, { id: 'e2', kind: 'motion', deviceSn: 'T8171B', at: ago(10) },
+      { id: 'e3', kind: 'doorbell', deviceSn: 'T8213D', at: ago(95) }, { id: 'e4', kind: 'motion', deviceSn: 'T8171S', at: ago(240) },
+      { id: 'e5', kind: 'motion', deviceSn: 'T8171B', at: ago(410) },
+    ] };
+  }
+  if (method === 'GET' && p === '/api/v1/projects/property/security/media') {
+    const ago = (m: number) => new Date(Date.now() - m * 60_000).toISOString();
+    const item = (n: number, serial: string, deviceName: string, type: 'image' | 'clip', m: number, important = type === 'clip') => ({ id: `00000000-0000-4000-8000-00000000000${n}`, deviceSerial: serial, deviceName, type, contentType: type === 'clip' ? 'video/mp4' : 'image/jpeg', bytes: 1000, durationSeconds: type === 'clip' ? 15 : null, important, capturedBy: 1, capturedAt: ago(m) });
+    return { media: [item(1, 'T8171B', 'Backyard', 'image', 20), item(2, 'T8171B', 'Backyard', 'clip', 85), item(3, 'T8213D', 'Doorbell', 'image', 96, true), item(4, 'T8171S', 'Side Yard', 'image', 300), item(5, 'T8171S', 'Side Yard', 'clip', 900)] };
+  }
+  if (method === 'POST' && /^\/api\/v1\/projects\/property\/security\/devices\/[^/]+\/clip$/.test(p)) {
+    await new Promise(r => setTimeout(r, 1500));
+    const serial = p.split('/')[7];
+    return { media: { id: crypto.randomUUID(), deviceSerial: serial, deviceName: serial, type: 'clip', contentType: 'video/mp4', bytes: 1000, durationSeconds: 15, important: true, capturedBy: 1, capturedAt: new Date().toISOString() } };
+  }
+  if (method === 'PATCH' && /^\/api\/v1\/projects\/property\/security\/media\/[^/]+$/.test(p)) {
+    return { media: { id: p.split('/').pop(), deviceSerial: 'T8171B', deviceName: 'Backyard', type: 'image', contentType: 'image/jpeg', bytes: 1000, durationSeconds: null, important: !!body?.important, capturedBy: 1, capturedAt: new Date().toISOString() } };
+  }
+  if (method === 'DELETE' && /^\/api\/v1\/projects\/property\/security\/media\/[^/]+$/.test(p)) return undefined;
+
   if (method === 'POST' && /^\/api\/v1\/integrations\/[^/]+\/connect$/.test(p)) {
     const provider = p.split('/')[4];
     const entry = integrations.find((i) => i.provider === provider);

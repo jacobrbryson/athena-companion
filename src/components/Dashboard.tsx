@@ -43,6 +43,7 @@ import { usePropertyIssues, reportedWhen, ReportIssueDrawer, IssueDetailsDrawer,
 import type { PropertyIssue } from '../api/propertyIssues';
 import { useVehicles, VehicleList, VehicleDrawer, VehicleDetailsDrawer, vehiclePrompt } from './PropertyVehicles';
 import { useThermostats, ThermostatList } from './PropertyThermostats';
+import { PropertySecurity } from './PropertySecurity';
 import { SystemOverview, SystemTabs, SYSTEM_TAB_IDS, type SystemTab, type SystemTile } from './SystemPage';
 import { HomeHero, HomeChanges, HomeSection, HomeStat, HomeTabs, Spark, useHomeExtras, type HeroNode, type Tone } from './DashboardHome';
 import { freshness, homeUpdates, recoveryChange } from './livingHome';
@@ -1609,6 +1610,7 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
       {propertyTab === 'property-utilities' && <Panel title="Thermostats" note="Google Nest" id="property-thermostats" wide>
         <ThermostatList state={thermostats} onConnect={() => void reconnect('nest')} connecting={reconnecting === 'nest'} />
       </Panel>}
+      {propertyTab === 'property-security' && <section id="property-security" className="section-panel-wide" aria-label="Security"><PropertySecurity enabled={section === 'Property' && propertyTab === 'property-security'} /></section>}
       {propertyTab === 'property-issues' && <Panel title="Issues" note="everything reported, open first" wide>
         <IssueList state={propertyIssues} onOpen={uuid => setIssueDrawer({ kind: 'view', uuid })} onReport={() => setIssueDrawer({ kind: 'report' })} />
       </Panel>}

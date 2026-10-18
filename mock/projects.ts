@@ -147,6 +147,8 @@ function cycles(from: string, to: string, relation: string) {
 
 /** Returns the mock answer for /api/v1/projects…, or undefined if the path is not ours. */
 export function mockProjectsRoute(method: string, p: string, query: URLSearchParams, body: Any): Any | undefined {
+  // Security has its own mock in client.ts.
+  if (p.startsWith('/api/v1/projects/property/security')) return undefined;
   // Linked, one thermostat online and one offline — the case the panel exists for.
   if (p === '/api/v1/projects/property/thermostats') return { status: 'ready', stale: false, devices: [
     { name: 'enterprises/mock/devices/up', displayName: null, room: 'Upstairs', type: 'thermostat', connectivity: 'ONLINE', offlineSince: null, onlineSince: iso(86_400_000),

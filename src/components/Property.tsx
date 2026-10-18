@@ -14,6 +14,7 @@ const PROPERTY_TABS = [
   { label: 'Issues', id: 'property-issues', icon: 'Issues' },
   { label: 'Vehicles', id: 'property-vehicles', icon: 'Vehicles' },
   { label: 'Utilities', id: 'property-utilities', icon: 'Utilities' },
+  { label: 'Security', id: 'property-security', icon: 'Home' },
   { label: 'Projects', id: 'property-projects', icon: 'PropertyProjects' },
   { label: 'Concerns', id: 'property-concerns', icon: 'Concerns' },
   { label: 'Property Map', id: 'property-map', icon: 'PropertyMap' },
