@@ -5,7 +5,7 @@ export type SecurityDevice = {
   capabilities: string[]; batteryPercent: number | null; charging: boolean | null;
   freshSnapshotAvailable: boolean; storedThumbnailAvailable: boolean; clipAvailable?: boolean;
 };
-export type SecurityEvent = { id: string; kind: 'motion' | 'doorbell'; deviceSn: string; at: string };
+export type SecurityEvent = { id: string; kind: 'motion' | 'doorbell' | 'person'; deviceSn: string; at: string };
 export type SecurityStatus = {
   status: 'ready' | 'connecting' | 'reconnecting' | 'authorization_required' | 'not_connected' | 'unavailable';
   updatedAt: string | null; devices: SecurityDevice[]; events: SecurityEvent[];
@@ -15,6 +15,19 @@ export type SecurityMedia = {
   id: string; deviceSerial: string; deviceName: string | null; type: 'image' | 'clip'; contentType: string;
   bytes: number; durationSeconds: number | null; important: boolean; capturedBy: number; capturedAt: string;
 };
+export type SubjectKind = 'person' | 'animal' | 'vehicle';
+/** Someone or something the cameras can recognise by name. */
+export type SightingSubject = {
+  id: string; name: string; kind: SubjectKind; description: string | null; photos: string[];
+  lastSeen: { at: string; camera: string | null; where: string | null } | null;
+};
+export type Sighting = {
+  id: string; label: string; kind: SubjectKind; subjectId: string | null; camera: string | null; deviceSerial: string;
+  zone: string | null; where: string | null; confidence: number | null; eventKind: 'motion' | 'doorbell' | 'person'; seenAt: string; hasFrame: boolean;
+};
+export type CameraZone = { deviceSerial: string; name: string; description: string | null };
+export type SightingRule = { id: string; subjectId: string | null; subjectName: string | null; label: string | null; deviceSerial: string | null; zone: string | null; enabled: boolean };
+export type SightingsOverview = { subjects: SightingSubject[]; zones: CameraZone[]; rules: SightingRule[]; sightings: Sighting[]; retentionDays: number };
 const base = '/api/v1/projects/property/security';
 export const propertySecurityApi = {
   status: () => api.get<SecurityStatus>(base),
@@ -24,4 +37,14 @@ export const propertySecurityApi = {
   mediaBlob: (id: string) => api.blob(`${base}/media/${encodeURIComponent(id)}`),
   setImportant: (id: string, important: boolean) => api.patch<{ media: SecurityMedia }>(`${base}/media/${encodeURIComponent(id)}`, { important }),
   removeMedia: (id: string) => api.del<void>(`${base}/media/${encodeURIComponent(id)}`),
+  sightings: () => api.get<SightingsOverview>(`${base}/sightings`),
+  sightingFrame: (id: string) => api.blob(`${base}/sightings/${encodeURIComponent(id)}/frame`),
+  createSubject: (body: { name: string; kind: SubjectKind; description?: string }) => api.post<{ id: string }>(`${base}/subjects`, body),
+  updateSubject: (id: string, body: { name?: string; kind?: SubjectKind; description?: string }) => api.patch<void>(`${base}/subjects/${encodeURIComponent(id)}`, body),
+  removeSubject: (id: string) => api.del<void>(`${base}/subjects/${encodeURIComponent(id)}`),
+  addSubjectPhoto: (id: string, mediaId: string) => api.post<void>(`${base}/subjects/${encodeURIComponent(id)}/photos`, { mediaId }),
+  removeSubjectPhoto: (id: string, mediaId: string) => api.del<void>(`${base}/subjects/${encodeURIComponent(id)}/photos/${encodeURIComponent(mediaId)}`),
+  setZones: (serial: string, zones: { name: string; description?: string }[]) => api.put<void>(`${base}/zones/${encodeURIComponent(serial)}`, { zones }),
+  createRule: (body: { subjectId?: string; label?: 'stranger'; deviceSerial?: string; zone?: string }) => api.post<{ id: string }>(`${base}/rules`, body),
+  removeRule: (id: string) => api.del<void>(`${base}/rules/${encodeURIComponent(id)}`),
 };

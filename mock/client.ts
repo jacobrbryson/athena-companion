@@ -2072,7 +2072,7 @@ Sam` };
       cam('T8171S', 'Side Yard', 'T8171', 100, 120), cam('T8171B', 'Backyard', 'T8171', 98, 120),
     ], events: [
       { id: 'e1', kind: 'motion', deviceSn: 'T8171B', at: ago(7) }, { id: 'e2', kind: 'motion', deviceSn: 'T8171B', at: ago(10) },
-      { id: 'e3', kind: 'doorbell', deviceSn: 'T8213D', at: ago(95) }, { id: 'e4', kind: 'motion', deviceSn: 'T8171S', at: ago(240) },
+      { id: 'e3', kind: 'doorbell', deviceSn: 'T8213D', at: ago(95) }, { id: 'e4', kind: 'person', deviceSn: 'T8171S', at: ago(240) },
       { id: 'e5', kind: 'motion', deviceSn: 'T8171B', at: ago(410) },
     ] };
   }
@@ -2090,6 +2090,34 @@ Sam` };
     return { media: { id: p.split('/').pop(), deviceSerial: 'T8171B', deviceName: 'Backyard', type: 'image', contentType: 'image/jpeg', bytes: 1000, durationSeconds: null, important: !!body?.important, capturedBy: 1, capturedAt: new Date().toISOString() } };
   }
   if (method === 'DELETE' && /^\/api\/v1\/projects\/property\/security\/media\/[^/]+$/.test(p)) return undefined;
+  // Sightings: an in-memory gallery, zones, rules and log.
+  if (p.startsWith('/api/v1/projects/property/security/') && /\/(sightings|subjects|zones|rules)/.test(p)) {
+    const ago = (m: number) => new Date(Date.now() - m * 60_000).toISOString();
+    const st = (window as any).__mockSightings ||= {
+      subjects: [
+        { id: 'sub-wynter', name: 'Wynter', kind: 'animal', description: 'Black lab, white chest', photos: ['00000000-0000-4000-8000-000000000001'], lastSeen: { at: ago(28), camera: 'Backyard', where: 'by the back fence' } },
+        { id: 'sub-dexter', name: 'Dexter', kind: 'animal', description: 'Brown terrier mix', photos: [], lastSeen: null },
+        { id: 'sub-van', name: 'Red Van', kind: 'vehicle', description: 'Red minivan', photos: [], lastSeen: { at: ago(300), camera: 'Side Yard', where: 'on the driveway' } },
+      ],
+      zones: [{ deviceSerial: 'T8171B', name: 'inside the fence', description: null }, { deviceSerial: 'T8171B', name: 'outside the back fence', description: null }],
+      rules: [{ id: 'rule-1', subjectId: 'sub-wynter', subjectName: 'Wynter', label: null, deviceSerial: 'T8171B', zone: 'outside the back fence', enabled: true }],
+      sightings: [
+        { id: 'si-1', label: 'Wynter', kind: 'animal', subjectId: 'sub-wynter', camera: 'Backyard', deviceSerial: 'T8171B', zone: 'inside the fence', where: 'by the back fence', confidence: 0.91, eventKind: 'motion', seenAt: ago(28), hasFrame: true },
+        { id: 'si-2', label: 'stranger', kind: 'person', subjectId: null, camera: 'Doorbell', deviceSerial: 'T8213D', zone: null, where: 'at the front door', confidence: 0.84, eventKind: 'doorbell', seenAt: ago(95), hasFrame: true },
+        { id: 'si-3', label: 'deer', kind: 'animal', subjectId: null, camera: 'Backyard', deviceSerial: 'T8171B', zone: 'outside the back fence', where: 'past the tree line', confidence: 0.55, eventKind: 'motion', seenAt: ago(240), hasFrame: true },
+        { id: 'si-4', label: 'Red Van', kind: 'vehicle', subjectId: 'sub-van', camera: 'Side Yard', deviceSerial: 'T8171S', zone: null, where: 'on the driveway', confidence: 0.88, eventKind: 'motion', seenAt: ago(300), hasFrame: true },
+      ],
+    };
+    if (method === 'GET' && p.endsWith('/sightings')) return { ...st, retentionDays: 30 };
+    if (method === 'POST' && p.endsWith('/subjects')) { const id = `sub-${Date.now()}`; st.subjects.push({ id, name: body.name, kind: body.kind, description: body.description || null, photos: [], lastSeen: null }); return { id }; }
+    const subj = /\/subjects\/([^/]+)/.exec(p)?.[1];
+    if (subj && method === 'DELETE' && !p.includes('/photos/')) { st.subjects = st.subjects.filter((x: any) => x.id !== subj); st.rules = st.rules.filter((r: any) => r.subjectId !== subj); return undefined; }
+    if (subj && method === 'POST' && p.endsWith('/photos')) { st.subjects.find((x: any) => x.id === subj)?.photos.push(body.mediaId); return undefined; }
+    if (subj && method === 'DELETE' && p.includes('/photos/')) { const m = p.split('/').pop(); const x = st.subjects.find((y: any) => y.id === subj); if (x) x.photos = x.photos.filter((y: string) => y !== m); return undefined; }
+    if (method === 'PUT' && p.includes('/zones/')) { const serial = p.split('/').pop(); st.zones = [...st.zones.filter((z: any) => z.deviceSerial !== serial), ...body.zones.map((z: any) => ({ deviceSerial: serial, name: z.name, description: null }))]; return undefined; }
+    if (method === 'POST' && p.endsWith('/rules')) { const sub = st.subjects.find((x: any) => x.id === body.subjectId); const id = `rule-${Date.now()}`; st.rules.push({ id, subjectId: body.subjectId || null, subjectName: sub?.name || null, label: body.label || null, deviceSerial: body.deviceSerial || null, zone: body.zone || null, enabled: true }); return { id }; }
+    if (method === 'DELETE' && p.includes('/rules/')) { const id = p.split('/').pop(); st.rules = st.rules.filter((r: any) => r.id !== id); return undefined; }
+  }
 
   if (method === 'POST' && /^\/api\/v1\/integrations\/[^/]+\/connect$/.test(p)) {
     const provider = p.split('/')[4];
