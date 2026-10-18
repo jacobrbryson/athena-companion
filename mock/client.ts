@@ -1040,6 +1040,32 @@ function mockNutrition(state: MockPlanState, today: string) {
   return { date: today, favorites, entries: todays, totals: totals(todays), days: Array.from({ length: 7 }, (_, i) => { const date = planAdd(today, i - 6); const rows = state.entries.filter(e => e.eaten_on === date); return { date, logged: rows.length > 0, totals: totals(rows) }; }) };
 }
 
+/** A cooling week in Troutman with the first frost on the third night, in local time. */
+function mockOutlook() {
+  const start = new Date(); start.setMinutes(0, 0, 0);
+  const iso = (d: Date) => { const z = -d.getTimezoneOffset(); const s = z >= 0 ? '+' : '-'; const a = Math.abs(z); return `${new Date(d.getTime() + z * 60000).toISOString().slice(0, 19)}${s}${String(Math.floor(a / 60)).padStart(2, '0')}:${String(a % 60).padStart(2, '0')}`; };
+  const hours = Array.from({ length: 144 }, (_, i) => {
+    const at = new Date(start.getTime() + i * 3600000);
+    const h = at.getHours();
+    const day = Math.floor(i / 24);
+    const temperatureF = Math.round(52 - day * 4 + 13 * Math.sin(((h - 9) / 24) * Math.PI * 2));
+    return { start: iso(at), temperatureF, precipitationChance: day === 4 && h > 12 ? 70 : 5, dewpointF: temperatureF - 9, humidity: 62, windSpeed: '4 mph', windMph: day === 4 ? 22 : 4, windDirection: 'NW', shortForecast: day === 4 && h > 12 ? 'Chance Rain Showers' : h >= 7 && h < 19 ? 'Sunny' : 'Clear', isDaytime: h >= 7 && h < 19 };
+  });
+  const nights: any[] = [];
+  for (let d = 0; d < 6; d++) {
+    const night = hours.filter((h) => { const at = new Date(h.start); const n = new Date(at.getTime() - 12 * 3600000); return n.getDate() === new Date(start.getTime() + d * 86400000).getDate() && (at.getHours() <= 9 || at.getHours() >= 18); });
+    if (!night.length) continue;
+    const low = night.reduce((a, b) => (b.temperatureF < a.temperatureF ? b : a));
+    const t = low.temperatureF;
+    nights.push({ night: (() => { const n = new Date(start.getTime() + d * 86400000); return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`; })(), lowF: t, at: low.start, windMph: low.windMph, shortForecast: low.shortForecast, risk: t <= 28 ? 'hard_freeze' : t <= 32 ? 'freeze' : t <= 36 ? 'likely' : t <= 38 ? 'possible' : 'none' });
+  }
+  const days = Array.from({ length: 7 }, (_, d) => {
+    const at = new Date(start.getTime() + d * 86400000);
+    return { date: `${at.getFullYear()}-${String(at.getMonth() + 1).padStart(2, '0')}-${String(at.getDate()).padStart(2, '0')}`, name: d === 0 ? 'Today' : at.toLocaleDateString('en-US', { weekday: 'long' }), highF: 65 - d * 4, lowF: 39 - d * 4, shortForecast: d === 4 ? 'Chance Rain Showers' : 'Sunny', detailedForecast: null, precipitationChance: d === 4 ? 70 : 2 };
+  });
+  return { status: 'ready', place: { uuid: 'p-home', name: 'Home' }, outlook: { place: 'Troutman, NC', now: hours[0], hours: hours.slice(0, 48), days, nights, nextFrost: nights.find((n) => n.risk !== 'none') || null, checkedAt: new Date().toISOString() } };
+}
+
 async function route(method: string, path: string, body?: any): Promise<any> {
   await wait(150);
   const url = new URL(path, 'http://mock');
@@ -1228,6 +1254,26 @@ async function route(method: string, path: string, body?: any): Promise<any> {
     if (!body?.state) fail(400, 'That sign-in link has expired or was already used. Start again from Connected apps.');
     if (body?.error) return { success: true, redirect: `/?integration=google&status=error&reason=${encodeURIComponent(body.error)}` };
     return { success: true, redirect: '/?integration=google_contacts&status=connected' };
+  }
+  if (p === '/api/v1/dashboard/weather/outlook') return mockOutlook();
+  if (p.startsWith('/api/v1/dashboard/weather/alerts')) {
+    const uuid = p.split('/')[6] ? decodeURIComponent(p.split('/')[6]) : null;
+    let rules: any[] = JSON.parse(localStorage.getItem('mock_weather_alerts') || '[]');
+    const units: Record<string, string | null> = { cold: '°F', heat: '°F', rain: '%', wind: 'mph', snow: null, ice: null, storm: null };
+    const defaults: Record<string, number> = { cold: 34, heat: 95, rain: 60, wind: 35 };
+    if (method === 'POST') rules.push({ uuid: `wa${Date.now()}`, enabled: true, leadHours: 24, ...body, threshold: units[body.kind] ? (body.threshold ?? defaults[body.kind]) : null });
+    if (method === 'PATCH') rules = rules.map(r => (r.uuid === uuid ? { ...r, ...body } : r));
+    if (method === 'DELETE') rules = rules.filter(r => r.uuid !== uuid);
+    localStorage.setItem('mock_weather_alerts', JSON.stringify(rules));
+    const words = (r: any) => ({ cold: `${r.threshold}°F or colder`, heat: `${r.threshold}°F or hotter`, rain: `rain ${r.threshold}% likely or more`, wind: `wind or gusts of ${r.threshold} mph or more`, snow: 'any snow', ice: 'sleet or freezing rain', storm: 'thunderstorms' } as Record<string, string>)[r.kind];
+    const frost = mockOutlook().outlook.nights.find(n => n.lowF <= 34);
+    return {
+      alerts: rules.map(r => ({ placeUuid: null, note: null, lastCheckedAt: new Date().toISOString(), lastError: null, ...r, unit: units[r.kind], placeName: 'Home', describe: words(r), forecastKnown: true,
+        next: r.kind === 'cold' && frost && frost.lowF <= r.threshold ? { at: frost.at, value: frost.lowF, when: 'around 6 AM Wednesday', label: `${frost.lowF}°F` } : null })),
+      recent: rules.some(r => r.kind === 'cold') ? [{ alertUuid: rules[0].uuid, text: 'Frost alert for Home: down to 34°F around 7 AM tomorrow — clear and still enough for frost. Cover tender plants.', value: 34, weatherAt: null, pushed: true, firedAt: new Date(Date.now() - 20 * 3600000).toISOString() }] : [],
+      places: [{ uuid: 'p-home', name: 'Home', kind: 'home' }, { uuid: 'p-church', name: 'Troutman ARP Church', kind: 'church' }],
+      kinds: ['cold', 'heat', 'rain', 'snow', 'ice', 'storm', 'wind'],
+    };
   }
   if (p.startsWith('/api/v1/place-reminders')) {
     const uuid = p.split('/')[4] ? decodeURIComponent(p.split('/')[4]) : null;

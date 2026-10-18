@@ -47,17 +47,17 @@ export const kindOf = (kind?: string) => PLACE_KINDS[kind as PlaceKind] || PLACE
 
 const RADII = [1, 2, 3, 5, 10];
 
-const errorText = (e: unknown, fallback: string) => {
+export const errorText = (e: unknown, fallback: string) => {
   const err = e as Error & { body?: { message?: string } };
   return err?.body?.message || err?.message || fallback;
 };
 
 /** A field label that stays readable above a dashboard input. */
-function Field({ label, children }: { label: string; children: ReactNode }) {
+export function Field({ label, children }: { label: string; children: ReactNode }) {
   return <label className="community-field"><span>{label}</span>{children}</label>;
 }
 
-function Problem({ text }: { text: string | null }) {
+export function Problem({ text }: { text: string | null }) {
   return text ? <p className="dashboard-notice" role="status">{text}</p> : null;
 }
 

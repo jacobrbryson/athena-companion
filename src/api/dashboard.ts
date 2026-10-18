@@ -175,7 +175,8 @@ export interface CommunityEvent { uuid: string; title: string; startsOn: string;
 export type NeighborInput = Omit<Neighbor, 'uuid' | 'contacts'> & { contacts: { contactId: string; name: string | null }[] };
 export type EventInput = Omit<CommunityEvent, 'uuid' | 'nextOn' | 'nextEndsOn'>;
 /** A headline from the person's own news pages that mentions one of their places or towns. */
-export interface LocalNewsItem extends NewsItem { matched: string }
+/** `via: 'source'` when it came from a local site (the town's own page) rather than naming a place. */
+export interface LocalNewsItem extends NewsItem { matched: string; via?: 'text' | 'source' }
 /** "Next time I'm at Missy's, remind me to ..." — set by approving Athena's remind_at_place card. */
 /** What has to happen before a place reminder can fire ("from the gym", "after the last game"). */
 export interface ReminderCondition { kind: 'place' | 'time'; label: string | null; after: string | null; metAt: string | null }
@@ -239,6 +240,29 @@ export interface CommunityCalendar { connected: boolean; terms: string[]; events
 export interface ForecastHour { start: string; temperatureF: number | null; precipitationChance: number | null; windSpeed: string | null; shortForecast: string | null; isDaytime?: boolean | null }
 /** The next 24 hours at the home point of interest; weather is null when there's no place or NWS can't answer. */
 export interface CommunityWeather { status: 'ready' | 'unavailable' | 'no_place'; place: string | null; weather: { town: string | null; now: ForecastHour; hours: ForecastHour[]; checkedAt: string } | null }
+/** One hour of the longer forecast: ForecastHour plus what frost and wind alerts read. */
+export interface OutlookHour extends ForecastHour { dewpointF: number | null; humidity: number | null; windMph: number | null; windDirection: string | null }
+export interface OutlookDay { date: string; name: string | null; highF: number | null; lowF: number | null; shortForecast: string | null; detailedForecast: string | null; precipitationChance: number | null }
+export type FrostRisk = 'none' | 'possible' | 'likely' | 'freeze' | 'hard_freeze' | 'unknown';
+/** The coldest hour of one night (the evening's date), and how likely frost is. */
+export interface OutlookNight { night: string; lowF: number; at: string; windMph: number | null; shortForecast: string | null; risk: FrostRisk }
+export interface WeatherOutlookRead {
+  status: 'ready' | 'unavailable' | 'no_place';
+  place: { uuid: string; name: string } | null;
+  outlook: { place: string | null; now: OutlookHour; hours: OutlookHour[]; days: OutlookDay[]; nights: OutlookNight[]; nextFrost: OutlookNight | null; checkedAt: string } | null;
+}
+export type WeatherAlertKind = 'cold' | 'heat' | 'rain' | 'snow' | 'ice' | 'storm' | 'wind';
+/** A weather alert the person set: "34°F or colder at Home, up to 24 h ahead". */
+export interface WeatherAlertRule {
+  uuid: string; kind: WeatherAlertKind; threshold: number | null; unit: string | null; placeUuid: string | null; placeName: string;
+  leadHours: number; note: string | null; enabled: boolean; lastCheckedAt: string | null; lastError: string | null;
+  describe: string; forecastKnown: boolean;
+  /** The next time the forecast meets it, looking past the lead time to the end of the forecast. */
+  next: { at: string; value: number | null; when: string; label: string | null } | null;
+}
+export interface WeatherAlertFire { alertUuid: string; text: string; value: number | null; weatherAt: string | null; pushed: boolean; firedAt: string }
+export interface WeatherAlertsRead { alerts: WeatherAlertRule[]; recent: WeatherAlertFire[]; places: { uuid: string; name: string; kind: string }[]; kinds: WeatherAlertKind[] }
+export interface WeatherAlertInput { kind: WeatherAlertKind; threshold?: number | null; placeUuid?: string | null; leadHours?: number; note?: string | null; enabled?: boolean }
 export interface CommunityOverview { places: WatchPlace[]; neighbors: Neighbor[]; events: CommunityEvent[]; localNews: LocalNewsItem[] | null; kinds: PlaceKind[] }
 /** A ring on the map: where a watched place is and how far it reaches. */
 export interface AlertPlace { name: string; latitude: number; longitude: number; radiusMiles: number; live?: boolean }
@@ -419,6 +443,13 @@ export const dashboardApi = {
   saveWatchPlace: (place: { name: string; latitude: number; longitude: number; radiusMiles?: number; address?: string | null; enabled?: boolean; kind?: PlaceKind; notes?: string | null }) =>
     api.put<{ places: WatchPlace[] }>('/api/v1/dashboard/incidents/places', place),
   removeWatchPlace: (uuid: string) => api.del<{ places: WatchPlace[] }>(`/api/v1/dashboard/incidents/places/${encodeURIComponent(uuid)}`),
+  /** Seven days, 48 hours by the hour, and a frost read per night, at home or a chosen place. */
+  weatherOutlook: (placeUuid?: string | null) => api.get<WeatherOutlookRead>(`/api/v1/dashboard/weather/outlook${placeUuid ? `?place=${encodeURIComponent(placeUuid)}` : ''}`),
+  weatherAlerts: () => api.get<WeatherAlertsRead>('/api/v1/dashboard/weather/alerts'),
+  saveWeatherAlert: (input: WeatherAlertInput, uuid?: string) => uuid
+    ? api.patch<WeatherAlertsRead>(`/api/v1/dashboard/weather/alerts/${encodeURIComponent(uuid)}`, input)
+    : api.post<WeatherAlertsRead>('/api/v1/dashboard/weather/alerts', input),
+  removeWeatherAlert: (uuid: string) => api.del<WeatherAlertsRead>(`/api/v1/dashboard/weather/alerts/${encodeURIComponent(uuid)}`),
   /** Websites: the sites the person manages, from Search Console and Analytics. */
   websites: () => api.get<{ sites: Website[] }>('/api/v1/dashboard/websites'),
   websiteDiscovery: () => api.get<WebsiteDiscovery>('/api/v1/dashboard/websites/discover'),

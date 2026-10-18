@@ -72,7 +72,7 @@ const monthDay = (d: Date) => ({ mon: d.toLocaleDateString(undefined, { month: '
 const localIso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
 /** An icon for an NWS short forecast ("Partly Sunny", "Chance Showers And Thunderstorms"). */
-function skyIcon(h: Pick<ForecastHour, 'shortForecast' | 'isDaytime'>) {
+export function skyIcon(h: Pick<ForecastHour, 'shortForecast' | 'isDaytime'>) {
   const t = (h.shortForecast || '').toLowerCase();
   if (/thunder|storm/.test(t)) return 'storm';
   if (/snow|sleet|ice|flurr|freezing/.test(t)) return 'snow';
@@ -82,7 +82,7 @@ function skyIcon(h: Pick<ForecastHour, 'shortForecast' | 'isDaytime'>) {
   if (/cloud|overcast/.test(t)) return 'cloud';
   return h.isDaytime === false ? 'moon' : 'sun';
 }
-const degrees = (n: number | null | undefined) => (n == null ? '—' : `${Math.round(n)}°`);
+export const degrees = (n: number | null | undefined) => (n == null ? '—' : `${Math.round(n)}°`);
 
 function useHomeWeather(places: WatchPlace[] | undefined) {
   const [read, setRead] = useState<CommunityWeather | null>(null);
@@ -246,7 +246,7 @@ export function CommunityOverview({ community, waiting, calls, weatherAlerts, ne
       </section>
 
       <section className="hp-panel cmp-weather">
-        <header><h2>Local Weather</h2>{sky?.weather && <span>{sky.weather.town || sky.place}</span>}</header>
+        <header><h2>Local Weather</h2><button type="button" className="hp-link" onClick={() => onSection('community-weather')}>Forecast &amp; alerts <Icon name="arrowRight" /></button></header>
         {!sky ? <p className="hp-empty">{skyFailed ? 'Weather is unavailable right now.' : places === undefined ? 'Loading…' : 'Checking the forecast…'}</p>
           : !sky.weather ? <p className="hp-empty">{sky.status === 'no_place' ? 'Add home as a watched place and I’ll show the weather there.' : 'The National Weather Service didn’t answer just now.'}</p>
             : <>
@@ -284,7 +284,7 @@ export function CommunityOverview({ community, waiting, calls, weatherAlerts, ne
           : <ul>{news.slice(0, 3).map((n, i) => {
             const body = <>
               <span className="hp-badge hp-badge-lg hp-amber"><Icon name="news" /></span>
-              <div><small>{ago(n.published || n.firstSeen)}</small><strong>{n.title}</strong><small>{n.source} · mentions {n.matched}</small></div>
+              <div><small>{ago(n.published || n.firstSeen)}</small><strong>{n.title}</strong><small>{n.via === 'source' ? n.source : `${n.source} · mentions ${n.matched}`}</small></div>
               <Icon name="chevron" className="hp-chev" />
             </>;
             return <li key={`${n.url}-${i}`}>{n.url ? <a href={n.url} target="_blank" rel="noopener noreferrer">{body}</a> : <button type="button" onClick={() => onAsk(`Tell me about "${n.title}".`)}>{body}</button>}</li>;

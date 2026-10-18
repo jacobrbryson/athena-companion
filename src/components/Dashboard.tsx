@@ -38,6 +38,7 @@ import { plannedToday } from './ProjectData';
 import { useProjects, openProjects, ProjectList, ProjectBoard, ProjectsDrawers, ConcernList, CharterView, StateChip, type ProjectsDrawer } from './Projects';
 import type { Area } from '../api/projects';
 import { useProperty, PropertyOverview, PropertyWeather, PropertyNavigation, propertyHealth, PROPERTY_TAB_IDS, type PropertyTab } from './Property';
+import { WeatherPanel } from './WeatherPanel';
 import { usePropertyIssues, reportedWhen, ReportIssueDrawer, IssueDetailsDrawer, ActiveIssueBanner, IssueList, troubleshootPrompt, findProPrompt } from './PropertyIssues';
 import type { PropertyIssue } from '../api/propertyIssues';
 import { useVehicles, VehicleList, VehicleDrawer, VehicleDetailsDrawer, vehiclePrompt } from './PropertyVehicles';
@@ -1374,6 +1375,9 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
               {nearbyCalls.length ? <ul className="dashboard-data-list">{nearbyCalls.map(incidentLine)}</ul> : <p className="dashboard-empty">Quiet near your places.</p>}
             </>}
       </Panel>
+      <Panel id="community-weather" title="Weather" note="frost, 7 days, and your alerts" wide>
+        <WeatherPanel onAsk={onAsk} />
+      </Panel>
       <Panel id="community-door-to-door" title="Check on your street" note="door to door, in an emergency" wide>
         {waiting || <DoorToDoor places={places} />}
       </Panel>
@@ -1388,7 +1392,7 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
       </Panel>
       <Panel id="community-news" title="Local news" note="from the pages I read for you" wide>
         {waiting || (localNews === null ? <EmptyCta text="News couldn’t load." action="Retry" onClick={retryData} />
-          : localNews?.length ? <ul className="dashboard-data-list">{localNews.map((n, i) => <li key={`${n.url}-${i}`}><ExternalLink url={n.url}><strong>{n.title}</strong><small>{n.source} · mentions {n.matched} · {dateLabel(n.firstSeen)}</small></ExternalLink></li>)}</ul>
+          : localNews?.length ? <ul className="dashboard-data-list">{localNews.map((n, i) => <li key={`${n.url}-${i}`}><ExternalLink url={n.url}><strong>{n.title}</strong><small>{n.via === 'source' ? n.source : `${n.source} · mentions ${n.matched}`} · {dateLabel(n.firstSeen)}</small></ExternalLink></li>)}</ul>
             : <EmptyCta text={newsSources.length ? 'Nothing this week mentions your towns or places. A local paper or your town’s page widens what I can catch.' : 'Give me a local paper or your town’s news page and I’ll pick out anything about your places.'} action="Add a local news page" onClick={() => setSourcesOpen(true)} />)}
       </Panel>
       <Panel title="Emergency alerts on this phone" note="911 calls · weather" wide>
