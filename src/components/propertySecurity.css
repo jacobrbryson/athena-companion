@@ -136,7 +136,8 @@
 .ps-sight-list strong { font-weight: 600; }
 .ps-sight-list small { display: block; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ps-sight-list time { font-size: 13px; color: var(--ps-sub); white-space: nowrap; }
-.ps-sight-actions { display: flex; align-items: center; gap: 6px; }
+.ps-sight-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 6px; }
+.ps-pages { display: flex; align-items: center; justify-content: center; gap: 12px; color: var(--ps-sub); font-size: 13px; }
 .ps-teach-box { width: min(560px, 100%); overflow-y: auto; }
 .ps-teach-box img { max-height: 36vh; }
 .ps-teach-box form { display: grid; gap: 12px; }
@@ -150,6 +151,7 @@
 .ps-event-icon.is-animal { color: #ffd38a; border-color: #6b5426; background: #241a08; }
 .ps-event-icon.is-vehicle { color: #9fd0ff; }
 .ps-event-icon.is-person { color: #cfe7ff; }
+.ps-event-icon img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
 .ps-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
 .ps-subject { display: grid; gap: 8px; padding: 12px; border: 1px solid var(--ps-line); border-radius: 10px; background: #071628aa; }
 .ps-subject header { display: flex; align-items: center; gap: 10px; }

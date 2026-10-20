@@ -19,6 +19,7 @@ export type SubjectKind = 'person' | 'animal' | 'vehicle';
 /** Someone or something the cameras can recognise by name. */
 export type SightingSubject = {
   id: string; name: string; kind: SubjectKind; description: string | null; photos: string[];
+  personFactUuid?: string | null; profilePhotoUrl?: string | null;
   lastSeen: { at: string; camera: string | null; where: string | null } | null;
 };
 export type Sighting = {
@@ -29,8 +30,8 @@ export type CameraZone = { deviceSerial: string; name: string; description: stri
 export type SightingRule = { id: string; subjectId: string | null; subjectName: string | null; label: string | null; deviceSerial: string | null; zone: string | null; enabled: boolean };
 /** What "This is…" did: the name it took, and whether the frame became a reference photo. */
 export type TeachResult = { subjectId: string; name: string; created: boolean; photoAdded: boolean; photoNote: string | null; renamed: number };
-export type TeachBody = { subjectId?: string; newSubject?: { name: string; description?: string }; alsoIds?: string[] };
-export type SightingsOverview = { subjects: SightingSubject[]; zones: CameraZone[]; rules: SightingRule[]; sightings: Sighting[]; retentionDays: number };
+export type TeachBody = { subjectId?: string; newSubject?: { name: string; kind?: SubjectKind; description?: string }; alsoIds?: string[] };
+export type SightingsOverview = { subjects: SightingSubject[]; people: { id: string; name: string; hasPhoto: boolean }[]; zones: CameraZone[]; rules: SightingRule[]; sightings: Sighting[]; page: number; pages: number; total: number; retentionDays: number };
 const base = '/api/v1/projects/property/security';
 export const propertySecurityApi = {
   status: () => api.get<SecurityStatus>(base),
@@ -40,11 +41,13 @@ export const propertySecurityApi = {
   mediaBlob: (id: string) => api.blob(`${base}/media/${encodeURIComponent(id)}`),
   setImportant: (id: string, important: boolean) => api.patch<{ media: SecurityMedia }>(`${base}/media/${encodeURIComponent(id)}`, { important }),
   removeMedia: (id: string) => api.del<void>(`${base}/media/${encodeURIComponent(id)}`),
-  sightings: () => api.get<SightingsOverview>(`${base}/sightings`),
+  sightings: (page = 1, filter = 'all') => api.get<SightingsOverview>(`${base}/sightings?page=${page}&filter=${encodeURIComponent(filter)}`),
   sightingFrame: (id: string) => api.blob(`${base}/sightings/${encodeURIComponent(id)}/frame`),
   teachSighting: (id: string, body: TeachBody) => api.post<TeachResult>(`${base}/sightings/${encodeURIComponent(id)}/teach`, body),
+  addSightingEntity: (id: string, subjectId: string) => api.post<{ id: string; name: string }>(`${base}/sightings/${encodeURIComponent(id)}/entities`, { subjectId }),
   createSubject: (body: { name: string; kind: SubjectKind; description?: string }) => api.post<{ id: string }>(`${base}/subjects`, body),
   updateSubject: (id: string, body: { name?: string; kind?: SubjectKind; description?: string }) => api.patch<void>(`${base}/subjects/${encodeURIComponent(id)}`, body),
+  linkSubjectPerson: (id: string, factUuid: string | null) => api.put<void>(`${base}/subjects/${encodeURIComponent(id)}/person`, { factUuid }),
   removeSubject: (id: string) => api.del<void>(`${base}/subjects/${encodeURIComponent(id)}`),
   addSubjectPhoto: (id: string, mediaId: string) => api.post<void>(`${base}/subjects/${encodeURIComponent(id)}/photos`, { mediaId }),
   removeSubjectPhoto: (id: string, mediaId: string) => api.del<void>(`${base}/subjects/${encodeURIComponent(id)}/photos/${encodeURIComponent(mediaId)}`),

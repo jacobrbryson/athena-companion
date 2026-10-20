@@ -22,6 +22,16 @@ const PROPERTY_TABS = [
  ] as const;
 export type PropertyTab = typeof PROPERTY_TABS[number]['id'];
 export const PROPERTY_TAB_IDS = PROPERTY_TABS.map(t => t.id);
+export function propertyTabFromPath(pathname: string): PropertyTab {
+  const parts = pathname.split('/');
+  const slug = parts[3] || parts[2];
+  const id = `property-${slug}`;
+  return (PROPERTY_TAB_IDS as string[]).includes(id) ? id as PropertyTab : 'property-overview';
+}
+export function propertyTabPath(propertyId: string | undefined, tab: PropertyTab): string {
+  const base = propertyId ? `/properties/${encodeURIComponent(propertyId)}` : '/properties';
+  return tab === 'property-overview' ? base : `${base}/${tab.slice('property-'.length)}`;
+}
 /**
  * A page's own row of tabs: icon and label, arrow keys between them. Property
  * drew it first; the System page uses the same strip for its tabs.

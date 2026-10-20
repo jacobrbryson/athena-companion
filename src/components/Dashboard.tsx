@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import type { CalendarEvent, Source, JiraIssue, RecoveryDay, WeighIn, DashboardSummary, GcpBilling, TimeSaved, TriageEmail, NearbyIncident, WeatherAlert, WorkplacesOverview, FamilyHealthStatus } from '../api/dashboard';
 import { dashboardApi } from '../api/dashboard';
 import { localDay } from '../api/healthPlan';
@@ -20,7 +21,7 @@ import { familyHealthSummary } from './familyHealthSummary';
 import { DoorToDoor } from './DoorToDoor';
 import { communityEvents } from './communityCalendar.ts';
 import { WorkBanner } from './WorkBanner';
-import { untilLabel, workStatus } from './workStatus';
+import { isInProgress, isReadyToStart, untilLabel, workStatus } from './workStatus';
 import { EmailPanel, CATEGORY_LABEL } from './EmailPanel';
 import { MailBundles } from './MailBundles';
 import { DreamCard, DreamsPage, DreamImage, STATUS_LINE, nightLabel } from './Dreams';
@@ -40,7 +41,7 @@ import { NavigationLink, DrawerButton } from './ActionControls';
 import { plannedToday } from './ProjectData';
 import { useProjects, openProjects, ProjectList, ProjectBoard, ProjectsDrawers, ConcernList, CharterView, StateChip, type ProjectsDrawer } from './Projects';
 import type { Area } from '../api/projects';
-import { useProperty, PropertyOverview, PropertyWeather, PropertyNavigation, propertyHealth, PROPERTY_TAB_IDS, type PropertyTab } from './Property';
+import { useProperty, PropertyOverview, PropertyWeather, PropertyNavigation, propertyHealth, propertyTabFromPath, propertyTabPath, type PropertyTab } from './Property';
 import { WeatherPanel } from './WeatherPanel';
 import { usePropertyIssues, reportedWhen, ReportIssueDrawer, IssueDetailsDrawer, ActiveIssueBanner, IssueList, troubleshootPrompt, findProPrompt } from './PropertyIssues';
 import type { PropertyIssue } from '../api/propertyIssues';
@@ -701,6 +702,8 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
   onNavigate?: (section: DashboardSection) => void;
   compact?: boolean; onExpand?: () => void;
 }) {
+  const location = useLocation();
+  const navigate = useNavigate();
   const data = useDashboardData();
   const summary = data.summary.data;
   const [sourcesOpen, setSourcesOpen] = useState(false);
@@ -733,10 +736,13 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
   const [vehicleDrawer, setVehicleDrawer] = useState<{ kind: 'add' } | { kind: 'view' | 'edit'; uuid: string } | null>(null);
   // Report, view or edit a property issue; the uuid names which.
   const [issueDrawer, setIssueDrawer] = useState<{ kind: 'report' } | { kind: 'view' | 'edit'; uuid: string } | null>(null);
-  const [propertyTab, setPropertyTab] = useState<PropertyTab>(() => {
-    const id = typeof window === 'undefined' ? '' : window.location.hash.slice(1);
-    return (PROPERTY_TAB_IDS as readonly string[]).includes(id) ? id as PropertyTab : 'property-overview';
-  });
+  const propertyTab = propertyTabFromPath(location.pathname);
+  const setPropertyTab = (tab: PropertyTab) => navigate(propertyTabPath(property.property?.uuid, tab));
+  useEffect(() => {
+    if (compact || section !== 'Property' || !property.property?.uuid) return;
+    const canonical = propertyTabPath(property.property.uuid, propertyTab);
+    if (location.pathname !== canonical) navigate(canonical, { replace: true });
+  }, [compact, section, property.property?.uuid, propertyTab, location.pathname, navigate]);
   // Only while the Overview is on screen: a page load may cost a Google read.
   const thermostats = useThermostats(section === 'Property' && !compact && propertyTab === 'property-utilities');
   const [drawer, setDrawer] = useState<ProjectsDrawer>(null);
@@ -1618,7 +1624,7 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
         charter={close => <CharterView state={proj} area="home" onEdit={() => { close(); setDrawer({ kind: 'charter', area: 'home' }); }} />} />}
       {propertyTab === 'property-overview' && <Panel title="Issues" note="open, most serious first" id="property-issues-summary" scroll>
         <IssueList state={propertyIssues} limit={4} onOpen={uuid => setIssueDrawer({ kind: 'view', uuid })} onReport={() => setIssueDrawer({ kind: 'report' })} />
-        {issueList.length > 0 && <NavigationLink href="#property-issues" onNavigate={() => setPropertyTab('property-issues')}>See all issues ({issueList.length})</NavigationLink>}
+        {issueList.length > 0 && <NavigationLink href={propertyTabPath(property.property?.uuid, 'property-issues')} onNavigate={() => setPropertyTab('property-issues')}>See all issues ({issueList.length})</NavigationLink>}
       </Panel>}
       {propertyTab === 'property-utilities' && <Panel title="Thermostats" note="Google Nest" id="property-thermostats" wide>
         <ThermostatList state={thermostats} onConnect={() => void reconnect('nest')} connecting={reconnecting === 'nest'} />
@@ -1634,7 +1640,7 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
         {proj.error && <p role="alert">{proj.error} <button onClick={proj.reload}>Retry</button></p>}
         {proj.loading ? <p>Loading projects…</p> : <ProjectList projects={open.slice(0, 3)} snap={proj.snap} onOpen={openProject} />}
         <div className="property-next-actions">
-          <NavigationLink href="#property-projects" onNavigate={() => setPropertyTab('property-projects')}>See all projects ({home.length})</NavigationLink>
+          <NavigationLink href={propertyTabPath(property.property?.uuid, 'property-projects')} onNavigate={() => setPropertyTab('property-projects')}>See all projects ({home.length})</NavigationLink>
           <DrawerButton primary onClick={() => newProject('home')}><span aria-hidden="true">＋</span>New project</DrawerButton>
         </div>
       </Panel>}
@@ -1840,15 +1846,16 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
     </HomeSection>;
 
     // --- Work ---------------------------------------------------------------
-    const sites = [...new Set(issues.map(i => i.site))];
+    const actionableIssues = issues.filter(i => isInProgress(i) || isReadyToStart(i));
+    const sites = [...new Set(actionableIssues.map(i => i.site))];
     const siteName = (site: string) => site.replace(/^https?:\/\//, '').replace(/\.atlassian\.net.*$/, '').split(/[-_.]/).map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
     const activeSite = sites.includes(workSite) ? workSite : sites[0];
-    const siteIssues = issues.filter(i => i.site === activeSite);
+    const siteIssues = actionableIssues.filter(i => i.site === activeSite).sort((a, b) => Number(isInProgress(b)) - Number(isInProgress(a)));
     const pill = (i: JiraIssue) => i.statusCategory === 'indeterminate' ? 'progress' : i.statusCategory === 'done' ? 'done' : /review/i.test(i.status) ? 'review' : 'todo';
     const work = <HomeSection id="work" icon="Work" title="Work" onAction={go('Work')}
-      tabs={ready(summary?.jira) && <HomeTabs label="Jira sites" tabs={sites.map(s => ({ id: s, label: siteName(s), count: issues.filter(i => i.site === s).length }))} active={activeSite} onChange={setWorkSite} />}>
+      tabs={ready(summary?.jira) && <HomeTabs label="Jira sites" tabs={sites.map(s => ({ id: s, label: siteName(s), count: actionableIssues.filter(i => i.site === s).length }))} active={activeSite} onChange={setWorkSite} />}>
       {!ready(summary?.jira) ? <SourceNote source={summary?.jira} name="Jira" fix={fixFor('jira')} />
-        : !issues.length ? <p className="dashboard-empty">No assigned open issues.</p>
+        : !actionableIssues.length ? <p className="dashboard-empty">Nothing In Progress or Ready to Start.</p>
           : <>
             <ul className="dh-issues">{siteIssues.slice(0, 3).map(i => <li key={i.key}><ExternalLink url={i.url}>
               <b className="dh-issue-badge">{i.project.charAt(0)}</b><code>{i.key}</code><span>{i.title}</span><em className={`dh-pill dh-pill-${pill(i)}`}>{i.status}</em>

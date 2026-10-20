@@ -3,6 +3,8 @@
    page's empty states and dated lists (.fp); only what work adds is here. */
 
 .wp .hp-panel>header h2 span { margin-left: 4px; color: var(--hp-sub); font-size: 14px; font-weight: 400; }
+.wp .hp-panel { min-width: 0; }
+.wp .hp-panel>header h2 { min-width: 0; flex-wrap: wrap; }
 .wp-head-icon { width: 26px; height: 26px; color: #4fb5ff; }
 .wp-blue { color: #4fb5ff; }
 .wp-violet { color: #b38bff; }
@@ -49,14 +51,16 @@
 .wp-space-foot .hp-chev { margin-left: auto; }
 
 /* --- Jira / Slack / Agents ------------------------------------------------------------ */
-.wp-issues { display: grid; }
-.wp-issues a { display: flex; align-items: center; gap: 12px; padding: 10px 2px; border-bottom: 1px solid #18304a; color: inherit; text-decoration: none; }
+.wp-issues { display: grid; min-width: 0; }
+.wp-issues li, .wp-dated li { min-width: 0; }
+.wp-issues a { display: flex; align-items: center; gap: 12px; min-width: 0; padding: 10px 2px; border-bottom: 1px solid #18304a; color: inherit; text-decoration: none; }
 .wp-issues li:last-child a { border-bottom: 0; }
 .wp-issues a:hover strong { color: #7cc6ff; }
-.wp-key { flex-shrink: 0; width: 86px; font-size: 13px; font-weight: 600; }
+.wp-key { flex-shrink: 0; max-width: 86px; overflow-wrap: anywhere; font-size: 13px; font-weight: 600; }
 .wp-issues div { flex: 1; min-width: 0; }
-.wp-issues strong { display: block; overflow: hidden; font-size: 14px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
-.wp-issues small { color: var(--hp-sub); font-size: 12px; }
+.wp-issues strong { display: -webkit-box; overflow: hidden; overflow-wrap: anywhere; font-size: 14px; font-weight: 500; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.wp-issues .wp-chip { min-width: 0; max-width: 35%; overflow: hidden; text-overflow: ellipsis; }
+.wp-issues small { display: block; overflow: hidden; color: var(--hp-sub); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .wp-rows { display: grid; gap: 4px; }
 .wp-rows li>a, .wp-rows li>button { display: flex; align-items: flex-start; gap: 12px; width: 100%; padding: 10px 4px; border-bottom: 1px solid #18304a; color: inherit; text-align: left; text-decoration: none; }
 .wp-rows li:last-child>a, .wp-rows li:last-child>button { border-bottom: 0; }
@@ -93,6 +97,10 @@
 .wp-spark i { flex: 1; border-radius: 1px; background: #3aa6ff; }
 .wp-spark i.wp-spark-bad, .wp-spark i.wp-spark-miss { background: #ff5d6c; }
 .wp-dated li button { padding: 6px 8px; }
+.wp-dated li, .wp-dated li button { min-width: 0; }
+.wp-dated li button > div { min-width: 0; overflow: hidden; }
+.wp-dated strong, .wp-dated div small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wp-dated .wp-when { max-width: 34%; overflow: hidden; text-overflow: ellipsis; }
 .wp-dated .fp-date small { font-size: 10px; }
 
 /* --- Activity and quick actions -------------------------------------------------------- */

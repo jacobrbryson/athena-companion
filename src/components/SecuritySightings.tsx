@@ -72,8 +72,9 @@ function sameVisit(all: Sighting[], s: Sighting) {
 /** "This is…": name one unnamed sighting, and teach the gallery from its frame. */
 function TeachDialog({ sighting, data, onClose, onDone }: { sighting: Sighting; data: SightingsOverview; onClose: () => void; onDone: (r: TeachResult) => void }) {
   const src = useFrameUrl(sighting.hasFrame ? sighting.id : null);
-  const choices = data.subjects.filter(x => x.kind === sighting.kind);
-  const [pick, setPick] = useState(choices[0]?.id || 'new');
+  const [kind, setKind] = useState<SubjectKind>(sighting.kind);
+  const choices = data.subjects.filter(x => x.kind === kind);
+  const [pick, setPick] = useState(data.subjects.find(x => x.kind === sighting.kind)?.id || 'new');
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [also, setAlso] = useState<string[]>([]);
@@ -94,7 +95,7 @@ function TeachDialog({ sighting, data, onClose, onDone }: { sighting: Sighting; 
     setBusy(true); setError('');
     try {
       onDone(await propertySecurityApi.teachSighting(sighting.id, {
-        ...(pick === 'new' ? { newSubject: { name: name.trim(), description: description.trim() || undefined } } : { subjectId: pick }),
+        ...(pick === 'new' ? { newSubject: { name: name.trim(), kind, description: description.trim() || undefined } } : { subjectId: pick }),
         ...(also.length ? { alsoIds: also } : {}),
       }));
     } catch (err) {
@@ -111,20 +112,23 @@ function TeachDialog({ sighting, data, onClose, onDone }: { sighting: Sighting; 
       <form onSubmit={e => void submit(e)}>
         <fieldset className="ps-teach-choice">
           <legend>This is…</legend>
+          <label className="ps-field"><span>What is in the frame?</span><select value={kind} onChange={e => { const next = e.target.value as SubjectKind; setKind(next); setPick(data.subjects.find(x => x.kind === next)?.id || 'new'); setAlso([]); }}>
+            <option value="person">Person</option><option value="animal">Dog or other animal</option><option value="vehicle">Vehicle</option>
+          </select></label>
           {choices.map(x => <label key={x.id} className="ps-radio">
             <input type="radio" name="teach-who" checked={pick === x.id} onChange={() => setPick(x.id)} />
             <span>{x.name}{x.photos.length >= MAX_PHOTOS && <em className="ps-tag">{MAX_PHOTOS} photos already</em>}</span>
           </label>)}
-          <label className="ps-radio"><input type="radio" name="teach-who" checked={pick === 'new'} onChange={() => setPick('new')} /><span>Someone new — a {KIND_WORD[sighting.kind]}</span></label>
+          <label className="ps-radio"><input type="radio" name="teach-who" checked={pick === 'new'} onChange={() => setPick('new')} /><span>Someone new — a {KIND_WORD[kind]}</span></label>
           {pick === 'new' && <div className="ps-teach-new">
-            <label className="ps-field"><span>Name</span><input autoFocus value={name} maxLength={60} onChange={e => setName(e.target.value)} placeholder={sighting.kind === 'animal' ? 'Wynter' : sighting.kind === 'vehicle' ? 'Red van' : 'Their name'} /></label>
-            <label className="ps-field"><span>What they look like (optional)</span><input value={description} maxLength={300} onChange={e => setDescription(e.target.value)} placeholder={sighting.kind === 'animal' ? 'Black lab, white chest, red collar' : ''} /></label>
+            <label className="ps-field"><span>Name</span><input autoFocus value={name} maxLength={60} onChange={e => setName(e.target.value)} placeholder={kind === 'animal' ? 'Wynter' : kind === 'vehicle' ? 'Red van' : 'Their name'} /></label>
+            <label className="ps-field"><span>What they look like (optional)</span><input value={description} maxLength={300} onChange={e => setDescription(e.target.value)} placeholder={kind === 'animal' ? 'Black lab, white chest, red collar' : ''} /></label>
           </div>}
         </fieldset>
         <p className="ps-sub">{full
           ? `${chosen!.name} already has ${MAX_PHOTOS} reference photos, so this sighting takes the name but its frame isn’t added — remove a photo in the Gallery to use it.`
           : sighting.hasFrame ? 'The frame is kept as a starred image and added as a reference photo, so the cameras can recognise them next time.' : 'This sighting has no frame, so only its name changes.'}</p>
-        {visit.length > 0 && <div className="ps-teach-also">
+        {kind === sighting.kind && visit.length > 0 && <div className="ps-teach-also">
           <p className="ps-sub">Also on {sighting.camera || 'this camera'} around then — tick any that are the same {KIND_WORD[sighting.kind]}:</p>
           {visit.map(v => <label key={v.id} className="ps-radio">
             <input type="checkbox" checked={also.includes(v.id)} onChange={e => setAlso(e.target.checked ? [...also, v.id] : also.filter(x => x !== v.id))} />
@@ -141,20 +145,18 @@ function TeachDialog({ sighting, data, onClose, onDone }: { sighting: Sighting; 
   </div>;
 }
 
-function Log({ data, onOpen, onTeach, notice }: { data: SightingsOverview; onOpen: (s: Sighting) => void; onTeach: (s: Sighting) => void; notice: string }) {
-  const [filter, setFilter] = useState('all');
-  const shown = data.sightings.filter(s => filter === 'all' || (filter === 'stranger' ? s.label === 'stranger' : s.subjectId === filter));
+function Log({ data, filter, onFilter, onPage, onOpen, onTeach, onAdd, notice }: { data: SightingsOverview; filter: string; onFilter: (f: string) => void; onPage: (p: number) => void; onOpen: (s: Sighting) => void; onTeach: (s: Sighting) => void; onAdd: (s: Sighting) => void; notice: string }) {
   return <>
     <label className="ps-field ps-field-inline"><span>Show</span>
-      <select value={filter} onChange={e => setFilter(e.target.value)}>
+      <select value={filter} onChange={e => onFilter(e.target.value)}>
         <option value="all">Everyone and everything</option>
         {data.subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
         <option value="stranger">Strangers</option>
       </select>
     </label>
     {notice && <p className="ps-sub" role="status">{notice}</p>}
-    {shown.length ? <ul className="ps-sight-list">{shown.map(s => <li key={s.id}>
-      <span className={`ps-event-icon is-${s.kind}`}><Icon name={KIND_ICON[s.kind]} /></span>
+    {data.sightings.length ? <ul className="ps-sight-list">{data.sightings.map(s => <li key={s.id}>
+      <span className={`ps-event-icon is-${s.kind}`}>{data.subjects.find(x => x.id === s.subjectId)?.profilePhotoUrl ? <img src={data.subjects.find(x => x.id === s.subjectId)!.profilePhotoUrl!} alt="" /> : <Icon name={KIND_ICON[s.kind]} />}</span>
       <div>
         <strong>{s.label}</strong>{s.confidence != null && s.confidence < 0.6 && <em className="ps-tag">not sure</em>}
         <small>{[s.camera, s.where, s.zone].filter(Boolean).join(' · ')}</small>
@@ -162,10 +164,25 @@ function Log({ data, onOpen, onTeach, notice }: { data: SightingsOverview; onOpe
       <time dateTime={s.seenAt}>{when(s.seenAt)}</time>
       <span className="ps-sight-actions">
         {!s.subjectId && <button className="ps-btn" onClick={() => onTeach(s)} aria-label={`Name the ${s.label} seen ${when(s.seenAt)}`}>This is…</button>}
+        {s.hasFrame && <button className="ps-btn" onClick={() => onAdd(s)} aria-label={`Add another person or animal to the frame at ${when(s.seenAt)}`}>Add another…</button>}
         {s.hasFrame && <button className="ps-btn ps-btn-square" onClick={() => onOpen(s)} aria-label={`See the frame for ${s.label} at ${when(s.seenAt)}`}><Icon name="eye" /></button>}
       </span>
-    </li>)}</ul> : <p className="ps-empty">{data.sightings.length ? 'Nothing matches that filter.' : 'No sightings yet. They appear here as cameras see motion.'}</p>}
+    </li>)}</ul> : <p className="ps-empty">No sightings match this filter yet.</p>}
+    {data.total > 10 && <nav className="ps-pages" aria-label="Sighting pages"><button className="ps-btn" disabled={data.page <= 1} onClick={() => onPage(data.page - 1)}>Previous</button><span>Page {data.page} of {data.pages} · {data.total} sightings</span><button className="ps-btn" disabled={data.page >= data.pages} onClick={() => onPage(data.page + 1)}>Next</button></nav>}
   </>;
+}
+
+function AddEntityDialog({ sighting, subjects, onClose, onDone }: { sighting: Sighting; subjects: SightingSubject[]; onClose: () => void; onDone: (name: string) => void }) {
+  const [subjectId, setSubjectId] = useState(subjects[0]?.id || '');
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  return <div className="ps-viewer" role="dialog" aria-modal="true" aria-label="Add another person or animal" onClick={onClose}><div className="ps-viewer-box ps-teach-box" onClick={e => e.stopPropagation()}>
+    <header><strong>Who else is in this frame?</strong><button className="ps-btn ps-btn-square" onClick={onClose} aria-label="Close"><Icon name="close" /></button></header>
+    <p className="ps-sub">Add a known person, pet, or vehicle visible alongside {sighting.label}. Each gets a separate sighting.</p>
+    <label className="ps-field"><span>Also seen</span><select value={subjectId} onChange={e => setSubjectId(e.target.value)}>{subjects.map(s => <option key={s.id} value={s.id}>{s.name} · {s.kind}</option>)}</select></label>
+    {error && <p className="ps-alert" role="alert">{error}</p>}
+    <div className="ps-teach-actions"><button className="ps-btn" onClick={onClose}>Cancel</button><button className="ps-btn" disabled={!subjectId || busy} onClick={() => { setBusy(true); void propertySecurityApi.addSightingEntity(sighting.id, subjectId).then(r => onDone(r.name)).catch(e => { setError((e as Error).message || 'Could not add this sighting.'); setBusy(false); }); }}>{busy ? 'Adding…' : 'Add sighting'}</button></div>
+  </div></div>;
 }
 
 function PhotoThumb({ mediaId, onRemove }: { mediaId: string; onRemove: () => void }) {
@@ -204,12 +221,15 @@ function Gallery({ data, media, reload }: { data: SightingsOverview; media: Secu
     {error && <p className="ps-alert" role="alert">{error}</p>}
     <ul className="ps-gallery">{data.subjects.map(s => <li key={s.id} className="ps-subject">
       <header>
-        <span className={`ps-event-icon is-${s.kind}`}><Icon name={KIND_ICON[s.kind]} /></span>
+        <span className={`ps-event-icon is-${s.kind}`}>{s.profilePhotoUrl ? <img src={s.profilePhotoUrl} alt="" /> : <Icon name={KIND_ICON[s.kind]} />}</span>
         <div><strong>{s.name}</strong><small>{s.description || s.kind}</small></div>
         <button className="ps-btn ps-btn-square" aria-label={`Remove ${s.name}`} title="Remove (deletes their sightings too)"
           onClick={() => { if (window.confirm(`Remove ${s.name}? Their sightings and alerts are deleted too.`)) void run(() => propertySecurityApi.removeSubject(s.id)); }}><Icon name="trash" /></button>
       </header>
       <small className="ps-subject-seen">{s.lastSeen ? `Last seen ${when(s.lastSeen.at)}${s.lastSeen.camera ? ` on ${s.lastSeen.camera}` : ''}${s.lastSeen.where ? `, ${s.lastSeen.where}` : ''}` : 'Not seen yet'}</small>
+      {s.kind === 'person' && <label className="ps-field"><span>App profile picture</span><select value={s.personFactUuid || ''} onChange={e => void run(() => propertySecurityApi.linkSubjectPerson(s.id, e.target.value || null))}>
+        <option value="">No linked person</option>{data.people.map(p => <option key={p.id} value={p.id}>{p.name}{p.hasPhoto ? ' · has picture' : ''}</option>)}
+      </select></label>}
       <div className="ps-refs">
         {s.photos.map(m => <PhotoThumb key={m} mediaId={m} onRemove={() => void run(() => propertySecurityApi.removeSubjectPhoto(s.id, m))} />)}
         {s.photos.length < 3 && <button className="ps-ref ps-ref-add" onClick={() => setPicking(s)} aria-label={`Add a reference photo of ${s.name}`}><Icon name="plus" /></button>}
@@ -286,9 +306,12 @@ export function SecuritySightings({ enabled, cameras, media }: { enabled: boolea
   const [open, setOpen] = useState<Sighting | null>(null);
   const [teaching, setTeaching] = useState<Sighting | null>(null);
   const [notice, setNotice] = useState('');
-  const load = useCallback(() => propertySecurityApi.sightings()
+  const [page, setPage] = useState(1);
+  const [filter, setFilter] = useState('all');
+  const [addingTo, setAddingTo] = useState<Sighting | null>(null);
+  const load = useCallback(() => propertySecurityApi.sightings(page, filter)
     .then(d => { setData(d); setError(''); })
-    .catch(() => setError('Sightings are unavailable right now.')), []);
+    .catch(() => setError('Sightings are unavailable right now.')), [page, filter]);
   useEffect(() => {
     if (!enabled) return;
     void load();
@@ -305,10 +328,11 @@ export function SecuritySightings({ enabled, cameras, media }: { enabled: boolea
       </div>
     </header>
     {error && !data ? <p className="ps-empty" role="alert">{error}</p> : !data ? <p className="ps-empty">Loading sightings…</p>
-      : view === 'log' ? <Log data={data} onOpen={setOpen} onTeach={s => { setNotice(''); setTeaching(s); }} notice={notice} />
+      : view === 'log' ? <Log data={data} filter={filter} onFilter={f => { setFilter(f); setPage(1); }} onPage={setPage} onOpen={setOpen} onTeach={s => { setNotice(''); setTeaching(s); }} onAdd={setAddingTo} notice={notice} />
       : view === 'gallery' ? <Gallery data={data} media={media} reload={() => void load()} />
       : <Alerts data={data} cameras={cameras} reload={() => void load()} />}
     {open && <FrameViewer sighting={open} onClose={() => setOpen(null)} />}
+    {addingTo && <AddEntityDialog sighting={addingTo} subjects={data?.subjects || []} onClose={() => setAddingTo(null)} onDone={name => { setAddingTo(null); setNotice(`${name} added to that frame.`); void load(); }} />}
     {teaching && data && <TeachDialog sighting={teaching} data={data} onClose={() => setTeaching(null)} onDone={r => {
       setTeaching(null);
       const rows = r.renamed > 1 ? `${r.renamed} sightings are` : 'That sighting is';

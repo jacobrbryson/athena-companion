@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { handsFreeRunning } from '../native/handsFree';
 import { useAuth } from '../auth/AuthContext';
 import { useChat, type Message } from '../athena/useChat';
@@ -35,6 +36,7 @@ import { ARRIVAL_MESSAGES, buildGreeting, emergencyGreeting } from '../athena/se
 import { dashboardApi, type EmergencyAlert } from '../api/dashboard';
 import type { MemoryEvent, Scene } from '../api/companion';
 import { Dashboard, DashboardIcon, dashboardSections, navSectionOf, type DashboardSection } from '../components/Dashboard';
+import { dashboardPath, sectionFromPath } from '../dashboardRoutes';
 import { AthenaAvatar } from '../components/AthenaAvatar';
 import { ProfileAvatar } from '../components/ProfileAvatar';
 import { Drawer } from '../components/Drawer';
@@ -58,6 +60,8 @@ const MAX_MESSAGE = 2000;
 type Panel = 'memory' | 'photo' | 'camera' | 'brain' | 'devices' | 'local' | 'integrations' | 'actions' | 'notifications' | 'knows' | 'initiative' | null;
 
 export function CompanionConsole() {
+  const location = useLocation();
+  const navigate = useNavigate();
   const { user, profile, arrival, consumeArrival, signOut } = useAuth();
   const tts = useSpeech();
   const ttsRef = useRef(tts);
@@ -119,11 +123,11 @@ export function CompanionConsole() {
   const [threadUuid, setThreadUuid] = useState<string | null>(null);
   const [historyBusy, setHistoryBusy] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
-  const [view, setView] = useState<'dashboard' | 'chat'>('dashboard');
+  const view = location.pathname === '/chat' ? 'chat' : 'dashboard';
   const [chatOpened, setChatOpened] = useState(false);
   useEffect(() => { if (view === 'chat') setChatOpened(true); }, [view]);
   const [briefing, setBriefing] = useState(false);
-  const [activeSection, setActiveSection] = useState<DashboardSection>('Dashboard');
+  const activeSection = sectionFromPath(location.pathname);
   const [menuOpen, setMenuOpen] = useState(false);
   // The phone's stand-in for the left nav: every page the sidebar lists.
   const [sectionsOpen, setSectionsOpen] = useState(false);
@@ -463,13 +467,13 @@ export function CompanionConsole() {
     // this only has to open the conversation — repeating the description back
     // to her would have her answering a summary instead of the scene.
     setPanel(null);
-    setView('chat');
+    navigate('/chat');
     send(scene.summary ? 'What do you make of what you can see?' : 'Can you see anything right now?');
   }
 
   function talkAboutPhoto(event: MemoryEvent) {
     setPanel(null);
-    setView('chat');
+    navigate('/chat');
     send(`I just showed you a photo — ${event.title || 'take a look'}. What do you think?`);
   }
 
@@ -480,7 +484,7 @@ export function CompanionConsole() {
   const waitingCount = actions.pending.filter(a => a.status === 'pending').length + dreamQuestions.questions.length;
   function askAthena(text: string) {
     setBriefing(false);
-    setView('chat');
+    navigate('/chat');
     setDraft(text);
     window.setTimeout(() => document.getElementById(inputId)?.focus(), 0);
   }
@@ -492,8 +496,7 @@ export function CompanionConsole() {
    */
   function navigateDashboard(section: DashboardSection) {
     setSectionsOpen(false);
-    setActiveSection(section);
-    setView('dashboard');
+    navigate(dashboardPath(section));
     // A new page starts at the top; the workspace is what scrolls, not window.
     window.setTimeout(() => document.querySelector('.companion-workspace')?.scrollTo({ top: 0, behavior: 'smooth' }), 0);
   }
@@ -503,8 +506,7 @@ export function CompanionConsole() {
    * lands on the list rather than the top of the page.
    */
   function showPointsOfInterest() {
-    setActiveSection('Community');
-    setView('dashboard');
+    navigate(dashboardPath('Community'));
     window.setTimeout(() => document.getElementById('community-places')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
   }
   // Workouts is a page under Health, and Calendar, Mail, Projects, News, Dreams
@@ -532,7 +534,7 @@ export function CompanionConsole() {
         <button className="athena-wordmark" onClick={() => navigateDashboard('Dashboard')}><AthenaAvatar /> ATHENA</button>
         <span className="sidebar-caption">YOUR COMPANION</span>
         <nav aria-label="Main navigation">{dashboardSections.map(section => <button key={section} className={view === 'dashboard' && navSection === section ? 'active' : ''} aria-current={view === 'dashboard' && navSection === section ? 'page' : undefined} onClick={() => navigateDashboard(section)}><DashboardIcon name={section} /><span>{section}</span></button>)}</nav>
-        <button className={`sidebar-chat ${view === 'chat' ? 'active' : ''}`} onClick={() => setView('chat')}><DashboardIcon name="Chat" /><span>Talk to Athena</span><span className="sidebar-chat-arrow">↗</span></button>
+        <button className={`sidebar-chat ${view === 'chat' ? 'active' : ''}`} onClick={() => navigate('/chat')}><DashboardIcon name="Chat" /><span>Talk to Athena</span><span className="sidebar-chat-arrow">↗</span></button>
         {/* The account row IS the menu. Settings, the panels and sign-out all
             used to be split between a sidebar button and a ⋯ in the far
             corner; one control in the place people already look for their own
@@ -940,8 +942,8 @@ export function CompanionConsole() {
       />
       <nav className="mobile-navigation" aria-label="Mobile navigation">
         <button data-menu-toggle className={view === 'dashboard' || sectionsOpen ? 'active' : ''} aria-expanded={sectionsOpen} aria-haspopup="menu" onClick={() => { setMenuOpen(false); setSectionsOpen(v => !v); }}><DashboardIcon name="Dashboard" /><span>Dashboards</span></button>
-        <button className={view === 'chat' ? 'active' : ''} onClick={() => setView('chat')}><DashboardIcon name="Chat" /><span>Chat</span></button>
-        <button className="mobile-athena" aria-label="Talk to Athena" onClick={() => setView('chat')}><AthenaAvatar /></button>
+        <button className={view === 'chat' ? 'active' : ''} onClick={() => navigate('/chat')}><DashboardIcon name="Chat" /><span>Chat</span></button>
+        <button className="mobile-athena" aria-label="Talk to Athena" onClick={() => navigate('/chat')}><AthenaAvatar /></button>
         <button className="mobile-notifications" onClick={() => openPanel('notifications')}><DashboardIcon name="Notifications" /><span>Alerts</span>{waitingCount > 0 && <i className="topbar-badge">{waitingCount > 9 ? '9+' : waitingCount}</i>}</button>
         <button data-menu-toggle aria-expanded={menuOpen} onClick={() => { setSectionsOpen(false); setMenuOpen(v => !v); }}><DashboardIcon name="More" /><span>More</span></button>
       </nav>

@@ -47,6 +47,7 @@ function minutesAgo(iso: string | null): string | null {
 
 interface Shown {
   level: 'watch' | 'urgent';
+  source: 'emergencies' | 'athena';
   headline: string;
   body: string;
   incidents: NearbyIncident[];
@@ -61,6 +62,7 @@ function pick(situation: EmergencyAlert | null, model: DashboardAlert | null): S
     situation && situation.level !== 'none' && situation.headline
       ? {
           level: situation.level,
+          source: 'emergencies',
           headline: situation.headline,
           body: situation.body || '',
           incidents: situation.incidents || [],
@@ -72,6 +74,7 @@ function pick(situation: EmergencyAlert | null, model: DashboardAlert | null): S
   const fromModel: Shown | null = model
     ? {
         level: model.level,
+        source: model.source,
         headline: model.headline,
         body: model.body,
         incidents: [],
@@ -172,9 +175,9 @@ export function EmergencyBanner({
       : []
   );
   const mapPlaces: AlertPlace[] = (situation?.places || []).filter((p) => !p.live);
-  const askText = urgent
+  const askText = shown.source === 'emergencies'
     ? "What's going on with the emergencies near the house?"
-    : "What's that emergency call near the house?";
+    : `Why did you raise this alert: ${shown.headline}?`;
 
   // Acknowledged, or in the chat view: a slim bar that stays until the
   // situation is over. Tap to open the whole thing.
@@ -212,7 +215,7 @@ export function EmergencyBanner({
         </span>
         <div className="min-w-0 flex-1">
           <p className="font-mono text-[11px] uppercase tracking-[0.2em] opacity-80">
-            {urgent ? 'Emergency near home' : 'Heads up'}
+            {shown.source === 'emergencies' ? (urgent ? 'Emergency near home' : 'Nearby call or weather') : (urgent ? 'Urgent heads up' : 'Heads up')}
             {shown.startedAt ? ` · started ${minutesAgo(shown.startedAt)}` : ''}
           </p>
           <h2 className="mt-1 text-2xl font-bold leading-tight sm:text-3xl">{shown.headline}</h2>

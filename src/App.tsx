@@ -12,6 +12,7 @@ import { AndroidRegistration } from './native/AndroidRegistration';
 import { LegalPage } from './pages/LegalPage';
 import { SmsConsentPage } from './pages/SmsConsentPage';
 import { OAuthCallback } from './pages/OAuthCallback';
+import { dashboardRoutePaths } from './dashboardRoutes';
 
 /** Home: Athena when signed in, otherwise the sign-in gate. */
 function Home() {
@@ -32,7 +33,10 @@ export default function App() {
       <AndroidRegistration />
       <BrowserRouter>
         <Routes>
-          <Route path="/" element={<Home />} />
+          {dashboardRoutePaths.map(path => <Route key={path} path={path} element={<Home />} />)}
+          <Route path="/chat" element={<Home />} />
+          <Route path="/properties/*" element={<Home />} />
+          <Route path="/dashboard" element={<Navigate to="/" replace />} />
           <Route path="/privacy" element={<LegalPage kind="privacy" />} />
           <Route path="/terms" element={<LegalPage kind="terms" />} />
           <Route path="/sms-consent" element={<SmsConsentPage />} />

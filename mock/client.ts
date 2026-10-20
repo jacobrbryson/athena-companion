@@ -2110,33 +2110,47 @@ Sam` };
         { id: 'si-4', label: 'Red Van', kind: 'vehicle', subjectId: 'sub-van', camera: 'Side Yard', deviceSerial: 'T8171S', zone: null, where: 'on the driveway', confidence: 0.88, eventKind: 'motion', seenAt: ago(300), hasFrame: true },
       ],
     };
-    if (method === 'GET' && p.endsWith('/sightings')) return { ...st, retentionDays: 30 };
-    // "This is…": mirrors the server — matching kind only, a full subject keeps its photos, only ticked rows are renamed.
+    if (method === 'GET' && p.endsWith('/sightings')) {
+      const filter = url.searchParams.get('filter') || 'all';
+      const rows = st.sightings.filter((s: any) => filter === 'all' || (filter === 'stranger' ? s.label === 'stranger' : s.subjectId === filter));
+      const pages = Math.max(1, Math.ceil(rows.length / 10));
+      const page = Math.min(Math.max(1, Number(url.searchParams.get('page')) || 1), pages);
+      return { ...st, people: [], sightings: rows.slice((page - 1) * 10, page * 10), page, pages, total: rows.length, retentionDays: 30 };
+    }
+    // "This is…": a full subject keeps its photos; only ticked rows are renamed.
     if (method === 'POST' && p.endsWith('/teach')) {
       const row = st.sightings.find((x: any) => x.id === p.split('/')[7]);
       if (!row) fail(404, 'That sighting is gone.');
       if (row.subjectId) fail(409, 'That sighting already has a name.');
       let sub = body.subjectId ? st.subjects.find((x: any) => x.id === body.subjectId) : null;
       if (body.subjectId && !sub) fail(404, "That name isn't in the gallery.");
-      if (sub && sub.kind !== row.kind) fail(400, `${sub.name} is in the gallery as a ${sub.kind}.`);
       const created = !sub;
       if (!sub) {
         const name = String(body.newSubject?.name || '').trim();
         if (!name) fail(400, 'Give them a name.');
         if (/^(stranger|unknown)/i.test(name)) fail(400, "That name is reserved for people Athena doesn't know.");
         if (st.subjects.some((x: any) => x.name.toLowerCase() === name.toLowerCase())) fail(409, 'That name is already in the gallery.');
-        sub = { id: `sub-${Date.now()}`, name, kind: row.kind, description: body.newSubject?.description || null, photos: [], lastSeen: null };
+        sub = { id: `sub-${Date.now()}`, name, kind: body.newSubject?.kind || row.kind, description: body.newSubject?.description || null, photos: [], lastSeen: null };
         st.subjects.push(sub);
       }
       const full = sub.photos.length >= 3;
       if (!full && row.hasFrame) sub.photos.push(crypto.randomUUID());
       const rows = [row, ...st.sightings.filter((x: any) => (body.alsoIds || []).includes(x.id) && !x.subjectId && x.kind === row.kind)];
-      for (const r of rows) { r.subjectId = sub.id; r.label = sub.name; }
+      for (const r of rows) { r.subjectId = sub.id; r.label = sub.name; r.kind = sub.kind; }
       sub.lastSeen = { at: row.seenAt, camera: row.camera, where: row.where };
       return { subjectId: sub.id, name: sub.name, created, photoAdded: !full && row.hasFrame, photoNote: full ? `${sub.name} already has 3 reference photos — remove one in the Gallery to use this frame.` : null, renamed: rows.length };
     }
+    if (method === 'POST' && p.endsWith('/entities')) {
+      const row = st.sightings.find((x: any) => x.id === p.split('/')[7]);
+      const sub = st.subjects.find((x: any) => x.id === body.subjectId);
+      if (!row || !sub) fail(404, 'That frame or name is gone.');
+      const id = `si-${Date.now()}`;
+      st.sightings.unshift({ ...row, id, subjectId: sub.id, label: sub.name, kind: sub.kind, where: null, confidence: null });
+      return { id, name: sub.name };
+    }
     if (method === 'POST' && p.endsWith('/subjects')) { const id = `sub-${Date.now()}`; st.subjects.push({ id, name: body.name, kind: body.kind, description: body.description || null, photos: [], lastSeen: null }); return { id }; }
     const subj = /\/subjects\/([^/]+)/.exec(p)?.[1];
+    if (subj && method === 'PUT' && p.endsWith('/person')) { const s = st.subjects.find((x: any) => x.id === subj); if (s) s.personFactUuid = body.factUuid; return undefined; }
     if (subj && method === 'DELETE' && !p.includes('/photos/')) { st.subjects = st.subjects.filter((x: any) => x.id !== subj); st.rules = st.rules.filter((r: any) => r.subjectId !== subj); return undefined; }
     if (subj && method === 'POST' && p.endsWith('/photos')) { st.subjects.find((x: any) => x.id === subj)?.photos.push(body.mediaId); return undefined; }
     if (subj && method === 'DELETE' && p.includes('/photos/')) { const m = p.split('/').pop(); const x = st.subjects.find((y: any) => y.id === subj); if (x) x.photos = x.photos.filter((y: string) => y !== m); return undefined; }
