@@ -14,7 +14,7 @@ import './family.css';
  * The Family page (redesigned 2026-10-14 from the owner's concept): a hero
  * with Athena's take on the family's week, four numbers, today's chores and
  * the family's day, the people as cards, what's coming up, then kids, pets
- * and birthdays. The editable list of people stays below it (Dashboard.tsx).
+ * and birthdays. The editable memory list opens in a drawer (Dashboard.tsx).
  *
  * Athena's take is written here, in code, from what's on the page — never by
  * a model — so it can only say what the calendar, the health reports and the
@@ -85,8 +85,9 @@ interface Props {
   sick: FamilyHealthStatus[];
   onAsk: (text: string) => void;
   onCalendar: () => void;
-  /** Scroll to the editable list, where reports are resolved and people edited. */
+  /** Open the editable family memories drawer. */
   onDetails: () => void;
+  onMember: (row: RosterRow) => void;
 }
 
 const CORE = /^(spouse|wife|husband|partner|son|daughter|child|pet)$/i;
@@ -219,16 +220,17 @@ function ChoreSnackbar({ snack, reconnectUrl, onUndo, onDismiss }: { snack: Snac
 
 function Avatar({ name, photoUrl, size }: { name: string; photoUrl?: string | null; size: 'lg' | 'sm' }) {
   const [broken, setBroken] = useState(false);
+  useEffect(() => setBroken(false), [photoUrl]);
   return <span className={`fp-avatar fp-avatar-${size}`} aria-hidden="true">
     {photoUrl && !broken ? <img src={photoUrl} alt="" referrerPolicy="no-referrer" onError={() => setBroken(true)} /> : name.replace(/^the\s+/i, '').slice(0, 1).toUpperCase()}
   </span>;
 }
 
-export function FamilyOverview({ roster, children, events, timeZone, now, chores: choresIn, household, choresUrl, canCompleteChores, choresReconnectUrl, choresNote, calendarNote, groceries, groceriesUrl, groceriesNote, health, sick, onAsk, onCalendar, onDetails }: Props) {
+export function FamilyOverview({ roster, children, events, timeZone, now, chores: choresIn, household, choresUrl, canCompleteChores, choresReconnectUrl, choresNote, calendarNote, groceries, groceriesUrl, groceriesNote, health, sick, onAsk, onCalendar, onDetails, onMember }: Props) {
   const ticks = useChoreTicks(choresIn);
   const chores = ticks.live;
   const today = zonedDay(new Date(now), timeZone);
-  const names = roster.filter(r => r.relation !== 'Pet').map(r => r.name);
+  const names = roster.filter(r => !r.isPet && r.relation !== 'Pet').map(r => r.name);
   const namesPattern = names.length ? new RegExp(`\\b(${names.map(firstWord).filter(w => w.length > 2).join('|')})\\b`, 'i') : null;
   const timed = (e: CalendarEvent) => !e.allDay;
   const dayOf = (e: CalendarEvent) => (e.allDay ? e.start.slice(0, 10) : zonedDay(new Date(e.start), timeZone));
@@ -275,17 +277,18 @@ export function FamilyOverview({ roster, children, events, timeZone, now, chores
     const now_ = todayFor(r.name);
     if (now_) return { tone: 'fp-good', icon: 'clock', text: `${now_.e.title.replace(new RegExp(`\\b${firstWord(r.name)}('s)?\\b`, 'i'), '').trim()} ${clock(now_.e.start, timeZone)}` };
     if (r.signal.kind === 'birthday') return { tone: 'fp-warn', icon: 'cake', text: r.signal.label };
-    if (r.relation === 'Pet') return { tone: 'fp-good', icon: 'check', text: 'Good' };
+    if (r.isPet || r.relation === 'Pet') return { tone: 'fp-good', icon: 'check', text: 'Good' };
     if (r.signal.kind === 'calendar') return { tone: 'fp-info', icon: 'calendar', text: r.signal.label };
     return { tone: 'fp-idle', icon: 'minus', text: 'No events today' };
   };
-  const press = (r: RosterRow) => (r.signal.kind === 'sick' ? onDetails() : onAsk(r.signal.ask));
+  const press = (r: RosterRow) => onMember(r);
 
   const kids = roster.filter(r => KIDS.test(r.relation || '') || kidOf(r));
-  const pets = roster.filter(r => r.relation === 'Pet');
+  const pets = roster.filter(r => r.isPet || r.relation === 'Pet');
   // Birthdays: remembered people with a known date, then calendar events that are birthdays.
   const birthdays = [
-    ...roster.filter(r => r.birthday != null).map(r => ({ key: r.id, name: r.name, at: new Date(now + r.birthday! * DAY), ask: `${r.name}'s birthday is coming up. Help me plan something.` })),
+    // Count calendar days, not 24-hour blocks: across the November clock change, now + n*DAY lands an hour short — the day before, just after midnight.
+    ...roster.filter(r => r.birthday != null).map(r => ({ key: r.id, name: r.name, at: (d => new Date(d.getFullYear(), d.getMonth(), d.getDate() + r.birthday!, 12))(new Date(now)), ask: `${r.name}'s birthday is coming up. Help me plan something.` })),
     ...events.filter(e => /birthday|bday/i.test(e.title) && !roster.some(r => r.birthday != null && mentions(e.title, r.name)))
       .map(e => ({ key: `${e.id}-${e.start}`, name: e.title.replace(/[’']s birthday|birthday( party)?/i, '').trim() || e.title, at: new Date(e.allDay ? `${e.start.slice(0, 10)}T12:00:00` : e.start), ask: `"${e.title}" is coming up. Help me plan for it.` })),
   ].sort((a, b) => a.at.getTime() - b.at.getTime());
@@ -363,7 +366,7 @@ export function FamilyOverview({ roster, children, events, timeZone, now, chores
       </section>
 
       <section className="hp-panel fp-members">
-        <header><h2>Family Members</h2><button type="button" className="hp-link" onClick={onDetails}>View all <Icon name="arrowRight" /></button></header>
+        <header><h2>Family Members</h2></header>
         {!roster.length ? <div className="fp-empty-hero"><strong>No one here yet</strong><p>Tell me about your family and I’ll keep them in mind.</p><button type="button" className="cp-outline" onClick={() => onAsk('Let me tell you about my family.')}>Tell Athena <Icon name="arrowRight" /></button></div>
           : <>
             <ul className="fp-cards">{big.map(r => {
@@ -382,6 +385,7 @@ export function FamilyOverview({ roster, children, events, timeZone, now, chores
               {rest.length > 5 && <li><button type="button" onClick={onDetails}><span className="fp-avatar fp-avatar-sm fp-more"><Icon name="people" /></span><span className="fp-link">+{rest.length - 5} more</span></button></li>}
             </ul>}
           </>}
+        <button type="button" className="fp-memories-link" onClick={onDetails}>Memories <Icon name="arrowRight" /></button>
       </section>
 
       <section className="hp-panel fp-upcoming">

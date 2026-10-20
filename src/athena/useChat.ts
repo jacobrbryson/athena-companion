@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../api/client';
 import type { AthenaAction } from '../api/companion';
 import { localTimezone, wsUrl } from '../config';
+import { isIdle, useIdle, useStayAwake } from './idle';
 
 /**
  * Chat hook — the Guardians app's useChat, adapted for Companion. Same proxy
@@ -20,6 +21,10 @@ import { localTimezone, wsUrl } from '../config';
  * additionally authenticated with a short-lived ticket fetched over plain
  * HTTP, and the whole conversation degrades to HTTP polling whenever the
  * WebSocket is unavailable, so chat keeps working even with no socket at all.
+ *
+ * When nobody has touched the page for a while (see idle.ts) the socket is
+ * released and polling stops — an open socket keeps Cloud Run billing all
+ * day — and both come back, with a catch-up sync, on the next input.
  */
 
 export interface Message {
@@ -105,7 +110,8 @@ export const CHAT_FILLER_EVENT = 'athena-chat-filler';
  */
 export const CHAT_ACTIVITY_EVENT = 'athena-chat-activity';
 
-export type ChatTransport = 'connecting' | 'ws' | 'polling';
+/** `idle`: nobody is here, so neither the socket nor polling is running. */
+export type ChatTransport = 'connecting' | 'ws' | 'polling' | 'idle';
 
 export interface ChatState {
   sessionId: string | null;
@@ -158,6 +164,12 @@ export function useChat(profileUuid: string, options?: ChatOptions): ChatState {
   const closedRef = useRef(false);
   const attemptRef = useRef(0);
   const isThinkingRef = useRef(false);
+
+  // A pending reply keeps the page awake: the answer should land live.
+  useStayAwake(isThinking);
+  const idle = useIdle();
+  const idleRef = useRef(idle);
+  idleRef.current = idle;
 
   // Every message uuid ever ingested. The WS push and the polling fallback
   // overlap by design, so this is what keeps the transcript duplicate-free.
@@ -252,7 +264,7 @@ export function useChat(profileUuid: string, options?: ChatOptions): ChatState {
   // socket. Refresh existing cards as well as ingesting new messages.
   useEffect(() => {
     if (!ready) return;
-    const timer = window.setInterval(() => void syncMessages(), 20_000);
+    const timer = window.setInterval(() => { if (!isIdle()) void syncMessages(); }, 20_000);
     const changed = () => void syncMessages();
     window.addEventListener('athena-action-updated', changed);
     return () => {
@@ -265,7 +277,7 @@ export function useChat(profileUuid: string, options?: ChatOptions): ChatState {
   const connectRef = useRef<() => void>(() => {});
 
   const scheduleReconnect = useCallback(() => {
-    if (reconnectRef.current || closedRef.current) return;
+    if (reconnectRef.current || closedRef.current || idleRef.current) return;
     const delay =
       Math.min(WS_BACKOFF_MAX_MS, WS_BACKOFF_BASE_MS * 2 ** attemptRef.current) +
       Math.floor(Math.random() * 500);
@@ -278,7 +290,7 @@ export function useChat(profileUuid: string, options?: ChatOptions): ChatState {
 
   const connectWebSocket = useCallback(() => {
     const session = sessionRef.current;
-    if (!session || closedRef.current) return;
+    if (!session || closedRef.current || idleRef.current) return;
     const existing = wsRef.current;
     if (
       existing &&
@@ -301,7 +313,7 @@ export function useChat(profileUuid: string, options?: ChatOptions): ChatState {
       } catch {
         ticket = null;
       }
-      if (closedRef.current || sessionRef.current !== session) return;
+      if (closedRef.current || idleRef.current || sessionRef.current !== session) return;
 
       const params = new URLSearchParams({ sessionId: session });
       const protocols = ticket ? ['athena.v1', `athena.ticket.${ticket}`] : ['athena.v1'];
@@ -394,10 +406,13 @@ export function useChat(profileUuid: string, options?: ChatOptions): ChatState {
         window.clearTimeout(deadline);
         if (wsRef.current === ws) wsRef.current = null;
         setWsConnected(false);
-        if (!closedRef.current) {
-          setTransport('polling');
-          scheduleReconnect();
+        if (closedRef.current) return;
+        if (idleRef.current) {
+          setTransport('idle');
+          return;
         }
+        setTransport('polling');
+        scheduleReconnect();
       };
 
       ws.onerror = () => ws.close();
@@ -469,7 +484,7 @@ export function useChat(profileUuid: string, options?: ChatOptions): ChatState {
   // plain fetches. Athena's replies then arrive via syncMessages instead of a
   // WS push — same ingest path, same voice-sync gating.
   useEffect(() => {
-    if (!ready || wsConnected) return;
+    if (!ready || wsConnected || idle) return;
     let cancelled = false;
     let timer: number | undefined;
 
@@ -486,14 +501,33 @@ export function useChat(profileUuid: string, options?: ChatOptions): ChatState {
       cancelled = true;
       if (timer !== undefined) window.clearTimeout(timer);
     };
-  }, [ready, wsConnected, isThinking, syncMessages]);
+  }, [ready, wsConnected, idle, isThinking, syncMessages]);
+
+  // Release the socket when nobody is here; reopen it and catch up the moment
+  // they are back. Acts only on a change, so boot's own connect stands alone.
+  const wasIdleRef = useRef(idle);
+  useEffect(() => {
+    if (!ready || wasIdleRef.current === idle) return;
+    wasIdleRef.current = idle;
+    if (idle) {
+      if (reconnectRef.current) clearTimeout(reconnectRef.current);
+      reconnectRef.current = null;
+      setTransport('idle');
+      wsRef.current?.close();
+      return;
+    }
+    setTransport('connecting');
+    attemptRef.current = 0;
+    connectRef.current();
+    void syncMessages();
+  }, [idle, ready, syncMessages]);
 
   // Safari aggressively drops sockets for background tabs and restores pages
   // from the back/forward cache. Whenever the page comes back (or the network
   // returns), retry the socket immediately and sync any missed messages.
   useEffect(() => {
     const revive = () => {
-      if (closedRef.current || document.visibilityState === 'hidden') return;
+      if (closedRef.current || idleRef.current || document.visibilityState === 'hidden') return;
       if (reconnectRef.current) {
         clearTimeout(reconnectRef.current);
         reconnectRef.current = null;

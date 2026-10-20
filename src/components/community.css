@@ -29,6 +29,17 @@
 .cmp-rows small { display: block; overflow: hidden; color: var(--hp-sub); font-size: 13px; line-height: 1.45; text-overflow: ellipsis; white-space: nowrap; }
 .cmp-rows small.cmp-clamp { display: -webkit-box; white-space: normal; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .cmp-rows .memory-avatar { flex-shrink: 0; width: 46px; height: 46px; font-size: 18px; }
+.cmp-place-photo, .community-place-photo { flex-shrink: 0; width: 46px; height: 46px; object-fit: cover; border-radius: 10px; }
+.community-place-editor { scroll-margin-top: 24px; }
+.community-place-address { display: flex; align-items: end; gap: 8px; }
+.community-place-address .community-field { flex: 1; min-width: 0; }
+.community-place-matches { display: grid; gap: 4px; }
+.community-place-matches button { padding: 8px; border: 1px solid #2a4a6a; border-radius: 7px; background: #0a1a2e; color: inherit; text-align: left; }
+.community-place-matches button.active { border-color: #4fb5ff; }
+.community-place-picture { display: flex; align-items: center; gap: 14px; }
+.community-place-picture>img, .community-place-picture>.community-icon { width: 72px; height: 72px; object-fit: cover; border-radius: 10px; }
+.community-place-picture>div { display: grid; gap: 5px; }
+.community-place-picture input { display: block; max-width: 100%; }
 .cmp-paused { opacity: .6; }
 .cmp-serious>button { border-color: #6b2330; }
 .cmp-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 8px; }

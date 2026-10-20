@@ -33,6 +33,7 @@ export interface RosterSignal {
 export interface RosterRow {
   id: string;
   name: string;
+  isPet?: boolean;
   initial: string;
   detail: string;
   /** "Spouse", "Sister": how they are related, when the memory is filed under that. */
@@ -134,6 +135,7 @@ export function birthdayFromIso(iso: string | null | undefined, now: Date): numb
 interface Person {
   id: string;
   name: string;
+  isPet?: boolean;
   detail: string;
   tokens: string[];
   /** The tokens that name only this person, for picking out their events and reports. */
@@ -158,12 +160,13 @@ interface Person {
 const sickLabel = (h: FamilyHealthStatus) => `${h.symptom} · day ${h.daysActive}${h.updateDue ? ' · update due' : ''}`;
 const firstName = (name: string) => name.trim().split(/\s+/)[0].toLowerCase().replace(/[^a-z']/g, '');
 
-export function buildFamilyRoster({ facts, sick, events, now, children = [], links = [] }: {
+export function buildFamilyRoster({ facts, sick, events, now, children = [], links = [], photos = {} }: {
   facts: Fact[]; sick: FamilyHealthStatus[]; events: CalendarEvent[]; now: Date;
   /** Children on the family's profiles. */
   children?: FamilyChild[];
   /** Google Contacts the person linked to remembered people. */
   links?: FamilyLink[];
+  photos?: Record<string, string>;
 }): RosterRow[] {
   const soon = events.filter(e => {
     const start = Date.parse(e.start);
@@ -214,7 +217,7 @@ export function buildFamilyRoster({ facts, sick, events, now, children = [], lin
     const own = keyedByName ? rest || fact.key : lead ? (fact.value || '').slice(lead.length).replace(/^[\s,.;:\u2014\u2013-]+/, '') : fact.value || '';
     const said = keyedByName ? rest : fact.value || '';
     return {
-      id: fact.uuid, name, tokens, birthday,
+      id: fact.uuid, name, tokens, birthday, isPet: fact.category === 'pet',
       // How they are related: said by the key ("spouse", "aunt missy"), the category (a pet), or a value ("my daughter").
       relation: extra.find(d => d.what === 'relationship' && d.value.trim())?.value.trim()
         ?? (fact.category === 'pet' ? 'Pet' : RELATIONS.has(key) ? capitalize(fact.key)
@@ -227,7 +230,7 @@ export function buildFamilyRoster({ facts, sick, events, now, children = [], lin
       quiet: Math.max(0, now.getTime() - Math.max(Date.parse(fact.updated_at), ...extra.map(d => Date.parse(d.updated)))),
       thin: `${said} ${extraText}`.trim().length < 12,
       richness: (fact.value || '').length + extraText.length,
-      photoUrl: card?.photoUrl,
+      photoUrl: photos[fact.uuid] || card?.photoUrl,
       // Pets get no birthday prompt; everyone else without one does.
       missing: known || fact.category === 'pet' ? undefined : `I haven't told you ${name}'s birthday yet. Ask me when it is.`,
     };
@@ -294,7 +297,7 @@ export function buildFamilyRoster({ facts, sick, events, now, children = [], lin
     } else {
       signal = { kind: 'ok', rank: 6, label: quiet === null ? p.detail : `Updated ${SINCE(quiet)} ago`, action: 'Check in', ask: `How is ${name} doing? Ask me for an update so you stay current.` };
     }
-    return { id: p.id, name, initial: name.slice(0, 1) || '?', detail: p.detail, relation: p.relation && p.relation.toLowerCase() !== name.toLowerCase() ? p.relation : undefined, photoUrl: p.photoUrl, birthday, signal };
+    return { id: p.id, name, initial: name.slice(0, 1) || '?', detail: p.detail, isPet: p.isPet, relation: p.relation && p.relation.toLowerCase() !== name.toLowerCase() ? p.relation : undefined, photoUrl: p.photoUrl, birthday, signal };
   });
 
   // Someone reported unwell who Athena has no memory of still gets a row.

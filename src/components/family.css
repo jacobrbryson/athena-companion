@@ -67,6 +67,7 @@ button.cp-stat { text-align: left; color: inherit; }
 .fp-day span { grid-column: 4; grid-row: 1; overflow: hidden; font-size: 15px; text-overflow: ellipsis; white-space: nowrap; }
 
 /* Members */
+.fp-members { display: flex; flex-direction: column; }
 .fp-cards { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
 .fp-cards button { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; width: 100%; height: 100%; padding: 12px; border: 1px solid #1d3550; border-radius: 12px; background: #0a1a2e; color: inherit; text-align: left; }
 .fp-cards button:hover, .fp-chips button:hover, .fp-list li button:hover { border-color: #2c8fd8; }
@@ -104,20 +105,35 @@ button.cp-stat { text-align: left; color: inherit; }
 .fp-dated div small { color: var(--hp-sub); font-size: 13px; }
 
 /* Kids, pets */
-.fp-list>ul:not(.fp-dated) { display: grid; gap: 8px; }
-.fp-list>ul:not(.fp-dated) li button { display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px; border: 1px solid #1d3550; border-radius: 10px; background: #0a1a2e; color: inherit; text-align: left; }
+.fp-list { min-width: 0; }
+.fp-list>ul:not(.fp-dated) { display: grid; gap: 8px; min-width: 0; margin: 0; padding: 0; list-style: none; }
+.fp-list>ul:not(.fp-dated) li { min-width: 0; }
+.fp-list>ul:not(.fp-dated) li button { display: flex; align-items: center; gap: 12px; width: 100%; min-width: 0; padding: 10px; border: 1px solid #1d3550; border-radius: 10px; background: #0a1a2e; color: inherit; text-align: left; }
 .fp-list li button>div { flex: 1; min-width: 0; }
 .fp-list li button>div strong { display: block; font-size: 15px; font-weight: 600; }
 .fp-list li button>div small { display: block; overflow: hidden; color: var(--hp-sub); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
 .fp-tags { display: flex; gap: 6px; }
 .fp-tags i { padding: 3px 9px; border: 1px solid #2c8fd8; border-radius: 7px; background: #0d2742; color: #9fd4ff; font-size: 12px; font-style: normal; }
 .fp-tags i.fp-tag-alt { border-color: #d0457a; background: #3a1428; color: #ffb3cf; }
-.fp-pill { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 7px; background: #0f3a33; font-size: 12px; font-style: normal; white-space: nowrap; }
+.fp-pill { display: inline-flex; align-items: center; gap: 5px; min-width: 0; max-width: 45%; padding: 4px 10px; border-radius: 7px; background: #0f3a33; font-size: 12px; font-style: normal; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fp-pill .hp-icon { flex-shrink: 0; }
 .fp-pill.fp-bad { background: #3d1720; }
 .fp-pill .hp-icon { width: 14px; height: 14px; }
 
-/* The editable list below the redesign. */
-.fp-details-head { margin: 34px 0 14px; color: #7fa8bc; font: 10px/1.6 ui-monospace, monospace; letter-spacing: .2em; }
+/* The detailed memories stay out of the page until requested. */
+.fp-memories-link { display: flex; align-items: center; gap: 6px; width: max-content; margin: auto 0 0 auto; padding: 14px 0 2px; border: 0; background: none; color: #8fcce9; font-size: 12px; cursor: pointer; }
+.fp-memories-link:hover { color: #c9eaff; text-decoration: underline; }
+.fp-memories-link:focus-visible { outline: 2px solid #4fb5ff; outline-offset: 3px; }
+.fp-memories-link .hp-icon { width: 13px; height: 13px; }
+.fp-memories-drawer .dashboard-memory-list { margin: 0; padding: 0; list-style: none; }
+.fp-memories-drawer .dashboard-memory-list li { min-width: 0; }
+.family-portrait-control { display: flex; align-items: center; gap: 14px; padding: 12px; border: 1px solid #1d3550; border-radius: 10px; }
+.family-portrait-control .memory-avatar { width: 72px; height: 72px; flex-shrink: 0; font-size: 28px; object-fit: cover; }
+.family-portrait-control>div { min-width: 0; }
+.family-portrait-control label, .family-portrait-control small { display: block; }
+.family-portrait-control input { display: block; max-width: 100%; margin-top: 6px; }
+.family-remove-control { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding-top: 12px; border-top: 1px solid #1d3550; }
+.family-remove-control span { flex-basis: 100%; color: var(--hp-sub); font-size: 13px; }
 
 @media (max-width: 1250px) {
   .fp-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }

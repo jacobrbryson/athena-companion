@@ -27,6 +27,9 @@ export type Sighting = {
 };
 export type CameraZone = { deviceSerial: string; name: string; description: string | null };
 export type SightingRule = { id: string; subjectId: string | null; subjectName: string | null; label: string | null; deviceSerial: string | null; zone: string | null; enabled: boolean };
+/** What "This is…" did: the name it took, and whether the frame became a reference photo. */
+export type TeachResult = { subjectId: string; name: string; created: boolean; photoAdded: boolean; photoNote: string | null; renamed: number };
+export type TeachBody = { subjectId?: string; newSubject?: { name: string; description?: string }; alsoIds?: string[] };
 export type SightingsOverview = { subjects: SightingSubject[]; zones: CameraZone[]; rules: SightingRule[]; sightings: Sighting[]; retentionDays: number };
 const base = '/api/v1/projects/property/security';
 export const propertySecurityApi = {
@@ -39,6 +42,7 @@ export const propertySecurityApi = {
   removeMedia: (id: string) => api.del<void>(`${base}/media/${encodeURIComponent(id)}`),
   sightings: () => api.get<SightingsOverview>(`${base}/sightings`),
   sightingFrame: (id: string) => api.blob(`${base}/sightings/${encodeURIComponent(id)}/frame`),
+  teachSighting: (id: string, body: TeachBody) => api.post<TeachResult>(`${base}/sightings/${encodeURIComponent(id)}/teach`, body),
   createSubject: (body: { name: string; kind: SubjectKind; description?: string }) => api.post<{ id: string }>(`${base}/subjects`, body),
   updateSubject: (id: string, body: { name?: string; kind?: SubjectKind; description?: string }) => api.patch<void>(`${base}/subjects/${encodeURIComponent(id)}`, body),
   removeSubject: (id: string) => api.del<void>(`${base}/subjects/${encodeURIComponent(id)}`),

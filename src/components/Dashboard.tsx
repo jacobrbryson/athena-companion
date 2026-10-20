@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import type { CalendarEvent, Source, JiraIssue, RecoveryDay, WeighIn, DashboardSummary, GcpBilling, TimeSaved, TriageEmail, NearbyIncident, WeatherAlert, WorkplacesOverview } from '../api/dashboard';
+import type { CalendarEvent, Source, JiraIssue, RecoveryDay, WeighIn, DashboardSummary, GcpBilling, TimeSaved, TriageEmail, NearbyIncident, WeatherAlert, WorkplacesOverview, FamilyHealthStatus } from '../api/dashboard';
 import { dashboardApi } from '../api/dashboard';
 import { localDay } from '../api/healthPlan';
 import { integrationsApi, type Fact } from '../api/companion';
@@ -13,6 +13,9 @@ import { EmergencyBanner } from './EmergencyBanner';
 import { RightNowCard } from './RightNowCard';
 import { buildFamilyRoster, type RosterRow } from './familyRoster';
 import { FamilyPeopleList } from './FamilyPeople';
+import { FamilyPersonEditor } from './FamilyPersonEditor';
+import { Drawer } from './Drawer';
+import { HealthWatchModal } from './HealthWatch';
 import { familyHealthSummary } from './familyHealthSummary';
 import { DoorToDoor } from './DoorToDoor';
 import { communityEvents } from './communityCalendar.ts';
@@ -716,6 +719,10 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
   const [mailScanNote, setMailScanNote] = useState('');
   const [healthError, setHealthError] = useState('');
   const [healthResolving, setHealthResolving] = useState<string | null>(null);
+  const [familyEdit, setFamilyEdit] = useState<RosterRow | null>(null);
+  const [familyMemoriesOpen, setFamilyMemoriesOpen] = useState(false);
+  const [placeEditRequest, setPlaceEditRequest] = useState<{ uuid: string; nonce: number } | null>(null);
+  const [familyHealthEdit, setFamilyHealthEdit] = useState<{ name: string; watch?: FamilyHealthStatus } | null>(null);
   const [reconnecting, setReconnecting] = useState<string | null>(null);
   // Projects: one load shared by the cards, the pages and the editors.
   const proj = useProjects();
@@ -912,9 +919,9 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
   const sickFamily = summary?.familyHealth.data?.active || [];
   const choresDone = chores.filter(c => c.completed).length;
   const familyPeople = data.familyPeople.data;
-  const roster = buildFamilyRoster({ facts: family, sick: sickFamily, events, now: new Date(now), children: familyPeople?.children, links: familyPeople?.links });
+  const roster = buildFamilyRoster({ facts: family, sick: sickFamily, events, now: new Date(now), children: familyPeople?.children, links: familyPeople?.links, photos: familyPeople?.photos });
   // Community: what mentions where they live, plus the games and recitals of the people in their corner.
-  const communityCal = communityEvents(data.communityCalendar.data?.events ?? events, community?.places || [], new Date(now), roster.filter(r => r.relation !== 'Pet').map(r => r.name));
+  const communityCal = communityEvents(data.communityCalendar.data?.events ?? events, community?.places || [], new Date(now), roster.filter(r => !r.isPet && r.relation !== 'Pet').map(r => r.name));
   const hoursMinutes = (hours: number) => `${Math.floor(hours)}h ${Math.round((hours % 1) * 60)}m`;
   /** The last `days` calendar days, oldest first, so a gap reads as a gap. */
   function week<T extends { date: string }>(rows: T[] | null | undefined, value: (row: T) => number | null) {
@@ -1289,7 +1296,7 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
       ask="Help me review my calendar for the week ahead."
       hero={<CalendarOverview events={events} timeZone={timeZone} days={summary?.calendar.data?.days ?? 7} now={now}
         unavailable={ready(summary?.calendar) ? null : unavailable('calendar', 'Google Calendar')}
-        familyNames={roster.filter(r => r.relation !== 'Pet').map(r => r.name)}
+        familyNames={roster.filter(r => !r.isPet && r.relation !== 'Pet').map(r => r.name)}
         onAsk={onAsk} onManage={() => onPanel('integrations')} />}
     >
       {null}
@@ -1327,8 +1334,11 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
 
   function FamilyPage() {
     const health = familyHealthSummary(summary?.familyHealth);
-    const toDetails = () => document.getElementById('family-details')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    // The concept's page up top (FamilyPage.tsx); the editable list of people stays below it.
+    const toDetails = () => setFamilyMemoriesOpen(true);
+    const selectedFact = familyEdit && family.find(f => f.uuid === familyEdit.id);
+    const newFact: Fact | null = familyEdit && !selectedFact ? {
+      uuid: '', category: familyEdit.relation === 'Pet' ? 'pet' : 'person', key: familyEdit.name, value: '', source: 'user', visibility: 'private', updated_at: new Date(now).toISOString(),
+    } : null;
     return <SectionPage ctx={ctx}
       eyebrow="" title="Family" blurb=""
       ask="Help me think about my family — what should I be paying attention to?"
@@ -1340,15 +1350,18 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
         groceries={summary?.groceries?.data?.lists || []} groceriesUrl={summary?.groceries?.data?.appUrl}
         groceriesNote={ready(summary?.groceries) ? null : groceriesUnavailable()}
         health={!summary && data.summary.loading ? { label: 'Loading…', tone: 'idle', note: 'Reading health reports' } : health}
-        sick={sickFamily} onAsk={onAsk} onCalendar={go('Calendar')} onDetails={toDetails} />}
+        sick={sickFamily} onAsk={onAsk} onCalendar={go('Calendar')} onDetails={toDetails} onMember={setFamilyEdit} />}
     >
-      <h2 className="fp-details-head section-panel-wide">THE DETAIL</h2>
-      <Panel id="family-details" title="People &amp; pets" note="from your memories" wide>
+      {familyMemoriesOpen && <Drawer eyebrow="FROM YOUR MEMORIES" title="People & pets" onClose={() => { if (!document.querySelector('.health-modal')) setFamilyMemoriesOpen(false); }}>
+        <div className="fp-memories-drawer">
         {data.facts.error ? <EmptyCta text="Memories couldn’t load." action="Retry" onClick={retryData} />
           : data.facts.loading ? <p className="dashboard-empty">Loading memories…</p>
-            : family.length ? <><FamilyPeopleList facts={family} children={familyPeople?.children || []} links={familyPeople?.links || []} names={new Map(roster.map(r => [r.id, r.name]))} relations={new Map(roster.map(r => [r.id, r.relation]))} watches={sickFamily} watchOf={new Map(roster.flatMap(r => { const w = sickFamily.find(h => h.uuid === r.signal.healthUuid); return w ? [[r.id, w] as const] : []; }))} onHealthChanged={retryData} onFactEdited={retryData} neighbors={community?.neighbors} onNeighbors={next => data.patchCommunity({ neighbors: next })} onChange={next => data.setFamilyPeople({ data: next, loading: false, error: null })} onConnect={() => onPanel('integrations')} onFactsChanged={gone => { data.dropFact(gone); retryData(); }} /><button className="dashboard-chat-cta" onClick={() => onPanel('memory')}>Explore memories <span>↗</span></button></>
-              : <><p className="dashboard-empty">No family memories saved yet. Tell Athena about them and she will keep them.</p><button className="dashboard-chat-cta" onClick={() => onAsk('Let me tell you about my family.')}>Tell her <span>↗</span></button></>}
-      </Panel>
+            : family.length ? <><FamilyPeopleList facts={family} children={familyPeople?.children || []} links={familyPeople?.links || []} photos={familyPeople?.photos} names={new Map(roster.map(r => [r.id, r.name]))} relations={new Map(roster.map(r => [r.id, r.relation]))} watches={sickFamily} watchOf={new Map(roster.flatMap(r => { const w = sickFamily.find(h => h.uuid === r.signal.healthUuid); return w ? [[r.id, w] as const] : []; }))} onHealthChanged={retryData} onFactEdited={retryData} neighbors={community?.neighbors} onNeighbors={next => data.patchCommunity({ neighbors: next })} onChange={next => data.setFamilyPeople({ data: next, loading: false, error: null })} onConnect={() => { setFamilyMemoriesOpen(false); onPanel('integrations'); }} onFactsChanged={gone => { data.dropFact(gone); retryData(); }} /><button className="dashboard-chat-cta" onClick={() => { setFamilyMemoriesOpen(false); onPanel('memory'); }}>Explore memories <span>↗</span></button></>
+              : <><p className="dashboard-empty">No family memories saved yet. Tell Athena about them and she will keep them.</p><button className="dashboard-chat-cta" onClick={() => { setFamilyMemoriesOpen(false); onAsk('Let me tell you about my family.'); }}>Tell her <span>↗</span></button></>}
+        </div>
+      </Drawer>}
+      {familyEdit && (selectedFact || newFact) && <FamilyPersonEditor key={familyEdit.id} fact={(selectedFact || newFact)!} facts={family} name={familyEdit.name} relation={familyEdit.relation} links={familyPeople?.links || []} photoUrl={familyPeople?.photos?.[familyEdit.id]} isNew={!!newFact} onClose={() => setFamilyEdit(null)} onSaved={retryData} onChange={next => data.setFamilyPeople({ data: next, loading: false, error: null })} onConnect={() => onPanel('integrations')} onHealth={() => { setFamilyHealthEdit({ name: familyEdit.name, watch: sickFamily.find(w => w.uuid === familyEdit.signal.healthUuid) }); setFamilyEdit(null); }} onRemoved={gone => { data.dropFact(gone); retryData(); }} />}
+      {familyHealthEdit && <HealthWatchModal personName={familyHealthEdit.name} watch={familyHealthEdit.watch} onClose={() => setFamilyHealthEdit(null)} onSaved={retryData} />}
       {areaStrip('family', 'Family')}
       {drawers}
     </SectionPage>;
@@ -1372,12 +1385,12 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
       ask="What’s going on around my community that I should know about?"
       hero={<CommunityOverview community={community ?? null} waiting={waiting} calls={nearbyCalls} weatherAlerts={nearbyWeather}
         nearbyReady={!!data.nearby.data} calendar={communityCal} onAsk={onAsk} onNeighbors={next => patch({ neighbors: next })}
-        onSection={toSection} onAddNews={() => setSourcesOpen(true)} />}
+        onSection={toSection} onEditPlace={uuid => { setPlaceEditRequest({ uuid, nonce: Date.now() }); toSection('community-places'); }} onAddNews={() => setSourcesOpen(true)} />}
     >
       <h2 className="fp-details-head section-panel-wide">THE DETAIL</h2>
       <Panel id="community-places" title="Points of interest" note="watched day and night" wide>
         <p className="community-blurb">I keep watch around every place on this list, all the time. A 911 call or a severe-weather warning inside a ring reaches you straight away — here, on your phone, and by text — and I pick out news about these places from the pages I read for you. Home, your church, the kids’ school, the town square: the more you add, the more of your community I can look after.</p>
-        {waiting || <PointsOfInterest places={places} onPlaces={next => patch({ places: next })} />}
+        {waiting || <PointsOfInterest places={places} onPlaces={next => patch({ places: next })} editRequest={placeEditRequest} />}
       </Panel>
       <Panel title="On your calendar" note={communityCal.length ? 'events that mention your community' : undefined} wide>
         {waiting || (!ready(summary?.calendar) ? unavailable('calendar', 'Google Calendar')
@@ -1927,9 +1940,9 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
       <HomeHero greeting={greeting} firstName={firstName} blurb={blurb} nodes={nodes} />
       {data.summary.error && <p className="dashboard-notice" role="status">Connected data is unavailable. {data.summary.error}</p>}
       <EmergencyBanner onAsk={onAsk} onPlaces={onPlaces} inline />
+      <WorkBanner events={events} workingLocations={summary?.calendar.data?.workingLocations} timeZone={timeZone} now={now} jira={summary?.jira.status === 'ready' ? summary.jira.data : null} onOpen={go('Calendar')} onOpenWork={go('Work')} />
       <HomeChanges updates={updates} now={now} onOpen={area => onNavigate?.(area)} compact />
       {statStrip}
-      <WorkBanner events={events} workingLocations={summary?.calendar.data?.workingLocations} timeZone={timeZone} now={now} jira={summary?.jira.status === 'ready' ? summary.jira.data : null} onOpen={go('Calendar')} onOpenWork={go('Work')} />
 
       <div className="dh-row dh-row-three">{schedule}{work}{projects}</div>
       {/* Health, then Family: the owner's order for the areas of a life. */}

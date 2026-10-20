@@ -35,6 +35,7 @@ interface Props {
   onNeighbors: (next: CommunityOverview['neighbors']) => void;
   /** Scroll to one of the detail panels below by its id. */
   onSection: (id: string) => void;
+  onEditPlace: (uuid: string) => void;
   onAddNews: () => void;
 }
 
@@ -100,7 +101,7 @@ function useHomeWeather(places: WatchPlace[] | undefined) {
   return { read, failed };
 }
 
-export function CommunityOverview({ community, waiting, calls, weatherAlerts, nearbyReady, calendar, onAsk, onNeighbors, onSection, onAddNews }: Props) {
+export function CommunityOverview({ community, waiting, calls, weatherAlerts, nearbyReady, calendar, onAsk, onNeighbors, onSection, onEditPlace, onAddNews }: Props) {
   const places = community?.places;
   const enabled = (places || []).filter(p => p.enabled);
   const home = enabled.find(p => p.kind === 'home') || enabled[0] || null;
@@ -193,8 +194,8 @@ export function CommunityOverview({ community, waiting, calls, weatherAlerts, ne
                 const b = badgeOf(p.kind);
                 const [line1, line2] = addressLines(p.address);
                 return <li key={p.uuid} className={p.enabled ? undefined : 'cmp-paused'}>
-                  <button type="button" onClick={() => onAsk(`What’s going on around ${p.name}?`)}>
-                    <span className={`hp-badge hp-badge-lg ${b.tone}`}><Icon name={b.icon} /></span>
+                  <button type="button" onClick={() => onEditPlace(p.uuid)} aria-label={`Edit ${p.name}`}>
+                    {p.photoUrl ? <img className="cmp-place-photo" src={p.photoUrl} alt="" /> : <span className={`hp-badge hp-badge-lg ${b.tone}`}><Icon name={b.icon} /></span>}
                     <div>
                       <strong>{p.name}</strong>
                       {line1 ? <small>{line1}</small> : <small>{p.latitude.toFixed(4)}, {p.longitude.toFixed(4)}</small>}

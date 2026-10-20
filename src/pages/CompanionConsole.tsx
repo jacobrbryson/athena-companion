@@ -39,6 +39,7 @@ import { AthenaAvatar } from '../components/AthenaAvatar';
 import { ProfileAvatar } from '../components/ProfileAvatar';
 import { Drawer } from '../components/Drawer';
 import '../dashboard.css';
+import { useStayAwake } from '../athena/idle';
 
 /**
  * The Companion console — the Guardians console's layout and feel (Athena
@@ -375,6 +376,8 @@ export function CompanionConsole() {
     [chat, threadUuid]
   );
   const conversation = useConversation(tts, talk);
+  // Talking with her hands-free is being here, though nothing is touched.
+  useStayAwake(conversation.active);
 
   useEffect(() => {
     if (inputOpen) inputMenuRef.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus();
@@ -555,9 +558,9 @@ export function CompanionConsole() {
         <div className="flex min-w-0 items-center gap-2">
           <span
             className={`inline-block h-2 w-2 shrink-0 rounded-full ${
-              chat.wsConnected ? 'bg-emerald-400' : chat.connected ? 'bg-amber-400' : 'bg-amber-400 animate-pulse'
+              chat.wsConnected ? 'bg-emerald-400' : chat.transport === 'idle' ? 'bg-slate-500' : chat.connected ? 'bg-amber-400' : 'bg-amber-400 animate-pulse'
             }`}
-            title={chat.wsConnected ? 'Live link' : chat.connected ? 'Backup link — reconnecting' : 'Connecting…'}
+            title={chat.wsConnected ? 'Live link' : chat.transport === 'idle' ? 'Resting — reconnects when you’re back' : chat.connected ? 'Backup link — reconnecting' : 'Connecting…'}
             aria-hidden
           />
           <span className="truncate opacity-70">{firstName} · Companion</span>

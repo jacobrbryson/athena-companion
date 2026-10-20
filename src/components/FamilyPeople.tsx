@@ -45,8 +45,8 @@ export function OptionsMenu({ label, items }: { label: string; items: { label: s
  * from Google when shown, and a birthday found there feeds the Family card.
  * Children from the family profiles are listed under them.
  */
-export function FamilyPeopleList({ facts, children, links, onChange, onConnect, onFactsChanged, names, relations, watches = [], watchOf, onHealthChanged, onFactEdited, neighbors, onNeighbors }: {
-  facts: Fact[]; children: FamilyChild[]; links: FamilyLink[];
+export function FamilyPeopleList({ facts, children, links, photos = {}, onChange, onConnect, onFactsChanged, names, relations, watches = [], watchOf, onHealthChanged, onFactEdited, neighbors, onNeighbors }: {
+  facts: Fact[]; children: FamilyChild[]; links: FamilyLink[]; photos?: Record<string, string>;
   onChange: (next: FamilyPeopleData) => void; onConnect?: () => void;
   /** A person was merged away or forgotten (by uuid), so the memories list behind this one is stale. */
   onFactsChanged?: (goneUuid: string) => void;
@@ -118,7 +118,7 @@ export function FamilyPeopleList({ facts, children, links, onChange, onConnect, 
         const born = birthdayLabel(card?.birthday);
         const watch = watchOf?.get(fact.uuid);
         return <li key={fact.uuid} className={watch ? 'family-watched' : undefined}>
-          <ContactAvatar name={nameOf(fact)} photoUrl={card?.photoUrl} />
+          <ContactAvatar name={nameOf(fact)} photoUrl={photos[fact.uuid] || card?.photoUrl} />
           <div>
             <strong>{nameOf(fact)}</strong>
             <p>{fact.value || 'Saved in memory'}</p>
@@ -185,7 +185,7 @@ export function FamilyPeopleList({ facts, children, links, onChange, onConnect, 
         <small>{[c.grade && `Grade ${c.grade}`, birthdayLabel(c.birthday) ? `born ${birthdayLabel(c.birthday)}` : 'no birthday on file'].filter(Boolean).join(' · ')}</small>
       </li>)}</ul>
     </>}
-    {editing && <FamilyPersonEditor fact={editing} facts={facts} name={nameOf(editing)} relation={relations?.get(editing.uuid)} links={links} onClose={() => setEditing(null)} onSaved={() => onFactEdited?.()} onChange={onChange} onConnect={onConnect} onHealth={() => { setHealth({ name: nameOf(editing), watch: watchOf?.get(editing.uuid) }); setEditing(null); }} />}
+    {editing && <FamilyPersonEditor fact={editing} facts={facts} name={nameOf(editing)} relation={relations?.get(editing.uuid)} links={links} photoUrl={photos[editing.uuid]} onClose={() => setEditing(null)} onSaved={() => onFactEdited?.()} onChange={onChange} onConnect={onConnect} onHealth={() => { setHealth({ name: nameOf(editing), watch: watchOf?.get(editing.uuid) }); setEditing(null); }} />}
     {health && <HealthWatchModal personName={health.name} watch={health.watch} onClose={() => setHealth(null)} onSaved={() => onHealthChanged?.()} />}
   </>;
 }

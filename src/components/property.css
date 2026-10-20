@@ -21,7 +21,7 @@
 [id^=property-]{scroll-margin-top:20px}
 @media(max-width:700px){.property-nav button{flex:0 0 auto;padding:12px 14px;font-size:11px;gap:7px}}
 .property-tab-content{grid-column:1/-1;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:15px;align-items:start;min-width:0}.property-tab-content>*{order:6}.property-tab-content>.property-glance{order:1}.property-tab-content>#property-projects{order:2}.property-tab-content>#property-areas{order:3}.property-tab-content>#property-activity{order:4}.property-tab-content>#property-season{order:5}.property-tab-content:focus-visible{outline:2px solid #67ddff;outline-offset:5px;border-radius:10px}.property-nav button{cursor:pointer}.property-tab-content>.section-panel-wide .property-map{max-width:1200px;margin-inline:auto}
-@media(max-width:1150px){.property-tab-content{grid-template-columns:1fr}}
+@media(max-width:1150px){.property-tab-content{grid-template-columns:minmax(0,1fr)}}
 .property-next-actions{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:20px;padding-top:10px}
 @media(min-width:1151px){.property-tab-content>.property-glance:not(.section-panel-wide),.property-tab-content>#property-projects{align-self:stretch}.property-tab-content>#property-projects{display:flex;flex-direction:column}.property-tab-content>#property-projects>.property-next-actions{margin-top:auto;padding-top:22px}}
 .property-tab-content>#property-areas,.property-tab-content>#property-issues-summary,.property-tab-content>#property-activity,.property-tab-content>#property-season:not(.section-panel-wide){align-self:stretch;display:flex;flex-direction:column;max-height:440px;min-height:0}

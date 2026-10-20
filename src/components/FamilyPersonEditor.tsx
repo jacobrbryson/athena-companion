@@ -3,12 +3,13 @@ import { createPortal } from 'react-dom';
 import { memoryApi, type Fact } from '../api/companion';
 import { ContactAvatar, ContactSearch } from './Community';
 import { dashboardApi, type FamilyLink, type FamilyPeople } from '../api/dashboard';
+import { downscale } from './photoStore';
 
 /** Edit the person's own memories without renaming their stable key or contact link. */
-export function FamilyPersonEditor({ fact, facts, name, relation, links, onClose, onSaved, onChange, onConnect, onHealth }: {
-  fact: Fact; facts: Fact[]; name: string; relation?: string; links: FamilyLink[];
+export function FamilyPersonEditor({ fact, facts, name, relation, links, photoUrl, isNew = false, onClose, onSaved, onChange, onConnect, onHealth, onRemoved }: {
+  fact: Fact; facts: Fact[]; name: string; relation?: string; links: FamilyLink[]; photoUrl?: string | null; isNew?: boolean;
   onClose: () => void; onSaved: () => void; onChange: (next: FamilyPeople) => void;
-  onConnect?: () => void; onHealth: () => void;
+  onConnect?: () => void; onHealth: () => void; onRemoved?: (uuid: string) => void;
 }) {
   const prefix = fact.key.trim().toLowerCase();
   const details = facts.filter(f => f !== fact && (f.key.trim().toLowerCase().startsWith(`${prefix} `) || f.key.trim().toLowerCase().startsWith(`${prefix}'s `)));
@@ -21,6 +22,8 @@ export function FamilyPersonEditor({ fact, facts, name, relation, links, onClose
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [search, setSearch] = useState(false);
+  const [portraitChange, setPortraitChange] = useState<string | null | undefined>(undefined);
+  const [confirmRemove, setConfirmRemove] = useState(false);
   const root = useRef<HTMLElement>(null);
   const link = links.find(l => l.factUuid === fact.uuid);
 
@@ -44,6 +47,11 @@ export function FamilyPersonEditor({ fact, facts, name, relation, links, onClose
   async function save() {
     setBusy(true); setError('');
     try {
+      let factUuid = fact.uuid;
+      if (isNew) {
+        const created = await memoryApi.saveFact({ category: fact.category, key: fact.key, value: notes.trim(), visibility: fact.visibility });
+        factUuid = created.memory.uuid;
+      }
       const write = async (key: string, value: string, original?: Fact) => {
         if (value.trim() === (original?.value || '').trim()) return;
         if (!value.trim()) { if (original) await memoryApi.deleteFact(original.uuid); return; }
@@ -52,16 +60,36 @@ export function FamilyPersonEditor({ fact, facts, name, relation, links, onClose
       await write(`${fact.key} display name`, personName, detail('display name'));
       await write(`${fact.key} relationship`, relationship, detail('relationship'));
       // Keep the main entry even if its notes are emptied: it owns the links and details.
-      if (notes.trim() !== (fact.value || '').trim()) await memoryApi.saveFact({ category: fact.category, key: fact.key, value: notes.trim(), visibility: fact.visibility });
+      if (!isNew && notes.trim() !== (fact.value || '').trim()) await memoryApi.saveFact({ category: fact.category, key: fact.key, value: notes.trim(), visibility: fact.visibility });
       for (const f of other) await write(f.key, values[f.uuid], f);
+      if (portraitChange !== undefined) onChange(await dashboardApi.setFamilyPortrait(factUuid, portraitChange));
       onSaved(); onClose();
     } catch (e) { onSaved(); setError(`${(e as Error).message || 'Could not save.'} Some fields may have saved; you can retry.`); }
     finally { setBusy(false); }
+  }
+  async function pickPortrait(file?: File) {
+    if (!file) return;
+    setError('');
+    try {
+      if (!file.type.startsWith('image/')) throw new Error('Choose an image file.');
+      const { base64 } = await downscale(file, 320, 0.8);
+      if (base64.length > 180000) throw new Error('Choose a smaller picture.');
+      setPortraitChange(base64);
+    } catch (e) { setError((e as Error).message || 'Could not read that picture.'); }
   }
   async function contact(call: () => Promise<FamilyPeople>) {
     setBusy(true); setError('');
     try { onChange(await call()); setSearch(false); }
     catch (e) { setError((e as Error).message || 'Could not update the contact.'); }
+    finally { setBusy(false); }
+  }
+  async function remove() {
+    setBusy(true); setError('');
+    try {
+      onChange(await dashboardApi.removeFamilyPerson(fact.uuid));
+      onRemoved?.(fact.uuid);
+      onClose();
+    } catch (e) { setError((e as Error).message || 'Could not remove this pet.'); }
     finally { setBusy(false); }
   }
 
@@ -76,13 +104,22 @@ export function FamilyPersonEditor({ fact, facts, name, relation, links, onClose
           <label>What Athena remembers<textarea className="family-tidy-input" value={notes} onChange={e => setNotes(e.target.value)} maxLength={2000} rows={4} /></label>
           {other.map(f => <label key={f.uuid}>{f.key.slice(fact.key.length).replace(/^'s?\s*/, '')}<textarea className="family-tidy-input" value={values[f.uuid]} onChange={e => setValues(v => ({ ...v, [f.uuid]: e.target.value }))} maxLength={2000} rows={2} /></label>)}
         </fieldset>
-        <div><ContactAvatar name={personName} photoUrl={link?.card?.photoUrl} /><p className="source-note">{link ? `Linked contact: ${link.card?.name || link.name}` : 'No linked Google Contact'}</p>
-          <button type="button" className="community-link" disabled={busy} onClick={() => setSearch(s => !s)}>{search ? 'Cancel search' : link ? 'Change contact' : 'Link contact'}</button>
+        <div className="family-portrait-control"><ContactAvatar name={personName} photoUrl={portraitChange === null ? link?.card?.photoUrl : portraitChange ? `data:image/jpeg;base64,${portraitChange}` : photoUrl || link?.card?.photoUrl} />
+          <div><label>Picture<input type="file" accept="image/*" disabled={busy} onChange={e => void pickPortrait(e.target.files?.[0])} /></label>
+            {(photoUrl || portraitChange) && <button type="button" className="community-link" disabled={busy} onClick={() => setPortraitChange(null)}>Remove picture</button>}
+            <small className="source-note">Your picture is saved privately with this family member and appears on all your devices.</small></div>
+        </div>
+        <div><p className="source-note">{link ? `Linked contact: ${link.card?.name || link.name}` : 'No linked Google Contact'}</p>
+          <button type="button" className="community-link" disabled={busy || isNew} onClick={() => setSearch(s => !s)}>{search ? 'Cancel search' : link ? 'Change contact' : 'Link contact'}</button>
           {link && <button type="button" className="community-link" disabled={busy} onClick={() => void contact(() => dashboardApi.unlinkFamilyContact(fact.uuid))}>Unlink</button>}
           {search && !busy && <ContactSearch exclude={new Set(links.filter(l => l.factUuid !== fact.uuid).map(l => l.contactId))} onConnect={onConnect} onPick={c => void contact(() => dashboardApi.linkFamilyContact(fact.uuid, { contactId: c.contactId, name: c.name }))} />}
-          <small className="source-note">Contact changes save immediately. Contact photos, phone numbers and birthdays are edited in Google Contacts.</small>
+          <small className="source-note">{isNew ? 'Save this person before linking a contact.' : 'Contact changes save immediately. Contact phone numbers and birthdays are edited in Google Contacts.'}</small>
         </div>
         <button type="button" className="community-link" disabled={busy} onClick={onHealth}>Manage health watch</button>
+        {onRemoved && !isNew && <div className="family-remove-control">
+          {confirmRemove ? <><span>Remove “{name}” from your family memories?</span><button type="button" className="community-link community-danger" disabled={busy} onClick={() => void remove()}>{busy ? 'Removing…' : 'Yes, remove'}</button><button type="button" className="community-link" disabled={busy} onClick={() => setConfirmRemove(false)}>Keep</button></>
+            : <button type="button" className="community-link community-danger" disabled={busy} onClick={() => setConfirmRemove(true)}>Remove {fact.category === 'pet' ? 'pet' : 'person'}</button>}
+        </div>}
         {error && <p className="dashboard-notice" role="alert">{error}</p>}
         <div className="health-modal-actions"><button type="submit" className="dashboard-chat-cta" disabled={busy || !personName.trim()}>{busy ? 'Saving…' : 'Save'}</button><button type="button" className="community-link" disabled={busy} onClick={onClose}>Cancel</button></div>
       </form>

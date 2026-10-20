@@ -2102,6 +2102,8 @@ Sam` };
       zones: [{ deviceSerial: 'T8171B', name: 'inside the fence', description: null }, { deviceSerial: 'T8171B', name: 'outside the back fence', description: null }],
       rules: [{ id: 'rule-1', subjectId: 'sub-wynter', subjectName: 'Wynter', label: null, deviceSerial: 'T8171B', zone: 'outside the back fence', enabled: true }],
       sightings: [
+        { id: 'si-5', label: 'unknown dog', kind: 'animal', subjectId: null, camera: 'Backyard', deviceSerial: 'T8171B', zone: 'outside the back fence', where: 'by the gate', confidence: 0.8, eventKind: 'motion', seenAt: ago(7), hasFrame: true },
+        { id: 'si-6', label: 'unknown dog', kind: 'animal', subjectId: null, camera: 'Backyard', deviceSerial: 'T8171B', zone: 'outside the back fence', where: 'along the back fence', confidence: 0.74, eventKind: 'motion', seenAt: ago(10), hasFrame: true },
         { id: 'si-1', label: 'Wynter', kind: 'animal', subjectId: 'sub-wynter', camera: 'Backyard', deviceSerial: 'T8171B', zone: 'inside the fence', where: 'by the back fence', confidence: 0.91, eventKind: 'motion', seenAt: ago(28), hasFrame: true },
         { id: 'si-2', label: 'stranger', kind: 'person', subjectId: null, camera: 'Doorbell', deviceSerial: 'T8213D', zone: null, where: 'at the front door', confidence: 0.84, eventKind: 'doorbell', seenAt: ago(95), hasFrame: true },
         { id: 'si-3', label: 'deer', kind: 'animal', subjectId: null, camera: 'Backyard', deviceSerial: 'T8171B', zone: 'outside the back fence', where: 'past the tree line', confidence: 0.55, eventKind: 'motion', seenAt: ago(240), hasFrame: true },
@@ -2109,6 +2111,30 @@ Sam` };
       ],
     };
     if (method === 'GET' && p.endsWith('/sightings')) return { ...st, retentionDays: 30 };
+    // "This is…": mirrors the server — matching kind only, a full subject keeps its photos, only ticked rows are renamed.
+    if (method === 'POST' && p.endsWith('/teach')) {
+      const row = st.sightings.find((x: any) => x.id === p.split('/')[7]);
+      if (!row) fail(404, 'That sighting is gone.');
+      if (row.subjectId) fail(409, 'That sighting already has a name.');
+      let sub = body.subjectId ? st.subjects.find((x: any) => x.id === body.subjectId) : null;
+      if (body.subjectId && !sub) fail(404, "That name isn't in the gallery.");
+      if (sub && sub.kind !== row.kind) fail(400, `${sub.name} is in the gallery as a ${sub.kind}.`);
+      const created = !sub;
+      if (!sub) {
+        const name = String(body.newSubject?.name || '').trim();
+        if (!name) fail(400, 'Give them a name.');
+        if (/^(stranger|unknown)/i.test(name)) fail(400, "That name is reserved for people Athena doesn't know.");
+        if (st.subjects.some((x: any) => x.name.toLowerCase() === name.toLowerCase())) fail(409, 'That name is already in the gallery.');
+        sub = { id: `sub-${Date.now()}`, name, kind: row.kind, description: body.newSubject?.description || null, photos: [], lastSeen: null };
+        st.subjects.push(sub);
+      }
+      const full = sub.photos.length >= 3;
+      if (!full && row.hasFrame) sub.photos.push(crypto.randomUUID());
+      const rows = [row, ...st.sightings.filter((x: any) => (body.alsoIds || []).includes(x.id) && !x.subjectId && x.kind === row.kind)];
+      for (const r of rows) { r.subjectId = sub.id; r.label = sub.name; }
+      sub.lastSeen = { at: row.seenAt, camera: row.camera, where: row.where };
+      return { subjectId: sub.id, name: sub.name, created, photoAdded: !full && row.hasFrame, photoNote: full ? `${sub.name} already has 3 reference photos — remove one in the Gallery to use this frame.` : null, renamed: rows.length };
+    }
     if (method === 'POST' && p.endsWith('/subjects')) { const id = `sub-${Date.now()}`; st.subjects.push({ id, name: body.name, kind: body.kind, description: body.description || null, photos: [], lastSeen: null }); return { id }; }
     const subj = /\/subjects\/([^/]+)/.exec(p)?.[1];
     if (subj && method === 'DELETE' && !p.includes('/photos/')) { st.subjects = st.subjects.filter((x: any) => x.id !== subj); st.rules = st.rules.filter((r: any) => r.subjectId !== subj); return undefined; }

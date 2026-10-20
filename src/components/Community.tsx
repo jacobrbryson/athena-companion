@@ -16,6 +16,7 @@ import {
   type WatchPlace,
 } from '../api/dashboard';
 import { locationApi } from '../api/companion';
+import { downscale } from './photoStore';
 
 /**
  * The Community page's own panels: points of interest, neighbours and local
@@ -69,20 +70,30 @@ export function CommunityMap({ places, neighbors = [], onNeighbors, height = 320
   return <NeighborMap places={places} neighbors={neighbors} icon={kindIcon} onNeighbors={onNeighbors} height={height} satellite={satellite} />;
 }
 
-export function PointsOfInterest({ places, onPlaces }: { places: WatchPlace[]; onPlaces: (places: WatchPlace[]) => void }) {
+export function PointsOfInterest({ places, onPlaces, editRequest }: { places: WatchPlace[]; onPlaces: (places: WatchPlace[]) => void; editRequest?: { uuid: string; nonce: number } | null }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
 
-  async function save(place: WatchPlace, patch: Partial<WatchPlace>) {
+  useEffect(() => {
+    if (!editRequest) return;
+    setAdding(false);
+    setEditing(editRequest.uuid);
+  }, [editRequest]);
+  useEffect(() => {
+    if (editRequest?.uuid !== editing) return;
+    document.getElementById(`place-editor-${editing}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, [editing, editRequest]);
+
+  async function save(place: WatchPlace, patch: Partial<WatchPlace> & { photoBase64?: string | null }) {
     setError(null);
     setBusy(place.uuid);
     try {
       const next = { ...place, ...patch };
-      const r = await dashboardApi.saveWatchPlace({
+      const r = await dashboardApi.updateWatchPlace(place.uuid, {
         name: next.name, latitude: next.latitude, longitude: next.longitude, address: next.address,
-        radiusMiles: next.radiusMiles, enabled: next.enabled, kind: next.kind, notes: next.notes,
+        radiusMiles: next.radiusMiles, enabled: next.enabled, kind: next.kind, notes: next.notes, photoBase64: patch.photoBase64,
       });
       onPlaces(r.places);
       return true;
@@ -112,7 +123,7 @@ export function PointsOfInterest({ places, onPlaces }: { places: WatchPlace[]; o
     {!places.length && <p className="dashboard-empty">Nothing yet — start with home, then your church, the kids’ school, the town square.</p>}
     <ul className="community-list">
       {places.map(p => <li key={p.uuid} className={p.enabled ? '' : 'community-paused'}>
-        <span className="community-icon" aria-hidden>{kindOf(p.kind).icon}</span>
+        {p.photoUrl ? <img className="community-place-photo" src={p.photoUrl} alt="" /> : <span className="community-icon" aria-hidden>{kindOf(p.kind).icon}</span>}
         <div className="community-body">
           <strong>{p.name}</strong>
           <small>{[kindOf(p.kind).label, p.address || `${p.latitude.toFixed(4)}, ${p.longitude.toFixed(4)}`].join(' · ')}</small>
@@ -127,7 +138,7 @@ export function PointsOfInterest({ places, onPlaces }: { places: WatchPlace[]; o
             <button type="button" className="community-link" onClick={() => setEditing(editing === p.uuid ? null : p.uuid)}>{editing === p.uuid ? 'Close' : 'Edit'}</button>
             <button type="button" className="community-link community-danger" disabled={busy === p.uuid} onClick={() => void remove(p)}>Remove</button>
           </div>
-          {editing === p.uuid && <PlaceDetailsForm place={p} busy={busy === p.uuid} onSave={async patch => { if (await save(p, patch)) setEditing(null); }} />}
+          {editing === p.uuid && <PlaceDetailsForm place={p} busy={busy === p.uuid} onSave={async patch => { if (await save(p, patch)) setEditing(null); }} onCancel={() => setEditing(null)} />}
         </div>
       </li>)}
     </ul>
@@ -137,14 +148,65 @@ export function PointsOfInterest({ places, onPlaces }: { places: WatchPlace[]; o
   </>;
 }
 
-/** Kind and notes for a saved place. Moving a place is remove-and-add: the ring is what it was saved for. */
-function PlaceDetailsForm({ place, busy, onSave }: { place: WatchPlace; busy: boolean; onSave: (patch: Partial<WatchPlace>) => void }) {
+/** Edit the saved place without changing its UUID, so linked events keep their place. */
+function PlaceDetailsForm({ place, busy, onSave, onCancel }: { place: WatchPlace; busy: boolean; onSave: (patch: Partial<WatchPlace> & { photoBase64?: string | null }) => void; onCancel: () => void }) {
+  const [name, setName] = useState(place.name);
   const [kind, setKind] = useState<PlaceKind>(place.kind || 'other');
   const [notes, setNotes] = useState(place.notes || '');
-  return <form className="dashboard-form community-form" onSubmit={e => { e.preventDefault(); onSave({ kind, notes: notes.trim() || null }); }}>
+  const [radiusMiles, setRadius] = useState(place.radiusMiles);
+  const [enabled, setEnabled] = useState(place.enabled);
+  const [address, setAddress] = useState(place.address || '');
+  const [picked, setPicked] = useState<AddressMatch | null>(null);
+  const [matches, setMatches] = useState<AddressMatch[]>([]);
+  const [finding, setFinding] = useState(false);
+  const [readingPhoto, setReadingPhoto] = useState(false);
+  const [photoBase64, setPhoto] = useState<string | null | undefined>(undefined);
+  const [error, setError] = useState<string | null>(null);
+  const addressChanged = address.trim() !== (place.address || '').trim();
+
+  async function find() {
+    setFinding(true); setError(null); setPicked(null);
+    try {
+      const result = await dashboardApi.lookupAddress(address);
+      setMatches(result.matches);
+      if (result.matches.length === 1) setPicked(result.matches[0]);
+      if (!result.matches.length) setError('I could not find that address. Check the street and town.');
+    } catch (err) { setError(errorText(err, 'Could not look up that address.')); }
+    finally { setFinding(false); }
+  }
+  async function pickPhoto(file?: File) {
+    if (!file) return;
+    setError(null); setReadingPhoto(true);
+    try {
+      if (!file.type.startsWith('image/')) throw new Error('Choose an image file.');
+      const { base64 } = await downscale(file, 320, 0.8);
+      if (base64.length > 180000) throw new Error('Choose a smaller picture.');
+      setPhoto(base64);
+    } catch (err) { setError(errorText(err, 'Could not read that picture.')); }
+    finally { setReadingPhoto(false); }
+  }
+  const photoUrl = photoBase64 === null ? null : photoBase64 ? `data:image/jpeg;base64,${photoBase64}` : place.photoUrl;
+  return <form id={`place-editor-${place.uuid}`} className="dashboard-form community-form community-place-editor" onSubmit={e => {
+    e.preventDefault();
+    if (addressChanged && !picked) { setError('Find and choose the new address before saving.'); return; }
+    onSave({ name: name.trim(), kind, notes: notes.trim() || null, radiusMiles, enabled,
+      address: picked ? picked.label : place.address, latitude: picked?.latitude ?? place.latitude, longitude: picked?.longitude ?? place.longitude, photoBase64 });
+  }}>
+    <Field label="Name"><input value={name} onChange={e => setName(e.target.value)} maxLength={60} required /></Field>
     <Field label="What it is"><KindSelect value={kind} onChange={setKind} /></Field>
+    <div className="community-place-address"><Field label="Address"><input value={address} onChange={e => { setAddress(e.target.value); setPicked(null); setMatches([]); }} placeholder="Street address, town, state" /></Field>
+      <button type="button" className="source-fix" disabled={finding || address.trim().length < 5} onClick={() => void find()}>{finding ? 'Finding…' : 'Find address'}</button></div>
+    {matches.length > 1 && <div className="community-place-matches" role="group" aria-label="Matching addresses">{matches.map(m => <button type="button" key={`${m.latitude},${m.longitude}`} className={picked === m ? 'active' : ''} onClick={() => { setPicked(m); setAddress(m.label); }}>{m.label}</button>)}</div>}
+    {picked && <small className="community-hint">Location selected: {picked.label}</small>}
+    <Field label="Watch radius"><select value={radiusMiles} onChange={e => setRadius(Number(e.target.value))}>{[...new Set([...RADII, radiusMiles])].sort((a, b) => a - b).map(r => <option key={r} value={r}>{r} mi</option>)}</select></Field>
+    <label className="community-check"><input type="checkbox" checked={enabled} onChange={e => setEnabled(e.target.checked)} /> Watch this place</label>
     <Field label="Notes for Athena"><textarea value={notes} onChange={e => setNotes(e.target.value)} maxLength={500} rows={2} placeholder="Wednesday night suppers; Pastor Jim" /></Field>
-    <button className="dashboard-chat-cta" type="submit" disabled={busy}>{busy ? 'Saving…' : 'Save'} <span>↗</span></button>
+    <div className="community-place-picture">{photoUrl ? <img src={photoUrl} alt="Preview of this place" /> : <span className="community-icon" aria-hidden>{kindOf(kind).icon}</span>}
+      <div><label>Picture<input type="file" accept="image/*" disabled={busy} onChange={e => void pickPhoto(e.target.files?.[0])} /></label>
+        {photoUrl && <button type="button" className="community-link" disabled={busy} onClick={() => setPhoto(null)}>Remove picture</button>}
+        <small className="community-hint">Saved privately with this place and shown on your devices.</small></div></div>
+    <Problem text={error} />
+    <div className="community-actions"><button className="dashboard-chat-cta" type="submit" disabled={busy || readingPhoto || !name.trim() || (addressChanged && !picked)}>{busy ? 'Saving…' : readingPhoto ? 'Preparing picture…' : 'Save changes'} <span>↗</span></button><button type="button" className="community-link" disabled={busy} onClick={onCancel}>Cancel</button></div>
   </form>;
 }
 
@@ -291,6 +353,7 @@ export function householdLabel(n: Pick<Neighbor, 'name' | 'address' | 'contacts'
 
 export function ContactAvatar({ name, photoUrl }: { name: string; photoUrl?: string | null }) {
   const [broken, setBroken] = useState(false);
+  useEffect(() => setBroken(false), [photoUrl]);
   if (photoUrl && !broken) return <img className="memory-avatar community-photo" src={photoUrl} alt="" referrerPolicy="no-referrer" onError={() => setBroken(true)} />;
   return <span className="memory-avatar" aria-hidden>{name.replace(/^the\s+/i, '').slice(0, 1).toUpperCase()}</span>;
 }

@@ -85,7 +85,7 @@ export interface FamilyLink {
   card: { contactId: string; name: string; birthday: string | null; phone: string | null; email: string | null; photoUrl: string | null } | null;
   status: 'ok' | 'missing' | 'not_connected' | 'unreadable';
 }
-export interface FamilyPeople { children: FamilyChild[]; links: FamilyLink[]; contactsLinked: boolean | null }
+export interface FamilyPeople { children: FamilyChild[]; links: FamilyLink[]; contactsLinked: boolean | null; photos: Record<string, string> }
 
 /** One family member currently reported under the weather. */
 export interface FamilyHealthStatus {
@@ -154,7 +154,7 @@ export interface AlertTestResult {
 /** What a point of interest is to the person. Only a label — every kind is watched the same way. */
 export type PlaceKind = 'home' | 'family' | 'neighborhood' | 'church' | 'school' | 'town' | 'work' | 'business' | 'park' | 'other';
 /** A point of interest: a place watched for emergencies nearby, and part of the person's community. */
-export interface WatchPlace { uuid: string; name: string; kind: PlaceKind; address: string | null; notes: string | null; latitude: number; longitude: number; radiusMiles: number; enabled: boolean }
+export interface WatchPlace { uuid: string; name: string; kind: PlaceKind; address: string | null; notes: string | null; latitude: number; longitude: number; radiusMiles: number; enabled: boolean; photoUrl?: string | null }
 /** One of the person's Google Contacts, as the page shows it. Read live from Google, never stored. */
 export interface ContactCard {
   contactId: string; name: string; phone: string | null; email: string | null; address: string | null; photoUrl: string | null;
@@ -447,6 +447,8 @@ export const dashboardApi = {
   /** Add, or update by name (radius, on/off, a corrected position). */
   saveWatchPlace: (place: { name: string; latitude: number; longitude: number; radiusMiles?: number; address?: string | null; enabled?: boolean; kind?: PlaceKind; notes?: string | null }) =>
     api.put<{ places: WatchPlace[] }>('/api/v1/dashboard/incidents/places', place),
+  updateWatchPlace: (uuid: string, place: { name: string; latitude: number; longitude: number; radiusMiles: number; address: string | null; enabled: boolean; kind: PlaceKind; notes: string | null; photoBase64?: string | null }) =>
+    api.patch<{ places: WatchPlace[] }>(`/api/v1/dashboard/incidents/places/${encodeURIComponent(uuid)}`, place),
   removeWatchPlace: (uuid: string) => api.del<{ places: WatchPlace[] }>(`/api/v1/dashboard/incidents/places/${encodeURIComponent(uuid)}`),
   /** Seven days, 48 hours by the hour, and a frost read per night, at home or a chosen place. */
   weatherOutlook: (placeUuid?: string | null) => api.get<WeatherOutlookRead>(`/api/v1/dashboard/weather/outlook${placeUuid ? `?place=${encodeURIComponent(placeUuid)}` : ''}`),
@@ -584,6 +586,8 @@ export const dashboardApi = {
     api.put<FamilyPeople>(`/api/v1/dashboard/family/people/${encodeURIComponent(factUuid)}/contact`, contact),
   unlinkFamilyContact: (factUuid: string) =>
     api.del<FamilyPeople>(`/api/v1/dashboard/family/people/${encodeURIComponent(factUuid)}/contact`),
+  setFamilyPortrait: (factUuid: string, imageBase64: string | null) =>
+    api.put<FamilyPeople>(`/api/v1/dashboard/family/people/${encodeURIComponent(factUuid)}/portrait`, { imageBase64 }),
   /** Forgets a remembered person or pet (and their contact link). */
   removeFamilyPerson: (factUuid: string) =>
     api.del<FamilyPeople>(`/api/v1/dashboard/family/people/${encodeURIComponent(factUuid)}`),

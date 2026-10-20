@@ -89,7 +89,7 @@
 /* Kept clips and images */
 .ps-kept { padding: 16px; }
 .ps-kept > header { justify-content: flex-start; }
-.ps-kept ul { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(200px, 236px); gap: 14px; margin: 14px 0 0; padding: 0 0 6px; list-style: none; overflow-x: auto; scroll-snap-type: x proximity; }
+.ps-kept ul { contain: inline-size; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(200px, 236px); gap: 14px; margin: 14px 0 0; padding: 0 0 6px; list-style: none; overflow-x: auto; scroll-snap-type: x proximity; }
 .ps-kept li { display: flex; flex-direction: column; gap: 10px; scroll-snap-align: start; min-width: 0; }
 .ps-thumb { position: relative; display: block; aspect-ratio: 16 / 9; width: 100%; padding: 0; border: 1px solid var(--ps-line); border-radius: 9px; overflow: hidden; background: #050d18; cursor: pointer; }
 .ps-thumb:focus-visible { outline: 2px solid #67ddff; outline-offset: 2px; }
@@ -136,6 +136,17 @@
 .ps-sight-list strong { font-weight: 600; }
 .ps-sight-list small { display: block; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ps-sight-list time { font-size: 13px; color: var(--ps-sub); white-space: nowrap; }
+.ps-sight-actions { display: flex; align-items: center; gap: 6px; }
+.ps-teach-box { width: min(560px, 100%); overflow-y: auto; }
+.ps-teach-box img { max-height: 36vh; }
+.ps-teach-box form { display: grid; gap: 12px; }
+.ps-teach-choice { display: grid; gap: 8px; margin: 0; padding: 0; border: 0; }
+.ps-teach-choice legend { margin-bottom: 4px; font-size: 13.5px; color: var(--ps-sub); }
+.ps-radio { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+.ps-teach-new { display: grid; gap: 8px; padding-left: 26px; }
+.ps-teach-also { display: grid; gap: 6px; padding: 10px 12px; border: 1px solid var(--ps-line); border-radius: 9px; }
+.ps-teach-also p { margin: 0; }
+.ps-teach-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .ps-event-icon.is-animal { color: #ffd38a; border-color: #6b5426; background: #241a08; }
 .ps-event-icon.is-vehicle { color: #9fd0ff; }
 .ps-event-icon.is-person { color: #cfe7ff; }

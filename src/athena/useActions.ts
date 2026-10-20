@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { actionsApi, type AthenaAction } from '../api/companion';
+import { isIdle } from './idle';
 import { ACTION_PROPOSED_EVENT } from './useChat';
 
 /**
@@ -92,7 +93,8 @@ export function useActions(enabled: boolean): ActionsState {
       return;
     }
     refresh();
-    const timer = window.setInterval(refresh, POLL_MS);
+    // Nobody here: skip the tick. The first one after they return catches up.
+    const timer = window.setInterval(() => { if (!isIdle()) refresh(); }, POLL_MS);
     return () => window.clearInterval(timer);
   }, [enabled, refresh]);
 

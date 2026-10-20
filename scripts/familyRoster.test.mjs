@@ -65,6 +65,7 @@ test('custom relationship labels override inferred pet and named-person labels',
   ]);
   assert.equal(rows.length, 2);
   assert.equal(rows.find(r => r.name === 'Dexter').relation, 'Best buddy');
+  assert.equal(rows.find(r => r.name === 'Dexter').isPet, true);
   assert.equal(rows.find(r => r.name === 'Emma').relation, 'Family friend');
 });
 const child = (name, birthday, extra = {}) => ({ uuid: `c-${name}`, name, birthday, grade: null, ...extra });
@@ -143,6 +144,14 @@ test('a linked Google Contact supplies the birthday and photo', () => {
   const rows = build([fact('step mom', 'Linda, lives in Ohio and calls Sundays', 1)], [], [], { links: [link('step mom', '--10-07', 'https://x/p.jpg')] });
   assert.equal(rows[0].signal.kind, 'birthday');
   assert.equal(rows[0].photoUrl, 'https://x/p.jpg');
+});
+
+test('a chosen portrait takes priority over a linked contact photo', () => {
+  const [row] = build([fact('step mom', 'Linda, lives in Ohio', 1)], [], [], {
+    links: [link('step mom', '--10-07', 'https://x/contact.jpg')],
+    photos: { 'step mom': 'data:image/jpeg;base64,portrait' },
+  });
+  assert.equal(row.photoUrl, 'data:image/jpeg;base64,portrait');
 });
 
 test('no birthday anywhere prompts for it, except for pets', () => {
