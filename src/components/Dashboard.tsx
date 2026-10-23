@@ -36,6 +36,7 @@ import { PageHeader } from './PageHeader';
 import { CalendarOverview } from './CalendarPage';
 import { FamilyOverview } from './FamilyPage';
 import { FamilyFinance } from './FamilyFinance';
+import { FamilyTrading } from './FamilyTrading';
 import { CommunityOverview } from './CommunityPage';
 import { WorkOverview } from './WorkPage';
 import { NavigationLink, DrawerButton } from './ActionControls';
@@ -44,6 +45,7 @@ import { useProjects, openProjects, ProjectList, ProjectBoard, ProjectsDrawers, 
 import type { Area } from '../api/projects';
 import { useProperty, PropertyOverview, PropertyWeather, PropertyNavigation, propertyHealth, propertyTabFromPath, propertyTabPath, type PropertyTab } from './Property';
 import { SectionTabs } from './PageTabs';
+import { Stat } from './SectionMetric';
 import { WeatherPanel } from './WeatherPanel';
 import { usePropertyIssues, reportedWhen, ReportIssueDrawer, IssueDetailsDrawer, ActiveIssueBanner, IssueList, troubleshootPrompt, findProPrompt } from './PropertyIssues';
 import type { PropertyIssue } from '../api/propertyIssues';
@@ -60,7 +62,7 @@ const FAMILY_CARD_ROWS = 7;
 
 /** Open a console panel; `consentFor` opens Connected apps on that provider's consent prompt. */
 export type OpenPanel = (panel: 'integrations' | 'memory' | 'actions' | 'notifications' | 'knows' | 'photo' | 'devices', options?: { consentFor?: string }) => void;
-export type DashboardSection = 'Dashboard' | 'Property' | 'Today' | 'Calendar' | 'Health' | 'Family' | 'Community' | 'Mail' | 'Work' | 'Projects' | 'News' | 'Dreams' | 'System' | 'Finance' | 'Workouts' | 'FamilyFinance';
+export type DashboardSection = 'Dashboard' | 'Property' | 'Today' | 'Calendar' | 'Health' | 'Family' | 'Community' | 'Mail' | 'Work' | 'Projects' | 'News' | 'Dreams' | 'System' | 'Finance' | 'Workouts' | 'FamilyFinance' | 'FamilyTrading';
 // Icons live in ./icons — one registry, so a drawn icon looks the same in
 // the nav, on its card and in the phone's bottom bar.
 export { DashboardIcon } from './icons';
@@ -74,11 +76,13 @@ export { DashboardIcon } from './icons';
 export const dashboardSections: DashboardSection[] = ['Dashboard', 'Health', 'Family', 'Community', 'Property', 'Work', 'System'];
 /** The nav entry a page lights up: a System tab lights System, a workout lights Health. */
 export const navSectionOf = (section: DashboardSection): DashboardSection =>
-  section === 'Workouts' ? 'Health' : section === 'FamilyFinance' ? 'Family' : SYSTEM_TAB_IDS.includes(section) ? 'System' : section;
+  section === 'Workouts' ? 'Health' : section === 'FamilyFinance' || section === 'FamilyTrading' ? 'Family' : SYSTEM_TAB_IDS.includes(section) ? 'System' : section;
 /** Family's tabs (2026-10-20): the family itself, and the household's money (Webull, read-only). Not System's Finance, which is Athena's own costs. */
 const FAMILY_TABS = [
   { id: 'Family', label: 'Overview', icon: 'Family' },
   { id: 'FamilyFinance', label: 'Finance', icon: 'Finance' },
+  // Day-trading research desk (2026-10-23): analysis and records only; Athena places no orders.
+  { id: 'FamilyTrading', label: 'Trading', icon: 'Finance' },
 ] as const;
 type FamilyTab = typeof FAMILY_TABS[number]['id'];
 // The card set, in the one order the dashboard uses. Fixed by the owner
@@ -205,11 +209,6 @@ function Issues({ issues }: { issues: JiraIssue[] }) {
 // from the briefing: a headline row of numbers, then panels. Cards stay for
 // Home, where the job is breadth rather than depth.
 
-/** One number worth reading at a glance, with the note that gives it meaning. */
-export function Stat({ label, value, note, tone, icon }: { label: string; value: ReactNode; note?: ReactNode; tone?: 'good' | 'ok' | 'low' | 'alert' | 'idle'; icon?: string }) {
-  const reading = <><span>{label}</span><strong className={icon && typeof value === 'string' && value.length > 8 ? 'stat-small' : undefined}>{value}</strong></>;
-  return <div className={`stat-tile${tone ? ` stat-${tone}` : ''}${icon ? ' stat-with-icon' : ''}`} data-icon={icon}>{icon ? <div className="stat-main"><div className="stat-icon"><DashboardIcon name={icon} bare /></div><div className="stat-reading">{reading}</div></div> : reading}{note && <small>{note}</small>}</div>;
-}
 export function Panel({ title, note, children, wide, id, scroll }: { title: string; note?: ReactNode; children: ReactNode; wide?: boolean; id?: string; scroll?: boolean }) {
   return <section id={id} className={`section-panel${wide ? ' section-panel-wide' : ''}`}><header><h2>{title}</h2>{note && <span>{note}</span>}</header>{scroll ? <div className="section-panel-body">{children}</div> : children}</section>;
 }
@@ -1357,7 +1356,7 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
     return <SectionPage ctx={ctx}
       eyebrow="" title="Family" blurb=""
       ask="Help me think about my family — what should I be paying attention to?"
-      hero={<FamilyOverview tabs={familyTabs('Family')} roster={roster} children={familyPeople?.children || []} events={events} timeZone={timeZone} now={now}
+      hero={<FamilyOverview tabs={familyTabs('Family')} onFinance={go('FamilyFinance')} roster={roster} children={familyPeople?.children || []} events={events} timeZone={timeZone} now={now}
         chores={chores} household={summary?.familyChores.data?.name} choresUrl={summary?.familyChores.data?.appUrl}
         canCompleteChores={!!summary?.familyChores.data?.canComplete} choresReconnectUrl={summary?.familyChores.data?.reconnectUrl}
         choresNote={ready(summary?.familyChores) ? null : unavailable('familyChores', 'Family Chores')}
@@ -1387,6 +1386,16 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
       eyebrow="" title="Finance" blurb=""
       ask="Look at my Webull portfolio with me. What changed recently and what stands out?"
       hero={<FamilyFinance onAsk={onAsk} tabs={familyTabs('FamilyFinance')} />}
+    >
+      {drawers}
+    </SectionPage>;
+  }
+
+  function FamilyTradingPage() {
+    return <SectionPage ctx={ctx}
+      eyebrow="" title="Trading" blurb=""
+      ask="What are we watching today, and is there a trade worth taking right now?"
+      hero={<FamilyTrading onAsk={onAsk} tabs={familyTabs('FamilyTrading')} />}
     >
       {drawers}
     </SectionPage>;
@@ -1990,6 +1999,7 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
     if (section === 'Workouts') return WorkoutsPage();
     if (section === 'Family') return FamilyPage();
     if (section === 'FamilyFinance') return FamilyFinancePage();
+    if (section === 'FamilyTrading') return FamilyTradingPage();
     if (section === 'Community') return CommunityPage();
     if (section === 'Mail') return MailPage();
     if (section === 'Work') return WorkPage();

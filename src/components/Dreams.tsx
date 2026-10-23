@@ -1,7 +1,8 @@
 import { Fragment, useEffect, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { dreamsApi, type Dream, type DreamQuestion, type DreamStep } from '../api/dashboard';
-import { Panel, SectionPage, Stat, type SectionContext } from './Dashboard';
+import { Panel, SectionPage, type SectionContext } from './Dashboard';
+import { Stat } from './SectionMetric';
 import { DashboardIcon } from './icons';
 
 /**

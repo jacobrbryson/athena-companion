@@ -32,3 +32,9 @@ export type Brokerage =
 export const financeApi = {
   brokerage: (fresh = false) => api.get<Brokerage>(`/api/v1/finance/brokerage${fresh ? '?fresh=1' : ''}`),
 };
+
+export function formatBrokerageMoney(value: number | null | undefined, currency = 'USD', signed = false) {
+  if (value === null || value === undefined) return '—';
+  const text = Math.abs(value).toLocaleString(undefined, { style: 'currency', currency, minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return value < 0 ? `−${text}` : signed && value > 0 ? `+${text}` : text;
+}

@@ -7,6 +7,7 @@
  * production build.
  */
 
+import { mockTrading } from './trading';
 import type { NewsSource } from '../src/api/dashboard';
 import { mockProjectsRoute } from './projects';
 
@@ -1098,6 +1099,8 @@ async function route(method: string, path: string, body?: any): Promise<any> {
     if (ipDrift) fail(401, 'IP mismatch for provided token.', 'IP_MISMATCH');
   }
   if (p === '/api/v1/workouts') return { days: 3650, workouts: mockWorkouts() };
+  // Family → Trading: illustrative desk data (mock/trading.ts).
+  { const t = mockTrading(method, p); if (t !== undefined) return t; }
   // Family → Finance: an illustrative Webull read (connectors/webull.js shape).
   if (p.startsWith('/api/v1/finance/brokerage')) {
     if (localStorage.getItem('mock_webull') === 'off') return { status: 'not_connected', accounts: [] };

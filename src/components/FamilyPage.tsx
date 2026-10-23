@@ -5,6 +5,9 @@ import type { ApiError } from '../api/client';
 import { Icon } from './HealthPage';
 import { AREA, SPORTS, areaOf, clock, iconOf, zonedDay } from './CalendarPage';
 import type { RosterRow } from './familyRoster';
+import { formatBrokerageMoney } from '../api/finance';
+import { useBrokerage } from './useBrokerage';
+import { Stat } from './SectionMetric';
 import { PageHeader } from './PageHeader';
 import './health.css';
 import './calendar.css';
@@ -86,6 +89,7 @@ interface Props {
   sick: FamilyHealthStatus[];
   onAsk: (text: string) => void;
   onCalendar: () => void;
+  onFinance: () => void;
   /** Open the editable family memories drawer. */
   onDetails: () => void;
   onMember: (row: RosterRow) => void;
@@ -227,7 +231,8 @@ function Avatar({ name, photoUrl, size }: { name: string; photoUrl?: string | nu
   </span>;
 }
 
-export function FamilyOverview({ tabs, roster, children, events, timeZone, now, chores: choresIn, household, choresUrl, canCompleteChores, choresReconnectUrl, choresNote, calendarNote, groceries, groceriesUrl, groceriesNote, health, sick, onAsk, onCalendar, onDetails, onMember }: Props) {
+export function FamilyOverview({ tabs, roster, children, events, timeZone, now, chores: choresIn, household, choresUrl, canCompleteChores, choresReconnectUrl, choresNote, calendarNote, groceries, groceriesUrl, groceriesNote, health, sick, onAsk, onCalendar, onFinance, onDetails, onMember }: Props) {
+  const brokerage = useBrokerage();
   const ticks = useChoreTicks(choresIn);
   const chores = ticks.live;
   const today = zonedDay(new Date(now), timeZone);
@@ -295,32 +300,28 @@ export function FamilyOverview({ tabs, roster, children, events, timeZone, now, 
   ].sort((a, b) => a.at.getTime() - b.at.getTime());
 
   const tone = (area: keyof typeof AREA) => ({ '--cp-tone': AREA[area].color } as CSSProperties);
+  const portfolio = brokerage.data?.status === 'ready' ? brokerage.data : null;
+  const financeNote = portfolio
+    ? portfolio.totals ? `${portfolio.accounts.length} Webull account${portfolio.accounts.length === 1 ? '' : 's'} · read-only`
+      : portfolio.accounts.length ? 'Accounts use different currencies' : 'No Webull accounts listed'
+    : brokerage.loading ? 'Reading Webull'
+      : brokerage.data?.status === 'needs_reauth' ? 'Webull needs relinking'
+        : brokerage.data?.status === 'not_connected' ? 'Webull not linked' : 'Webull unavailable';
 
   return <div className="hp cp fp">
     <PageHeader eyebrow="THE PEOPLE IN YOUR CORNER" title="Family" blurb="People, plans, chores, and the moments that matter most."
       backdrop="/assets/family.png" backdropBeside
       take={{ lines: [take.join(' ')], ask: 'Help me think about my family this week — what should I be paying attention to?', onAsk }} />
 
-    <section className="cp-stats" aria-label="Your family at a glance">
-      <button type="button" className="hp-tile cp-stat" onClick={onDetails}>
-        <span className="hp-badge hp-badge-lg hp-blue"><Icon name="people" /></span>
-        <div><span>People remembered</span><strong>{roster.length}</strong><small>from your memories</small></div>
-        <Icon name="chevron" className="hp-chev" />
-      </button>
-      <div className="hp-tile cp-stat">
-        <span className="hp-badge hp-badge-lg hp-green"><Icon name="check" /></span>
-        <div><span>Chores today</span><strong>{chores.length ? `${choresDone}/${chores.length}` : '—'}</strong><small>{choresNote ? 'Family Chores unavailable' : chores.length ? (choresDone === chores.length ? 'All done' : `${chores.length - choresDone} still open`) : 'Nothing for today'}</small></div>
-      </div>
-      <button type="button" className="hp-tile cp-stat" onClick={onCalendar}>
-        <span className="hp-badge hp-badge-lg hp-blue"><Icon name="calendar" /></span>
-        <div><span>Next family event</span><strong>{nextFamily ? clock(nextFamily.e.start, timeZone) : '—'}</strong><small>{nextFamily ? `${nextFamily.e.title}${dayOf(nextFamily.e) !== today ? ` · ${new Date(nextFamily.e.start).toLocaleDateString(undefined, { timeZone, weekday: 'short' })}` : ''}` : calendarNote ? 'Calendar unavailable' : 'Nothing coming up'}</small></div>
-        <Icon name="chevron" className="hp-chev" />
-      </button>
-      <button type="button" className="hp-tile cp-stat" onClick={onDetails}>
-        <span className="hp-badge hp-badge-lg hp-red"><Icon name="heart" /></span>
-        <div><span>Family Health</span><strong className={`fp-health-${health.tone}`}>{health.label}</strong><small>{health.note}</small></div>
-        <Icon name="chevron" className="hp-chev" />
-      </button>
+    <section className="stat-row family-metrics" aria-label="Your family at a glance">
+      <Stat label="People remembered" value={roster.length} note="from your memories" icon="Family" onClick={onDetails} />
+      <Stat label="Chores today" value={chores.length ? `${choresDone}/${chores.length}` : '—'}
+        note={choresNote ? 'Family Chores unavailable' : chores.length ? (choresDone === chores.length ? 'All done' : `${chores.length - choresDone} still open`) : 'Nothing for today'} icon="Completed" tone={chores.length && choresDone === chores.length ? 'good' : undefined} />
+      <Stat label="Next family event" value={nextFamily ? clock(nextFamily.e.start, timeZone) : '—'}
+        note={nextFamily ? `${nextFamily.e.title}${dayOf(nextFamily.e) !== today ? ` · ${new Date(nextFamily.e.start).toLocaleDateString(undefined, { timeZone, weekday: 'short' })}` : ''}` : calendarNote ? 'Calendar unavailable' : 'Nothing coming up'} icon="Calendar" onClick={onCalendar} nowrap />
+      <Stat label="Family health" value={health.label} note={health.note} icon="Home"
+        tone={health.tone === 'good' ? 'good' : health.tone === 'ok' ? 'ok' : health.tone === 'low' ? 'low' : health.tone === 'alert' ? 'alert' : 'idle'} onClick={onDetails} />
+      <Stat label="Portfolio value" value={formatBrokerageMoney(portfolio?.totals?.net_value, portfolio?.totals?.currency || 'USD')} note={financeNote} icon="Finance" onClick={onFinance} />
     </section>
 
     {tabs}
