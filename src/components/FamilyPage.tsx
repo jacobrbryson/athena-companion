@@ -59,6 +59,7 @@ function GroceriesPanel({ lists, url, note, onAsk }: { lists: GroceryList[]; url
   </section>;
 }
 interface Props {
+  tabs?: ReactNode;
   roster: RosterRow[];
   children: FamilyChild[];
   events: CalendarEvent[];
@@ -226,7 +227,7 @@ function Avatar({ name, photoUrl, size }: { name: string; photoUrl?: string | nu
   </span>;
 }
 
-export function FamilyOverview({ roster, children, events, timeZone, now, chores: choresIn, household, choresUrl, canCompleteChores, choresReconnectUrl, choresNote, calendarNote, groceries, groceriesUrl, groceriesNote, health, sick, onAsk, onCalendar, onDetails, onMember }: Props) {
+export function FamilyOverview({ tabs, roster, children, events, timeZone, now, chores: choresIn, household, choresUrl, canCompleteChores, choresReconnectUrl, choresNote, calendarNote, groceries, groceriesUrl, groceriesNote, health, sick, onAsk, onCalendar, onDetails, onMember }: Props) {
   const ticks = useChoreTicks(choresIn);
   const chores = ticks.live;
   const today = zonedDay(new Date(now), timeZone);
@@ -321,6 +322,8 @@ export function FamilyOverview({ roster, children, events, timeZone, now, chores
         <Icon name="chevron" className="hp-chev" />
       </button>
     </section>
+
+    {tabs}
 
     <div className="fp-grid">
       <section className="hp-panel fp-chores">

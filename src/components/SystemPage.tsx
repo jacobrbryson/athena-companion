@@ -5,7 +5,7 @@ import { useSystemRead, type OpenPanel } from './Dashboard';
 import { DreamImage, Paragraphs, STATUS_LINE, nightLabel, statChips } from './Dreams';
 import { Icon } from './HealthPage';
 import { PageHeader } from './PageHeader';
-import { SectionTabs } from './Property';
+import { SectionTabs } from './PageTabs';
 import './system.css';
 
 /**

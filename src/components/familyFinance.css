@@ -1,5 +1,6 @@
 /* Family → Finance (FamilyFinance.tsx). Built on the Health page's .hp panels and Calendar's .cp-stats tiles. */
 .ff-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:14px}
+.ff > .property-nav{margin-top:20px}
 .ff-wide{grid-column:1/-1}
 .ff .hp-panel>header{flex-wrap:wrap}
 .ff .hp-panel>header h2 span{color:var(--hp-sub);font-size:14px;font-weight:400}

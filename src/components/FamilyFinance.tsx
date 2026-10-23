@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { financeApi, type Brokerage, type BrokerageAccount, type BrokerageOrder } from '../api/finance';
 import { Icon } from './HealthPage';
 import { PageHeader } from './PageHeader';
@@ -76,7 +76,7 @@ function AccountPanels({ account }: { account: BrokerageAccount }) {
   </>;
 }
 
-export function FamilyFinance({ onAsk }: { onAsk: (text: string) => void }) {
+export function FamilyFinance({ onAsk, tabs }: { onAsk: (text: string) => void; tabs?: ReactNode }) {
   const { data, loading, error, refresh } = useBrokerage();
   const ready = data?.status === 'ready' ? data : null;
   const t = ready?.totals;
@@ -98,6 +98,8 @@ export function FamilyFinance({ onAsk }: { onAsk: (text: string) => void }) {
       <div className="hp-tile cp-stat"><span className="hp-badge hp-badge-lg hp-green"><Icon name="check" /></span>
         <div><span>Buying power</span><strong>{usd(t?.buying_power, currency)}</strong><small>Cash {usd(t?.cash, currency)}</small></div></div>
     </section>}
+
+    {tabs}
 
     <div className="ff-grid">
       <section className="hp-panel ff-wide ff-status">

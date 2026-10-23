@@ -10,6 +10,7 @@ button.cp-stat { text-align: left; color: inherit; }
 .fp-health-ok { color: #f6c33a; }
 .fp-health-low, .fp-health-alert { color: #ff5d6c; }
 .fp-health-idle { color: var(--hp-sub); }
+.fp > .property-nav { margin-top: 20px; }
 
 /* --- Main grid -------------------------------------------------------------- */
 .fp-grid { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(300px, 1fr); gap: 16px; margin-top: 18px; align-items: stretch; }

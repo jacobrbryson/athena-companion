@@ -42,7 +42,8 @@ import { NavigationLink, DrawerButton } from './ActionControls';
 import { plannedToday } from './ProjectData';
 import { useProjects, openProjects, ProjectList, ProjectBoard, ProjectsDrawers, ConcernList, CharterView, StateChip, type ProjectsDrawer } from './Projects';
 import type { Area } from '../api/projects';
-import { useProperty, PropertyOverview, PropertyWeather, PropertyNavigation, SectionTabs, propertyHealth, propertyTabFromPath, propertyTabPath, type PropertyTab } from './Property';
+import { useProperty, PropertyOverview, PropertyWeather, PropertyNavigation, propertyHealth, propertyTabFromPath, propertyTabPath, type PropertyTab } from './Property';
+import { SectionTabs } from './PageTabs';
 import { WeatherPanel } from './WeatherPanel';
 import { usePropertyIssues, reportedWhen, ReportIssueDrawer, IssueDetailsDrawer, ActiveIssueBanner, IssueList, troubleshootPrompt, findProPrompt } from './PropertyIssues';
 import type { PropertyIssue } from '../api/propertyIssues';
@@ -1353,10 +1354,10 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
     const newFact: Fact | null = familyEdit && !selectedFact ? {
       uuid: '', category: familyEdit.relation === 'Pet' ? 'pet' : 'person', key: familyEdit.name, value: '', source: 'user', visibility: 'private', updated_at: new Date(now).toISOString(),
     } : null;
-    return <SectionPage ctx={ctx} tabs={familyTabs('Family')}
+    return <SectionPage ctx={ctx}
       eyebrow="" title="Family" blurb=""
       ask="Help me think about my family — what should I be paying attention to?"
-      hero={<FamilyOverview roster={roster} children={familyPeople?.children || []} events={events} timeZone={timeZone} now={now}
+      hero={<FamilyOverview tabs={familyTabs('Family')} roster={roster} children={familyPeople?.children || []} events={events} timeZone={timeZone} now={now}
         chores={chores} household={summary?.familyChores.data?.name} choresUrl={summary?.familyChores.data?.appUrl}
         canCompleteChores={!!summary?.familyChores.data?.canComplete} choresReconnectUrl={summary?.familyChores.data?.reconnectUrl}
         choresNote={ready(summary?.familyChores) ? null : unavailable('familyChores', 'Family Chores')}
@@ -1382,10 +1383,10 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
   }
 
   function FamilyFinancePage() {
-    return <SectionPage ctx={ctx} tabs={familyTabs('FamilyFinance')}
+    return <SectionPage ctx={ctx}
       eyebrow="" title="Finance" blurb=""
       ask="Look at my Webull portfolio with me. What changed recently and what stands out?"
-      hero={<FamilyFinance onAsk={onAsk} />}
+      hero={<FamilyFinance onAsk={onAsk} tabs={familyTabs('FamilyFinance')} />}
     >
       {drawers}
     </SectionPage>;
