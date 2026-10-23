@@ -17,9 +17,34 @@ export interface Vehicle {
   notes: string | null; hasPhoto: boolean; createdAt: string; updatedAt: string;
   /** Work done, newest first. */
   service: ServiceEntry[];
+  /** NHTSA safety recalls for its model year, open first (absent before the recalls migration). */
+  recalls?: Recall[];
 }
+export type RecallStatus = 'open' | 'done' | 'not_applicable';
+export interface Recall {
+  campaign: string; component: string | null; summary: string | null; consequence: string | null; remedy: string | null;
+  reportedOn: string | null;
+  /** NHTSA: don't drive it until it's fixed. */
+  parkIt: boolean;
+  /** NHTSA: park it outside, away from buildings. */
+  parkOutside: boolean;
+  status: RecallStatus; firstSeenAt: string | null;
+}
+/** A car read through Smartcar (core_api connectors/smartcar.js). Read-only. */
+export interface SmartcarCar {
+  id: string; vehicleUuid: string | null; vehicleName: string | null;
+  make: string | null; model: string | null; year: number | null; vin: string | null;
+  odometerMi: number | null;
+  fuel: { percent: number | null; rangeMi: number | null } | null;
+  battery: { percent: number | null; rangeMi: number | null } | null;
+  locked: boolean | null;
+  locationEnabled: boolean;
+  location: { latitude: number; longitude: number; at: string | null } | null;
+  syncedAt: string | null;
+}
+export interface SmartcarList { status: 'not_connected' | 'needs_reauth' | 'ready'; stale?: boolean; cars: SmartcarCar[] }
 export interface ServiceEntry { uuid: string; doneOn: string; odometer: number | null; what: string; shop: string | null }
-export type VehicleInput = Partial<Omit<Vehicle, 'uuid' | 'hasPhoto' | 'createdAt' | 'updatedAt' | 'service'>> & {
+export type VehicleInput = Partial<Omit<Vehicle, 'uuid' | 'hasPhoto' | 'createdAt' | 'updatedAt' | 'service' | 'recalls'>> & {
   /** A JPEG data URL to set, null to remove; leave out to keep. */
   photo?: string | null;
 };
@@ -37,6 +62,9 @@ export const vehiclesApi = {
   photo: (uuid: string) => api.get<{ image: string | null }>(`${base}/${id(uuid)}/photo`),
   addService: (uuid: string, entry: ServiceInput) => api.post<List>(`${base}/${id(uuid)}/service`, entry),
   removeService: (uuid: string, entry: string) => api.del<List>(`${base}/${id(uuid)}/service/${id(entry)}`),
+  setRecall: (uuid: string, campaign: string, status: RecallStatus) => api.patch<List>(`${base}/${id(uuid)}/recalls/${id(campaign)}`, { status }),
+  smartcar: () => api.get<SmartcarList>(`${base}/smartcar`),
+  setSmartcar: (carId: string, patch: { vehicleUuid?: string | null; locationEnabled?: boolean }) => api.patch<SmartcarList>(`${base}/smartcar/${id(carId)}`, patch),
 };
 
 export type DueTone = 'overdue' | 'soon' | 'later';

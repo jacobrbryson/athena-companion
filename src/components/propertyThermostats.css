@@ -12,3 +12,4 @@
 .pt-link{padding:0;border:0;background:none;color:#7fd6f2;font:inherit;text-decoration:underline;cursor:pointer}
 .pt-link:disabled{opacity:.6;cursor:default}
 @media(max-width:700px){.pt-list ul{grid-template-columns:1fr}}
+.pt-sleep{align-self:flex-start;margin-top:4px;font-size:12px}

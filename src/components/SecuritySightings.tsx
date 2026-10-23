@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import {
-  propertySecurityApi, type SecurityDevice, type SecurityMedia, type Sighting, type SightingsOverview, type SightingSubject, type SubjectKind, type TeachResult,
+  propertySecurityApi, type SecurityDevice, type SecurityMedia, type Sighting, type SightingsOverview, type SightingSubject, type SightingKind, type SubjectKind, type TeachResult,
 } from '../api/propertySecurity';
 import { Icon, useMediaUrl, type IconName } from './securityShared';
 
-const KIND_ICON: Record<SubjectKind, IconName> = { person: 'person', animal: 'paw', vehicle: 'car' };
+const KIND_ICON: Record<SightingKind, IconName> = { person: 'person', animal: 'paw', vehicle: 'car', package: 'package' };
 const when = (v: string) => {
   const d = new Date(v);
   const sameDay = d.toDateString() === new Date().toDateString();
@@ -72,7 +72,7 @@ function sameVisit(all: Sighting[], s: Sighting) {
 /** "This is…": name one unnamed sighting, and teach the gallery from its frame. */
 function TeachDialog({ sighting, data, onClose, onDone }: { sighting: Sighting; data: SightingsOverview; onClose: () => void; onDone: (r: TeachResult) => void }) {
   const src = useFrameUrl(sighting.hasFrame ? sighting.id : null);
-  const [kind, setKind] = useState<SubjectKind>(sighting.kind);
+  const [kind, setKind] = useState<SubjectKind>(sighting.kind === 'package' ? 'person' : sighting.kind);
   const choices = data.subjects.filter(x => x.kind === kind);
   const [pick, setPick] = useState(data.subjects.find(x => x.kind === sighting.kind)?.id || 'new');
   const [name, setName] = useState('');
@@ -152,6 +152,7 @@ function Log({ data, filter, onFilter, onPage, onOpen, onTeach, onAdd, notice }:
         <option value="all">Everyone and everything</option>
         {data.subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
         <option value="stranger">Strangers</option>
+        <option value="package">Packages</option>
       </select>
     </label>
     {notice && <p className="ps-sub" role="status">{notice}</p>}
@@ -163,7 +164,7 @@ function Log({ data, filter, onFilter, onPage, onOpen, onTeach, onAdd, notice }:
       </div>
       <time dateTime={s.seenAt}>{when(s.seenAt)}</time>
       <span className="ps-sight-actions">
-        {!s.subjectId && <button className="ps-btn" onClick={() => onTeach(s)} aria-label={`Name the ${s.label} seen ${when(s.seenAt)}`}>This is…</button>}
+        {!s.subjectId && s.kind !== 'package' && <button className="ps-btn" onClick={() => onTeach(s)} aria-label={`Name the ${s.label} seen ${when(s.seenAt)}`}>This is…</button>}
         {s.hasFrame && <button className="ps-btn" onClick={() => onAdd(s)} aria-label={`Add another person or animal to the frame at ${when(s.seenAt)}`}>Add another…</button>}
         {s.hasFrame && <button className="ps-btn ps-btn-square" onClick={() => onOpen(s)} aria-label={`See the frame for ${s.label} at ${when(s.seenAt)}`}><Icon name="eye" /></button>}
       </span>
@@ -256,7 +257,7 @@ function Alerts({ data, cameras, reload }: { data: SightingsOverview; cameras: S
   async function add(e: FormEvent) {
     e.preventDefault();
     if (!rule.who) return;
-    await run(() => propertySecurityApi.createRule({ ...(rule.who === 'stranger' ? { label: 'stranger' as const } : { subjectId: rule.who }), deviceSerial: rule.camera || undefined, zone: rule.zone || undefined }));
+    await run(() => propertySecurityApi.createRule({ ...(rule.who === 'stranger' || rule.who === 'package' ? { label: rule.who } : { subjectId: rule.who }), deviceSerial: rule.camera || undefined, zone: rule.zone || undefined }));
     setRule({ who: '', camera: '', zone: '' });
   }
   return <>
@@ -264,12 +265,12 @@ function Alerts({ data, cameras, reload }: { data: SightingsOverview; cameras: S
     <h4 className="ps-h4">Alerts to your phone</h4>
     <p className="ps-sub">Sent like Athena’s other alerts: only if alerts are on in your settings, and held until quiet hours end.</p>
     {data.rules.length ? <ul className="ps-rules">{data.rules.map(r => <li key={r.id}>
-      <Icon name="bell" /><span>When <b>{r.subjectName || (r.label === 'stranger' ? 'a stranger' : 'someone')}</b> is seen {r.deviceSerial ? <>on <b>{camName(r.deviceSerial)}</b></> : 'on any camera'}{r.zone ? <> in <b>{r.zone}</b></> : ''}</span>
+      <Icon name="bell" /><span>When <b>{r.subjectName || (r.label === 'stranger' ? 'a stranger' : r.label === 'package' ? 'a package' : 'someone')}</b> is {r.label === 'package' ? 'left' : 'seen'} {r.deviceSerial ? <>on <b>{camName(r.deviceSerial)}</b></> : 'on any camera'}{r.zone ? <> in <b>{r.zone}</b></> : ''}</span>
       <button className="ps-btn ps-btn-square" aria-label="Remove this alert" onClick={() => void run(() => propertySecurityApi.removeRule(r.id))}><Icon name="trash" /></button>
     </li>)}</ul> : <p className="ps-empty">No alerts yet.</p>}
     <form className="ps-form" onSubmit={e => void add(e)}>
       <label className="ps-field"><span>Tell me when</span><select value={rule.who} onChange={e => setRule({ ...rule, who: e.target.value })}>
-        <option value="">Choose…</option>{data.subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}<option value="stranger">A stranger</option>
+        <option value="">Choose…</option>{data.subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}<option value="stranger">A stranger</option><option value="package">A package is left</option>
       </select></label>
       <label className="ps-field"><span>is seen on</span><select value={rule.camera} onChange={e => setRule({ ...rule, camera: e.target.value, zone: '' })}>
         <option value="">Any camera</option>{cameras.map(c => <option key={c.serial} value={c.serial}>{c.name}</option>)}

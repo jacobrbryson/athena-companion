@@ -1098,6 +1098,33 @@ async function route(method: string, path: string, body?: any): Promise<any> {
     if (ipDrift) fail(401, 'IP mismatch for provided token.', 'IP_MISMATCH');
   }
   if (p === '/api/v1/workouts') return { days: 3650, workouts: mockWorkouts() };
+  // Family → Finance: an illustrative Webull read (connectors/webull.js shape).
+  if (p.startsWith('/api/v1/finance/brokerage')) {
+    if (localStorage.getItem('mock_webull') === 'off') return { status: 'not_connected', accounts: [] };
+    const pos = (symbol: string, quantity: number, last: number, cost: number) => ({ symbol, type: 'STOCK', strategy: null, quantity, last_price: last, cost_price: cost, market_value: +(quantity * last).toFixed(2), unrealized_pl: +((last - cost) * quantity).toFixed(2), unrealized_pl_percent: +(((last - cost) / cost) * 100).toFixed(2), legs: [] });
+    const order = (symbol: string, side: string, status: string, quantity: number, price: number, daysAgo: number) => ({ id: `${symbol}-${daysAgo}`, symbol, side, type: 'LIMIT', status, quantity, filled_quantity: status === 'FILLED' ? quantity : 0, filled_price: status === 'FILLED' ? price : null, limit_price: price, stop_price: null, time_in_force: 'DAY', placed_at: new Date(Date.now() - daysAgo * 86400_000).toISOString(), filled_at: null });
+    const positions = [pos('VTI', 42, 298.14, 251.3), pos('AAPL', 15, 231.5, 188.02), pos('NVDA', 8, 142.9, 151.4), pos('SCHD', 60, 28.77, 27.1)];
+    const market = positions.reduce((t, x) => t + x.market_value, 0), open = positions.reduce((t, x) => t + x.unrealized_pl, 0);
+    const balance = { currency: 'USD', net_value: +(market + 3120.55).toFixed(2), market_value: +market.toFixed(2), cash: 3120.55, settled_cash: 3120.55, buying_power: 3120.55, day_pl: 184.37, open_pl: +open.toFixed(2), day_trades_left: '3' };
+    return { status: 'ready', environment: 'production', checked_at: new Date().toISOString(),
+      accounts: [{ id: 'MOCK1', label: 'Individual Margin', type: 'MARGIN', class: 'INDIVIDUAL_MARGIN', number_tail: '4821', balance, positions,
+        open_orders: [order('SCHD', 'BUY', 'SUBMITTED', 20, 28.25, 0)],
+        recent_orders: [order('AAPL', 'BUY', 'FILLED', 5, 226.1, 3), order('NVDA', 'SELL', 'FILLED', 2, 147.8, 9), order('VTI', 'BUY', 'CANCELLED', 10, 290, 16)] }],
+      totals: { currency: 'USD', net_value: balance.net_value, market_value: balance.market_value, cash: balance.cash, buying_power: balance.buying_power, day_pl: balance.day_pl, open_pl: balance.open_pl } };
+  }
+  // Bedroom & sleep: enough nights for a finding, the cooler band best.
+  if (p === '/api/v1/dashboard/health/sleep-climate') return {
+    status: 'ready', nights: 38, metric: 'avgRecovery', confidence: 'moderate',
+    bands: [
+      { fromF: 64, toF: 65, nights: 5, avgRecovery: 71, avgPerformance: 84, avgHumidity: 40 },
+      { fromF: 66, toF: 67, nights: 12, avgRecovery: 74, avgPerformance: 88, avgHumidity: 41 },
+      { fromF: 68, toF: 69, nights: 14, avgRecovery: 63, avgPerformance: 81, avgHumidity: 43 },
+      { fromF: 70, toF: 71, nights: 7, avgRecovery: 55, avgPerformance: 76, avgHumidity: 45 },
+    ],
+    best: { fromF: 66, toF: 67, nights: 12, avgRecovery: 74, avgPerformance: 88, avgHumidity: 41, delta: 11, othersAvg: 63 },
+    device: { name: 'enterprises/mock/devices/up', title: 'Upstairs thermostat' },
+    sentence: 'On nights the Upstairs thermostat averaged 66–67°F, your recovery averaged 74%, 11 points higher than your other nights (12 of 38 nights; moderate confidence — a pattern in your nights, not proof of cause).',
+  };
   if (p.startsWith('/api/v1/dashboard/health/plan') || p.startsWith('/api/v1/dashboard/health/program') || p.startsWith('/api/v1/dashboard/health/targets') || p.startsWith('/api/v1/dashboard/health/nutrition') || p.startsWith('/api/v1/dashboard/health/favorites')) {
     const state = mockPlanState();
     const today = url.searchParams.get('today') || body?.today || planDay(new Date());
@@ -1480,6 +1507,16 @@ async function route(method: string, path: string, body?: any): Promise<any> {
       mockUpsert<MockEvent>('mock_events', mockEvents(), uuid, { title: body.title.trim(), startsOn: body.startsOn, endsOn: body.endsOn || null, time: body.time || null, placeUuid: body.placeUuid || null, location: body.location || null, repeats: body.repeats === 'yearly' ? 'yearly' : 'none', url: body.url || null, notes: body.notes || null });
     }
     return { events: mockEventList() };
+  }
+  if (p === '/api/v1/dashboard/community/house-at') {
+    // A pretend street: the house number comes from where the tap was; taps far north have no number, like a rural road.
+    const sp = new URL(path, window.location.origin).searchParams;
+    const lat = Number(sp.get('lat')); const lon = Number(sp.get('lon'));
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) fail(400, 'Tap a house on the map.');
+    if (lat > 35.71) return { address: null, latitude: lat, longitude: lon, street: 'Perth Road', household: null };
+    const address = `${100 + (Math.round(Math.abs(lon) * 4000) % 40) * 2} Rushing Water Lane`;
+    const n = mockNeighbors().find((x) => mockStreet(x.address) === mockStreet(address));
+    return { address, latitude: lat, longitude: lon, street: 'Rushing Water Lane', household: n ? { uuid: n.uuid, label: n.name || null } : null };
   }
   if (p === '/api/v1/dashboard/incidents/geocode') {
     const q = new URL(path, window.location.origin).searchParams.get('q') || '';
@@ -2105,6 +2142,7 @@ Sam` };
         { id: 'si-5', label: 'unknown dog', kind: 'animal', subjectId: null, camera: 'Backyard', deviceSerial: 'T8171B', zone: 'outside the back fence', where: 'by the gate', confidence: 0.8, eventKind: 'motion', seenAt: ago(7), hasFrame: true },
         { id: 'si-6', label: 'unknown dog', kind: 'animal', subjectId: null, camera: 'Backyard', deviceSerial: 'T8171B', zone: 'outside the back fence', where: 'along the back fence', confidence: 0.74, eventKind: 'motion', seenAt: ago(10), hasFrame: true },
         { id: 'si-1', label: 'Wynter', kind: 'animal', subjectId: 'sub-wynter', camera: 'Backyard', deviceSerial: 'T8171B', zone: 'inside the fence', where: 'by the back fence', confidence: 0.91, eventKind: 'motion', seenAt: ago(28), hasFrame: true },
+        { id: 'si-pkg', label: 'package', kind: 'package', subjectId: null, camera: 'Doorbell', deviceSerial: 'T8213D', zone: null, where: 'brown box on the doormat', confidence: 0.88, eventKind: 'motion', seenAt: ago(90), hasFrame: true },
         { id: 'si-2', label: 'stranger', kind: 'person', subjectId: null, camera: 'Doorbell', deviceSerial: 'T8213D', zone: null, where: 'at the front door', confidence: 0.84, eventKind: 'doorbell', seenAt: ago(95), hasFrame: true },
         { id: 'si-3', label: 'deer', kind: 'animal', subjectId: null, camera: 'Backyard', deviceSerial: 'T8171B', zone: 'outside the back fence', where: 'past the tree line', confidence: 0.55, eventKind: 'motion', seenAt: ago(240), hasFrame: true },
         { id: 'si-4', label: 'Red Van', kind: 'vehicle', subjectId: 'sub-van', camera: 'Side Yard', deviceSerial: 'T8171S', zone: null, where: 'on the driveway', confidence: 0.88, eventKind: 'motion', seenAt: ago(300), hasFrame: true },
@@ -2112,7 +2150,7 @@ Sam` };
     };
     if (method === 'GET' && p.endsWith('/sightings')) {
       const filter = url.searchParams.get('filter') || 'all';
-      const rows = st.sightings.filter((s: any) => filter === 'all' || (filter === 'stranger' ? s.label === 'stranger' : s.subjectId === filter));
+      const rows = st.sightings.filter((s: any) => filter === 'all' || (filter === 'stranger' || filter === 'package' ? s.label === filter : s.subjectId === filter));
       const pages = Math.max(1, Math.ceil(rows.length / 10));
       const page = Math.min(Math.max(1, Number(url.searchParams.get('page')) || 1), pages);
       return { ...st, people: [], sightings: rows.slice((page - 1) * 10, page * 10), page, pages, total: rows.length, retentionDays: 30 };

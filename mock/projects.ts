@@ -14,8 +14,25 @@ const uid = (p: string) => `${p}-${Date.now().toString(36)}-${seq++}`;
 let issues: Any[] = [];
 // Vehicles at the property (core_api controllers/propertyVehicles.js); the photo held apart, like the real column.
 let vehicles: Any[] = [];
+// Every new mock vehicle gets these, so the recalls section has something to show.
+const MOCK_RECALLS = [
+  { campaign: '20V123000', component: 'ELECTRICAL SYSTEM', summary: 'A wiring harness in the engine bay may chafe and short circuit.', consequence: 'A short circuit increases the risk of a fire, even while parked.', remedy: 'Dealers will inspect and reroute the harness, free of charge.', reportedOn: '2020-03-02', parkIt: false, parkOutside: true, status: 'open', firstSeenAt: new Date().toISOString() },
+  { campaign: '18V918000', component: 'EQUIPMENT:OTHER:LABELS', summary: 'The sun visor air bag warning label may be incorrect or missing.', consequence: 'Without the label, occupants may not know how to use the restraints.', remedy: 'Dealers will replace the visor labels.', reportedOn: '2018-12-19', parkIt: false, parkOutside: false, status: 'open', firstSeenAt: new Date().toISOString() },
+];
+let mockCars: Any[] = [{ id: 'aaaabbbb-1111-2222-3333-444455556666', vehicleUuid: null, vehicleName: null, make: 'BMW', model: 'X5', year: 2019, vin: '5UXCR6C56KLL12345', odometerMi: 31069, fuel: { percent: 42, rangeMi: 186 }, battery: null, locked: false, locationEnabled: false, location: null, syncedAt: new Date().toISOString() }];
 const vehiclePhotos = new Map<string, string>();
 const issuePhotos = new Map<string, string>();
+
+// Linked, one thermostat online and one offline — the case the panel exists for.
+let mockSleepDevice: string | null = 'enterprises/mock/devices/up';
+const mockThermostats = () => [
+    { name: 'enterprises/mock/devices/up', displayName: null, room: 'Upstairs', type: 'thermostat', connectivity: 'ONLINE', offlineSince: null, onlineSince: iso(86_400_000),
+      readings: { temperatureC: 21.1, humidityPercent: 41, mode: 'HEAT', heatC: 20.5, hvac: 'HEATING', scale: 'FAHRENHEIT' } },
+    { name: 'enterprises/mock/devices/den', displayName: 'Den Thermostat', room: 'Den', type: 'thermostat', connectivity: 'OFFLINE', notReporting: true, offlineSince: iso(40 * 60_000), onlineSince: null,
+      readings: { mode: 'COOL', coolC: 25, eco: 'OFF', hvac: 'OFF', scale: 'FAHRENHEIT', google: 'ONLINE' } },
+    { name: 'enterprises/mock/devices/down', displayName: null, room: 'Downstairs', type: 'thermostat', connectivity: 'OFFLINE', offlineSince: iso(2 * 3_600_000), onlineSince: null,
+      readings: { temperatureC: 19.4, humidityPercent: 45, mode: 'HEATCOOL', heatC: 19, coolC: 24.5, scale: 'FAHRENHEIT' } },
+].map(t => ({ ...t, sleepDevice: t.name === mockSleepDevice }));
 
 function project(over: Any): Any {
   return {
@@ -149,22 +166,34 @@ function cycles(from: string, to: string, relation: string) {
 export function mockProjectsRoute(method: string, p: string, query: URLSearchParams, body: Any): Any | undefined {
   // Security has its own mock in client.ts.
   if (p.startsWith('/api/v1/projects/property/security')) return undefined;
-  // Linked, one thermostat online and one offline — the case the panel exists for.
-  if (p === '/api/v1/projects/property/thermostats') return { status: 'ready', stale: false, devices: [
-    { name: 'enterprises/mock/devices/up', displayName: null, room: 'Upstairs', type: 'thermostat', connectivity: 'ONLINE', offlineSince: null, onlineSince: iso(86_400_000),
-      readings: { temperatureC: 21.1, humidityPercent: 41, mode: 'HEAT', heatC: 20.5, hvac: 'HEATING', scale: 'FAHRENHEIT' } },
-    { name: 'enterprises/mock/devices/den', displayName: 'Den Thermostat', room: 'Den', type: 'thermostat', connectivity: 'OFFLINE', notReporting: true, offlineSince: iso(40 * 60_000), onlineSince: null,
-      readings: { mode: 'COOL', coolC: 25, eco: 'OFF', hvac: 'OFF', scale: 'FAHRENHEIT', google: 'ONLINE' } },
-    { name: 'enterprises/mock/devices/down', displayName: null, room: 'Downstairs', type: 'thermostat', connectivity: 'OFFLINE', offlineSince: iso(2 * 3_600_000), onlineSince: null,
-      readings: { temperatureC: 19.4, humidityPercent: 45, mode: 'HEATCOOL', heatC: 19, coolC: 24.5, scale: 'FAHRENHEIT' } },
-  ] };
+  if (p === '/api/v1/projects/property/thermostats/sleep-device' && method === 'PUT') {
+    mockSleepDevice = body?.device ?? null;
+    return { devices: mockThermostats() };
+  }
+  if (p === '/api/v1/projects/property/thermostats') return { status: 'ready', stale: false, devices: mockThermostats() };
   if (p === '/api/v1/projects/property/weather') return { status: property?.address ? 'ready' : 'no_address', weather: property?.address ? { temperatureF: 62, description: 'Mostly sunny', highF: 68, lowF: 49, checkedAt: now(), periodStart: now() } : null };
   if (p === '/api/v1/projects/property') {
     if (method === 'PUT') property = { ...body, uuid: property?.uuid || uid('property') };
     return { properties: property ? [property] : [] };
   }
+  // Cars through Smartcar: one linked car, location off until turned on.
+  if (p.startsWith('/api/v1/projects/property/vehicles/smartcar')) {
+    const carId = decodeURIComponent(p.split('/')[7] || '');
+    if (method === 'PATCH' && carId) {
+      mockCars = mockCars.map(c => c.id !== carId ? c : {
+        ...c,
+        ...(body.vehicleUuid !== undefined ? { vehicleUuid: body.vehicleUuid, vehicleName: vehicles.find(v => v.uuid === body.vehicleUuid)?.name || null } : {}),
+        ...(body.locationEnabled !== undefined ? { locationEnabled: body.locationEnabled, location: body.locationEnabled ? { latitude: 35.5824, longitude: -80.8723, at: now() } : null } : {}),
+      });
+    }
+    return { status: 'ready', stale: false, cars: mockCars };
+  }
   if (p.startsWith('/api/v1/projects/property/vehicles')) {
     const [uuid, sub, entryId] = p.split('/').slice(6).map(decodeURIComponent);
+    if (sub === 'recalls' && method === 'PATCH') {
+      vehicles = vehicles.map(v => v.uuid !== uuid ? v : { ...v, recalls: (v.recalls || []).map((r: Any) => r.campaign === entryId ? { ...r, status: body.status } : r) });
+      return { vehicles };
+    }
     const vehicle = uuid ? vehicles.find(v => v.uuid === uuid) || fail(404, 'That vehicle is no longer on your list.') : null;
     if (sub === 'photo') return { image: vehiclePhotos.get(uuid) || null };
     if (sub === 'service') {
@@ -189,7 +218,7 @@ export function mockProjectsRoute(method: string, p: string, query: URLSearchPar
     };
     if (method === 'POST') {
       if (!property) fail(400, 'Add your property first — vehicles live at a property.');
-      const blank = { uuid: uid('vehicle'), propertyUuid: property.uuid, year: null, make: null, model: null, color: null, plate: null, vin: null, odometer: null, odometerOn: null, registrationDue: null, inspectionDue: null, insuranceDue: null, serviceDue: null, serviceDueMiles: null, notes: null, createdAt: now(), service: [] };
+      const blank = { recalls: MOCK_RECALLS, uuid: uid('vehicle'), propertyUuid: property.uuid, year: null, make: null, model: null, color: null, plate: null, vin: null, odometer: null, odometerOn: null, registrationDue: null, inspectionDue: null, insuranceDue: null, serviceDue: null, serviceDueMiles: null, notes: null, createdAt: now(), service: [] };
       vehicles = [...vehicles, shape({ ...body, propertyUuid: body.propertyUuid || property.uuid }, blank)];
     } else if (method === 'PATCH') vehicles = vehicles.map(v => v.uuid === uuid ? shape(body, v) : v);
     else if (method === 'DELETE') { vehicles = vehicles.filter(v => v.uuid !== vehicle.uuid); vehiclePhotos.delete(vehicle.uuid); }

@@ -35,17 +35,18 @@ import { HealthOverview } from './HealthPage';
 import { PageHeader } from './PageHeader';
 import { CalendarOverview } from './CalendarPage';
 import { FamilyOverview } from './FamilyPage';
+import { FamilyFinance } from './FamilyFinance';
 import { CommunityOverview } from './CommunityPage';
 import { WorkOverview } from './WorkPage';
 import { NavigationLink, DrawerButton } from './ActionControls';
 import { plannedToday } from './ProjectData';
 import { useProjects, openProjects, ProjectList, ProjectBoard, ProjectsDrawers, ConcernList, CharterView, StateChip, type ProjectsDrawer } from './Projects';
 import type { Area } from '../api/projects';
-import { useProperty, PropertyOverview, PropertyWeather, PropertyNavigation, propertyHealth, propertyTabFromPath, propertyTabPath, type PropertyTab } from './Property';
+import { useProperty, PropertyOverview, PropertyWeather, PropertyNavigation, SectionTabs, propertyHealth, propertyTabFromPath, propertyTabPath, type PropertyTab } from './Property';
 import { WeatherPanel } from './WeatherPanel';
 import { usePropertyIssues, reportedWhen, ReportIssueDrawer, IssueDetailsDrawer, ActiveIssueBanner, IssueList, troubleshootPrompt, findProPrompt } from './PropertyIssues';
 import type { PropertyIssue } from '../api/propertyIssues';
-import { useVehicles, VehicleList, VehicleDrawer, VehicleDetailsDrawer, vehiclePrompt } from './PropertyVehicles';
+import { useVehicles, VehicleList, VehicleDrawer, VehicleDetailsDrawer, vehiclePrompt, SmartcarPanel } from './PropertyVehicles';
 import { useThermostats, ThermostatList } from './PropertyThermostats';
 import { PropertySecurity } from './PropertySecurity';
 import { SystemOverview, SystemTabs, SYSTEM_TAB_IDS, type SystemTab, type SystemTile } from './SystemPage';
@@ -58,7 +59,7 @@ const FAMILY_CARD_ROWS = 7;
 
 /** Open a console panel; `consentFor` opens Connected apps on that provider's consent prompt. */
 export type OpenPanel = (panel: 'integrations' | 'memory' | 'actions' | 'notifications' | 'knows' | 'photo' | 'devices', options?: { consentFor?: string }) => void;
-export type DashboardSection = 'Dashboard' | 'Property' | 'Today' | 'Calendar' | 'Health' | 'Family' | 'Community' | 'Mail' | 'Work' | 'Projects' | 'News' | 'Dreams' | 'System' | 'Finance' | 'Workouts';
+export type DashboardSection = 'Dashboard' | 'Property' | 'Today' | 'Calendar' | 'Health' | 'Family' | 'Community' | 'Mail' | 'Work' | 'Projects' | 'News' | 'Dreams' | 'System' | 'Finance' | 'Workouts' | 'FamilyFinance';
 // Icons live in ./icons — one registry, so a drawn icon looks the same in
 // the nav, on its card and in the phone's bottom bar.
 export { DashboardIcon } from './icons';
@@ -72,7 +73,13 @@ export { DashboardIcon } from './icons';
 export const dashboardSections: DashboardSection[] = ['Dashboard', 'Health', 'Family', 'Community', 'Property', 'Work', 'System'];
 /** The nav entry a page lights up: a System tab lights System, a workout lights Health. */
 export const navSectionOf = (section: DashboardSection): DashboardSection =>
-  section === 'Workouts' ? 'Health' : SYSTEM_TAB_IDS.includes(section) ? 'System' : section;
+  section === 'Workouts' ? 'Health' : section === 'FamilyFinance' ? 'Family' : SYSTEM_TAB_IDS.includes(section) ? 'System' : section;
+/** Family's tabs (2026-10-20): the family itself, and the household's money (Webull, read-only). Not System's Finance, which is Athena's own costs. */
+const FAMILY_TABS = [
+  { id: 'Family', label: 'Overview', icon: 'Family' },
+  { id: 'FamilyFinance', label: 'Finance', icon: 'Finance' },
+] as const;
+type FamilyTab = typeof FAMILY_TABS[number]['id'];
 // The card set, in the one order the dashboard uses. Fixed by the owner
 // (2026-09-26): Health & Performance first, and Athena no longer re-sorts it.
 // The first row is the owner's hierarchy (2026-09-27): take care of yourself,
@@ -1188,6 +1195,7 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
 
   /** System's tab strip, on each page that is one of its tabs. */
   const systemTabs = (active: SystemTab) => <SystemTabs active={active} onChange={tab => onNavigate?.(tab)} />;
+  const familyTabs = (active: FamilyTab) => <SectionTabs tabs={FAMILY_TABS} active={active} onChange={tab => onNavigate?.(tab)} label="Family sections" panelId="family-tab-panel" />;
 
   /**
    * System's Overview: a tile per tab, read from the same data each tab
@@ -1345,7 +1353,7 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
     const newFact: Fact | null = familyEdit && !selectedFact ? {
       uuid: '', category: familyEdit.relation === 'Pet' ? 'pet' : 'person', key: familyEdit.name, value: '', source: 'user', visibility: 'private', updated_at: new Date(now).toISOString(),
     } : null;
-    return <SectionPage ctx={ctx}
+    return <SectionPage ctx={ctx} tabs={familyTabs('Family')}
       eyebrow="" title="Family" blurb=""
       ask="Help me think about my family — what should I be paying attention to?"
       hero={<FamilyOverview roster={roster} children={familyPeople?.children || []} events={events} timeZone={timeZone} now={now}
@@ -1369,6 +1377,16 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
       {familyEdit && (selectedFact || newFact) && <FamilyPersonEditor key={familyEdit.id} fact={(selectedFact || newFact)!} facts={family} name={familyEdit.name} relation={familyEdit.relation} links={familyPeople?.links || []} photoUrl={familyPeople?.photos?.[familyEdit.id]} isNew={!!newFact} onClose={() => setFamilyEdit(null)} onSaved={retryData} onChange={next => data.setFamilyPeople({ data: next, loading: false, error: null })} onConnect={() => onPanel('integrations')} onHealth={() => { setFamilyHealthEdit({ name: familyEdit.name, watch: sickFamily.find(w => w.uuid === familyEdit.signal.healthUuid) }); setFamilyEdit(null); }} onRemoved={gone => { data.dropFact(gone); retryData(); }} />}
       {familyHealthEdit && <HealthWatchModal personName={familyHealthEdit.name} watch={familyHealthEdit.watch} onClose={() => setFamilyHealthEdit(null)} onSaved={retryData} />}
       {areaStrip('family', 'Family')}
+      {drawers}
+    </SectionPage>;
+  }
+
+  function FamilyFinancePage() {
+    return <SectionPage ctx={ctx} tabs={familyTabs('FamilyFinance')}
+      eyebrow="" title="Finance" blurb=""
+      ask="Look at my Webull portfolio with me. What changed recently and what stands out?"
+      hero={<FamilyFinance onAsk={onAsk} />}
+    >
       {drawers}
     </SectionPage>;
   }
@@ -1635,6 +1653,9 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
       </Panel>}
       {propertyTab === 'property-vehicles' && <Panel title="Vehicles" note={property.property?.name ? `kept at ${property.property.name}` : 'kept at this property'} wide>
         <VehicleList state={vehicles} propertyName={property.property?.name || ''} hasProperty={!!property.property} onOpen={uuid => setVehicleDrawer({ kind: 'view', uuid })} onAdd={() => setVehicleDrawer({ kind: 'add' })} />
+      </Panel>}
+      {propertyTab === 'property-vehicles' && <Panel title="Connected cars" note="read from the car through Smartcar" wide>
+        <SmartcarPanel vehicles={vehicles.vehicles} onConnect={() => void reconnect('smartcar')} connecting={reconnecting === 'smartcar'} />
       </Panel>}
       {propertyTab === 'property-overview' && <Panel title="Up next" note="highest first" id="property-projects">
         {proj.error && <p role="alert">{proj.error} <button onClick={proj.reload}>Retry</button></p>}
@@ -1967,6 +1988,7 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
     if (section === 'Health') return HealthPage();
     if (section === 'Workouts') return WorkoutsPage();
     if (section === 'Family') return FamilyPage();
+    if (section === 'FamilyFinance') return FamilyFinancePage();
     if (section === 'Community') return CommunityPage();
     if (section === 'Mail') return MailPage();
     if (section === 'Work') return WorkPage();

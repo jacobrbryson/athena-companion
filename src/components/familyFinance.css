@@ -1,0 +1,27 @@
+/* Family → Finance (FamilyFinance.tsx). Built on the Health page's .hp panels and Calendar's .cp-stats tiles. */
+.ff-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:14px}
+.ff-wide{grid-column:1/-1}
+.ff .hp-panel>header{flex-wrap:wrap}
+.ff .hp-panel>header h2 span{color:var(--hp-sub);font-size:14px;font-weight:400}
+.ff-meta{color:var(--hp-sub);font-size:13px}
+.ff-up{color:#6ee7b7}.ff-down{color:#fb7185}
+.ff-accounts{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px}
+.ff-accounts li{display:grid;gap:2px;padding:12px 14px;border:1px solid var(--hp-line);border-radius:10px;background:#06141d}
+.ff-accounts strong{font-size:14px}.ff-accounts strong small{color:var(--hp-dim);font-weight:400}
+.ff-accounts span{font-size:22px;font-weight:600}
+.ff-accounts li>small{font-size:13px}
+.ff-note{margin-top:12px;color:var(--hp-dim);font-size:12px}
+.ff-table-wrap{overflow-x:auto;margin:0 -4px}
+.ff-table{width:100%;border-collapse:collapse;font-size:13px}
+.ff-table th{padding:6px 8px;border-bottom:1px solid var(--hp-line);color:var(--hp-sub);font-weight:500;text-align:left;white-space:nowrap}
+.ff-table td{padding:8px;border-bottom:1px solid #12293b;vertical-align:top}
+.ff-table td small{color:var(--hp-dim)}
+.ff-table tr:last-child td{border-bottom:0}
+.ff-num{text-align:right!important;font-variant-numeric:tabular-nums;white-space:nowrap}
+.ff-left{text-align:left!important}
+.ff-legs{display:block;margin-top:2px}
+.ff-chip{display:inline-block;padding:2px 8px;border:1px solid var(--hp-line);border-radius:6px;color:var(--hp-sub);font-size:11px;white-space:nowrap;text-transform:capitalize}
+.ff-status code{font-size:12px;color:#7fd6f2}
+@media(max-width:1100px){.ff-grid{grid-template-columns:1fr}}
+@media(max-width:900px){.ff .cp-stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:700px){.ff-grid{grid-template-columns:1fr}.ff .cp-stat strong{font-size:22px}}

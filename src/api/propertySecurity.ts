@@ -22,8 +22,10 @@ export type SightingSubject = {
   personFactUuid?: string | null; profilePhotoUrl?: string | null;
   lastSeen: { at: string; camera: string | null; where: string | null } | null;
 };
+/** What a sighting can be: a subject kind, or a package left at the door (never named). */
+export type SightingKind = SubjectKind | 'package';
 export type Sighting = {
-  id: string; label: string; kind: SubjectKind; subjectId: string | null; camera: string | null; deviceSerial: string;
+  id: string; label: string; kind: SightingKind; subjectId: string | null; camera: string | null; deviceSerial: string;
   zone: string | null; where: string | null; confidence: number | null; eventKind: 'motion' | 'doorbell' | 'person'; seenAt: string; hasFrame: boolean;
 };
 export type CameraZone = { deviceSerial: string; name: string; description: string | null };
@@ -52,6 +54,6 @@ export const propertySecurityApi = {
   addSubjectPhoto: (id: string, mediaId: string) => api.post<void>(`${base}/subjects/${encodeURIComponent(id)}/photos`, { mediaId }),
   removeSubjectPhoto: (id: string, mediaId: string) => api.del<void>(`${base}/subjects/${encodeURIComponent(id)}/photos/${encodeURIComponent(mediaId)}`),
   setZones: (serial: string, zones: { name: string; description?: string }[]) => api.put<void>(`${base}/zones/${encodeURIComponent(serial)}`, { zones }),
-  createRule: (body: { subjectId?: string; label?: 'stranger'; deviceSerial?: string; zone?: string }) => api.post<{ id: string }>(`${base}/rules`, body),
+  createRule: (body: { subjectId?: string; label?: 'stranger' | 'package'; deviceSerial?: string; zone?: string }) => api.post<{ id: string }>(`${base}/rules`, body),
   removeRule: (id: string) => api.del<void>(`${base}/rules/${encodeURIComponent(id)}`),
 };

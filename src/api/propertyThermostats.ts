@@ -19,6 +19,8 @@ export interface Thermostat {
    */
   notReporting?: boolean;
   onlineSince: string | null;
+  /** The thermostat the bedroom-vs-sleep comparison reads (Use for sleep). */
+  sleepDevice?: boolean;
   readings: {
     temperatureC?: number; humidityPercent?: number;
     mode?: string; eco?: string; hvac?: string;
@@ -31,6 +33,7 @@ export interface ThermostatList { status: ThermostatStatus; devices: Thermostat[
 
 export const thermostatsApi = {
   all: () => api.get<ThermostatList>('/api/v1/projects/property/thermostats'),
+  setSleepDevice: (device: string | null) => api.put<{ devices: Thermostat[] }>('/api/v1/projects/property/thermostats/sleep-device', { device }),
 };
 
 /** "Downstairs thermostat", or the name it was given in Google Home. */

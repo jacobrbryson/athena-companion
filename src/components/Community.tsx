@@ -1,6 +1,6 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { MiniMap } from './MiniMap';
-import { NeighborMap } from './NeighborMap';
+import { NeighborMap, type ResidentDraft } from './NeighborMap';
 import {
   dashboardApi,
   type AddressMatch,
@@ -64,10 +64,65 @@ export function Problem({ text }: { text: string | null }) {
 
 // --- Points of interest ----------------------------------------------------
 
-/** The map on the Community page: every point of interest with its ring, and every neighbor you know. Move it, zoom it. */
+/**
+ * The map on the Community page: every point of interest with its ring, and
+ * every neighbor you know. Move it, zoom it — and, zoomed in to houses, tap a
+ * house and "Add resident" to open the neighbor form right here under the map
+ * with its address filled in, so the street can be filled in house by house.
+ */
 const kindIcon = (kind: string) => kindOf(kind).icon;
+const NEAR_MILES = 3;
+interface MapForm { key: number; uuid?: string; initial: NeighborInput; people: LinkedContact[]; pin: { latitude: number; longitude: number } | null; hint: string | null }
 export function CommunityMap({ places, neighbors = [], onNeighbors, height = 320, satellite }: { places: WatchPlace[]; neighbors?: Neighbor[]; onNeighbors?: (neighbors: Neighbor[]) => void; height?: number; satellite?: boolean }) {
-  return <NeighborMap places={places} neighbors={neighbors} icon={kindIcon} onNeighbors={onNeighbors} height={height} satellite={satellite} />;
+  const [form, setForm] = useState<MapForm | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const box = useRef<HTMLDivElement | null>(null);
+  useEffect(() => { if (form) box.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }, [form?.key]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /** The watched place nearest the house, when it's close enough to be "near" it. */
+  function nearest(lat: number, lon: number) {
+    let best: string | null = null;
+    let bestMiles = NEAR_MILES;
+    for (const p of places) {
+      const miles = Math.hypot(p.latitude - lat, (p.longitude - lon) * Math.cos((lat * Math.PI) / 180)) * 69;
+      if (p.enabled && miles < bestMiles) { bestMiles = miles; best = p.uuid; }
+    }
+    return best;
+  }
+  function addResident(d: ResidentDraft) {
+    setError(null);
+    const hint = d.failed ? 'I couldn’t read the map’s address for that house just now — type it in, and I’ll put the house where you tapped.'
+      : d.address ? null
+        : `The map doesn’t have a house number there${d.street ? ` — it’s on ${d.street}` : ''}. Type the address, and I’ll put the house where you tapped.`;
+    setForm({ key: Date.now(), initial: { ...emptyNeighbor, address: d.address, latitude: d.address ? d.latitude : null, longitude: d.address ? d.longitude : null, placeUuid: nearest(d.latitude, d.longitude) }, people: [], pin: { latitude: d.latitude, longitude: d.longitude }, hint });
+  }
+  function editNeighbor(uuid: string) {
+    const n = neighbors.find(x => x.uuid === uuid);
+    if (!n) return;
+    setError(null);
+    setForm({ key: Date.now(), uuid, initial: neighborInput(n), people: n.contacts, pin: null, hint: null });
+  }
+  async function save(input: NeighborInput) {
+    if (!form || !onNeighbors) return;
+    setBusy(true); setError(null);
+    try {
+      onNeighbors((await dashboardApi.saveNeighbor(input, form.uuid)).neighbors);
+      setForm(null);
+    } catch (err) { setError(errorText(err, 'Could not save that household.')); }
+    finally { setBusy(false); }
+  }
+
+  return <>
+    <NeighborMap places={places} neighbors={neighbors} icon={kindIcon} onNeighbors={onNeighbors} height={height} satellite={satellite}
+      onAddResident={onNeighbors ? addResident : undefined} onEditNeighbor={onNeighbors ? editNeighbor : undefined} />
+    {form && <div ref={box} className="community-map-form">
+      <strong>{form.uuid ? 'Edit household' : 'Add resident'}</strong>
+      {form.hint && <small className="community-hint">{form.hint}</small>}
+      <Problem text={error} />
+      <NeighborForm key={form.key} initial={form.initial} people={form.people} uuid={form.uuid} places={places} busy={busy} pin={form.pin} onSave={input => void save(input)} onCancel={() => setForm(null)} />
+    </div>}
+  </>;
 }
 
 export function PointsOfInterest({ places, onPlaces, editRequest }: { places: WatchPlace[]; onPlaces: (places: WatchPlace[]) => void; editRequest?: { uuid: string; nonce: number } | null }) {
@@ -341,6 +396,11 @@ const LINK_PROBLEM: Record<string, string> = {
   unreadable: 'couldn’t read Google Contacts just now',
 };
 
+const neighborInput = (n: Neighbor): NeighborInput => ({
+  name: n.name, address: n.address, latitude: n.latitude, longitude: n.longitude, placeUuid: n.placeUuid,
+  where: n.where, contact: n.contact, notes: n.notes, contacts: n.contacts.map(c => ({ contactId: c.contactId, name: c.name })),
+});
+
 const streetOf = (address: string | null) => (address || '').split(',')[0].trim();
 
 /** What a household is called: its name, else who lives there, else its street. */
@@ -412,11 +472,6 @@ export function Neighbors({ neighbors, places, onNeighbors, onConnectContacts }:
     }
   }
 
-  const toInput = (n: Neighbor): NeighborInput => ({
-    name: n.name, address: n.address, latitude: n.latitude, longitude: n.longitude, placeUuid: n.placeUuid,
-    where: n.where, contact: n.contact, notes: n.notes, contacts: n.contacts.map(c => ({ contactId: c.contactId, name: c.name })),
-  });
-
   return <>
     <Problem text={error} />
     {!neighbors.length && editing !== 'new' && <p className="dashboard-empty">Who lives around you? Add a house by its address and link the people there from your Google contacts — I’ll know who you mean next time.</p>}
@@ -434,7 +489,7 @@ export function Neighbors({ neighbors, places, onNeighbors, onConnectContacts }:
             <button type="button" className="community-link" onClick={() => setEditing(editing === n.uuid ? null : n.uuid)}>{editing === n.uuid ? 'Close' : 'Edit'}</button>
             <button type="button" className="community-link community-danger" disabled={busy === n.uuid} onClick={() => void remove(n)}>Remove</button>
           </div>
-          {editing === n.uuid && <NeighborForm initial={toInput(n)} people={n.contacts} uuid={n.uuid} places={places} busy={busy === n.uuid} onSave={input => void save(input, n.uuid)} onConnectContacts={onConnectContacts} />}
+          {editing === n.uuid && <NeighborForm initial={neighborInput(n)} people={n.contacts} uuid={n.uuid} places={places} busy={busy === n.uuid} onSave={input => void save(input, n.uuid)} onConnectContacts={onConnectContacts} />}
         </div>
       </li>)}
     </ul>
@@ -447,10 +502,12 @@ export function Neighbors({ neighbors, places, onNeighbors, onConnectContacts }:
 /**
  * A household: its address first (the key — Find standardizes it), then the
  * people there. Contacts whose Google address is this street are offered as
- * suggestions; any other contact can be found by name.
+ * suggestions; any other contact can be found by name. `pin` is the house
+ * picked on the map: it places the household when the address isn't Found.
  */
-function NeighborForm({ initial, people, uuid, places, busy, onSave, onCancel, onConnectContacts }: {
+function NeighborForm({ initial, people, uuid, places, busy, pin, onSave, onCancel, onConnectContacts }: {
   initial: NeighborInput; people: LinkedContact[]; uuid?: string; places: WatchPlace[]; busy: boolean;
+  pin?: { latitude: number; longitude: number } | null;
   onSave: (input: NeighborInput) => void; onCancel?: () => void; onConnectContacts?: () => void;
 }) {
   const [form, setForm] = useState<NeighborInput>(initial);
@@ -491,7 +548,8 @@ function NeighborForm({ initial, people, uuid, places, busy, onSave, onCancel, o
 
   return <form className="dashboard-form community-form" onSubmit={e => {
     e.preventDefault();
-    onSave({ ...form, name: (form.name || '').trim() || null, address: (form.address || '').trim() || null, contacts: linked.map(c => ({ contactId: c.contactId, name: c.name })) });
+    const placed = form.latitude == null && pin ? { latitude: pin.latitude, longitude: pin.longitude } : {};
+    onSave({ ...form, ...placed, name: (form.name || '').trim() || null, address: (form.address || '').trim() || null, contacts: linked.map(c => ({ contactId: c.contactId, name: c.name })) });
   }}>
     <div className="community-inline">
       <Field label="Address">

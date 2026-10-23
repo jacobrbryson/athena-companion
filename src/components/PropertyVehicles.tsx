@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { carOf, dueItems, vehiclesApi, type ServiceInput, type Vehicle, type VehicleInput } from '../api/propertyVehicles';
+import { carOf, dueItems, vehiclesApi, type RecallStatus, type ServiceInput, type SmartcarCar, type SmartcarList, type Vehicle, type VehicleInput } from '../api/propertyVehicles';
 import { Drawer } from './Drawer';
 import { DrawerButton } from './ActionControls';
 import { readImage } from './Property';
@@ -36,6 +36,7 @@ export function useVehicles() {
     remove: async (uuid: string) => apply(await vehiclesApi.remove(uuid)),
     addService: async (uuid: string, entry: ServiceInput) => apply(await vehiclesApi.addService(uuid, entry)),
     removeService: async (uuid: string, entry: string) => apply(await vehiclesApi.removeService(uuid, entry)),
+    setRecall: async (uuid: string, campaign: string, status: RecallStatus) => apply(await vehiclesApi.setRecall(uuid, campaign, status)),
   };
 }
 export type VehiclesState = ReturnType<typeof useVehicles>;
@@ -67,13 +68,17 @@ function VehicleCard({ v, onOpen }: { v: Vehicle; onOpen: () => void }) {
   const due = dueItems(v);
   const car = carOf(v);
   const top = due.find(d => d.tone !== 'later');
+  const open = (v.recalls || []).filter(r => r.status === 'open');
+  const urgent = open.find(r => r.parkIt || r.parkOutside);
   return <li><button type="button" className="pv-card" onClick={onOpen}>
     <span className="pv-thumb">{photo ? <img src={photo} alt="" /> : CAR}</span>
     <span className="pv-card-text">
       <strong>{v.name}</strong>
       <small>{[car !== v.name ? car : '', v.color, v.plate].filter(Boolean).join(' · ') || 'No details yet'}</small>
       <small>{v.odometer !== null ? `${milesLabel(v.odometer)} · as of ${dayLabel(v.odometerOn!)}` : 'No mileage yet'}</small>
-      {top ? <span className={`pv-chip pv-${top.tone}`}>{top.label} {top.when}</span> : due.length ? <span className="pv-chip pv-later">Nothing due soon</span> : null}
+      {urgent ? <span className="pv-chip pv-overdue">Recall: {urgent.parkIt ? 'don’t drive it' : 'park outside'}</span>
+        : top ? <span className={`pv-chip pv-${top.tone}`}>{top.label} {top.when}</span> : due.length ? <span className="pv-chip pv-later">Nothing due soon</span> : null}
+      {!urgent && open.length > 0 && <span className="pv-chip pv-soon">{open.length === 1 ? '1 open recall' : `${open.length} open recalls`}</span>}
     </span>
   </button></li>;
 }
@@ -212,6 +217,92 @@ function ServiceLog({ state, vehicle }: { state: VehiclesState; vehicle: Vehicle
   </section>;
 }
 
+const RECALL_WORD: Record<RecallStatus, string> = { open: 'Open', done: 'Done', not_applicable: 'Doesn’t apply' };
+
+/** NHTSA recalls for the model year; the person marks each done or not applicable. */
+function RecallList({ state, vehicle }: { state: VehiclesState; vehicle: Vehicle }) {
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState('');
+  const [openOne, setOpenOne] = useState<string | null>(null);
+  const recalls = vehicle.recalls || [];
+  const mark = async (campaign: string, status: RecallStatus) => {
+    setBusy(campaign); setError('');
+    try { await state.setRecall(vehicle.uuid, campaign, status); } catch (e) { setError((e as Error).message); } finally { setBusy(null); }
+  };
+  return <section className="pv-due pv-recalls" aria-label="Safety recalls">
+    <h3>Safety recalls</h3>
+    {!recalls.length ? <p className="pi-muted">{vehicle.vin || (vehicle.year && vehicle.make && vehicle.model)
+      ? 'NHTSA lists no recalls for this model year, as of the last check.'
+      : 'Add the VIN, or the year, make and model, and I’ll check NHTSA for safety recalls.'}</p>
+      : <ul>{recalls.map(r => <li key={r.campaign} className={r.status === 'open' ? undefined : 'pv-recall-closed'}>
+        <button type="button" className="pv-recall-head" aria-expanded={openOne === r.campaign} onClick={() => setOpenOne(o => (o === r.campaign ? null : r.campaign))}>
+          <span>{r.component || 'Recall'} <small className="pv-mono">{r.campaign}</small></span>
+          <span className={`pv-chip ${r.status !== 'open' ? 'pv-later' : r.parkIt || r.parkOutside ? 'pv-overdue' : 'pv-soon'}`}>
+            {r.status === 'open' && r.parkIt ? 'Don’t drive it' : r.status === 'open' && r.parkOutside ? 'Park outside' : RECALL_WORD[r.status]}
+          </span>
+        </button>
+        {openOne === r.campaign && <div className="pv-recall-body">
+          {r.summary && <p>{r.summary}</p>}
+          {r.consequence && <p><strong>Risk:</strong> {r.consequence}</p>}
+          {r.remedy && <p><strong>Fix:</strong> {r.remedy}</p>}
+          <div className="pv-recall-actions">
+            {r.status !== 'done' && <DrawerButton onClick={() => void mark(r.campaign, 'done')} disabled={busy === r.campaign}>Done</DrawerButton>}
+            {r.status !== 'not_applicable' && <DrawerButton onClick={() => void mark(r.campaign, 'not_applicable')} disabled={busy === r.campaign}>Doesn’t apply</DrawerButton>}
+            {r.status !== 'open' && <DrawerButton onClick={() => void mark(r.campaign, 'open')} disabled={busy === r.campaign}>Reopen</DrawerButton>}
+          </div>
+        </div>}
+      </li>)}</ul>}
+    <p className="pi-muted pv-recall-note">From NHTSA, for this model year — a dealer can tell you from the VIN whether yours was already fixed.</p>
+    {error && <p role="alert">{error}</p>}
+  </section>;
+}
+
+/** Cars linked through Smartcar: their live readings, which vehicle each is, and location on or off per car. */
+export function SmartcarPanel({ vehicles, onConnect, connecting }: { vehicles: Vehicle[]; onConnect: () => void; connecting?: boolean }) {
+  const [data, setData] = useState<SmartcarList | null>(null);
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState<string | null>(null);
+  useEffect(() => {
+    vehiclesApi.smartcar().then(setData).catch(e => setError((e as Error).message || 'Cars are unavailable right now.'));
+  }, []);
+  const change = async (car: SmartcarCar, patch: { vehicleUuid?: string | null; locationEnabled?: boolean }) => {
+    setBusy(car.id); setError('');
+    try { setData(await vehiclesApi.setSmartcar(car.id, patch)); } catch (e) { setError((e as Error).message); } finally { setBusy(null); }
+  };
+  const connect = (label: string) => <div className="pi-list-foot"><DrawerButton primary onClick={onConnect} disabled={connecting}>{connecting ? 'Opening Smartcar…' : label}</DrawerButton></div>;
+  if (error && !data) return <p role="alert">{error}</p>;
+  if (!data) return <p className="pi-muted">Loading cars…</p>;
+  if (data.status === 'not_connected') return <div className="pv-list">
+    <p className="pi-muted">Link your car through Smartcar and I’ll read its odometer, fuel or charge and whether it’s locked — straight from the car — and keep its mileage here current. Read-only: I can’t lock, unlock or start it.</p>
+    {connect('Connect Smartcar')}
+  </div>;
+  if (data.status === 'needs_reauth') return <div className="pv-list"><p className="pi-muted">Smartcar needs reconnecting before I can read your cars again.</p>{connect('Reconnect Smartcar')}</div>;
+  if (!data.cars.length) return <div className="pv-list"><p className="pi-muted">Smartcar is linked, but no cars are shared. Connect again and tick your car.</p>{connect('Choose cars')}</div>;
+  return <div className="pv-list pv-smartcar">
+    {data.stale && <p className="pi-muted" role="status">Your car maker’s service couldn’t be reached — these are the last readings.</p>}
+    <ul>{data.cars.map(c => {
+      const level = c.battery?.percent ?? c.fuel?.percent;
+      const range = c.battery?.rangeMi ?? c.fuel?.rangeMi;
+      return <li key={c.id} className="pv-car-row">
+        <div className="pv-card-text">
+          <strong>{c.vehicleName || [c.year, c.make, c.model].filter(Boolean).join(' ') || 'Car'}</strong>
+          <small>{[c.odometerMi !== null ? milesLabel(c.odometerMi) : null, level != null ? `${c.battery ? 'Battery' : 'Fuel'} ${level}%${range ? ` · ${range} mi range` : ''}` : null,
+            c.locked === null ? null : c.locked ? 'Locked' : 'Unlocked'].filter(Boolean).join(' · ') || 'No readings yet'}</small>
+          {c.location && <small><a href={`https://www.google.com/maps?q=${c.location.latitude},${c.location.longitude}`} target="_blank" rel="noreferrer">Where it’s parked</a></small>}
+        </div>
+        <label className="pi-label">Is
+          <select value={c.vehicleUuid || ''} disabled={busy === c.id} onChange={e => void change(c, { vehicleUuid: e.target.value || null })}>
+            <option value="">Not one of my vehicles</option>
+            {vehicles.map(v => <option key={v.uuid} value={v.uuid}>{v.name}</option>)}
+          </select>
+        </label>
+        <label className="pv-toggle"><input type="checkbox" checked={c.locationEnabled} disabled={busy === c.id} onChange={e => void change(c, { locationEnabled: e.target.checked })} />Share location</label>
+      </li>;
+    })}</ul>
+    {error && <p role="alert">{error}</p>}
+  </div>;
+}
+
 export function VehicleDetailsDrawer({ state, vehicle, propertyName, onClose, onEdit, onAsk }: { state: VehiclesState; vehicle: Vehicle; propertyName: string; onClose: () => void; onEdit: () => void; onAsk: (v: Vehicle) => void }) {
   const photo = useVehiclePhoto(vehicle);
   const due = dueItems(vehicle);
@@ -240,6 +331,7 @@ export function VehicleDetailsDrawer({ state, vehicle, propertyName, onClose, on
         {due.length ? <ul>{due.map((d, i) => <li key={i}><span>{d.label}</span><span className={`pv-chip pv-${d.tone}`}>{d.when}</span></li>)}</ul>
           : <p className="pi-muted">No dates yet. Add registration, inspection, insurance or service dates with <strong>Edit</strong>.</p>}
       </section>
+      <RecallList state={state} vehicle={vehicle} />
       <div className="pi-actions"><DrawerButton onClick={() => onAsk(vehicle)}>Ask Athena about it</DrawerButton></div>
       <ServiceLog state={state} vehicle={vehicle} />
       <div className="pi-details-manage">

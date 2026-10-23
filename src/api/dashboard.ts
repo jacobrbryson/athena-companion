@@ -272,6 +272,8 @@ export interface CommunityOverview { places: WatchPlace[]; neighbors: Neighbor[]
 /** A ring on the map: where a watched place is and how far it reaches. */
 export interface AlertPlace { name: string; latitude: number; longitude: number; radiusMiles: number; live?: boolean }
 export interface AddressMatch { label: string; latitude: number; longitude: number }
+/** The house under a tap on the Community map: its OpenStreetMap address if one is close, else the tap and the nearest street. */
+export interface HouseAt { address: string | null; latitude: number; longitude: number; street: string | null; household: { uuid: string; label: string | null } | null }
 /** A National Weather Service alert covering a watched place. */
 export interface WeatherAlert {
   id: string;
@@ -509,6 +511,7 @@ export const dashboardApi = {
   syncDoors: (uuid: string, updates: DoorMark[]) => api.post<{ round: DoorRound }>(`/api/v1/dashboard/community/door-rounds/${encodeURIComponent(uuid)}/sync`, { updates }),
   closeDoorRound: (uuid: string, closed: boolean) => api.post<{ round: DoorRound }>(`/api/v1/dashboard/community/door-rounds/${encodeURIComponent(uuid)}/close`, { closed }),
   removeDoorRound: (uuid: string) => api.del<{ rounds: DoorRoundSummary[] }>(`/api/v1/dashboard/community/door-rounds/${encodeURIComponent(uuid)}`),
+  houseAt: (latitude: number, longitude: number) => api.get<HouseAt>(`/api/v1/dashboard/community/house-at?lat=${latitude.toFixed(6)}&lon=${longitude.toFixed(6)}`),
   lookupAddress: (q: string) => api.get<{ matches: AddressMatch[] }>(`/api/v1/dashboard/incidents/geocode?q=${encodeURIComponent(q)}`),
   rightNow: async () => {
     const value = await api.cachedGet<RightNow>('/api/v1/dashboard/right-now');

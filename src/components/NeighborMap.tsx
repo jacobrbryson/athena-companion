@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import { dashboardApi, type Neighbor, type WatchPlace } from '../api/dashboard';
-import { MAX_ZOOM, MIN_ZOOM, TILE, fit, metersPerPixel, pan, pxPerMile, project, ringExtent, zoomAround, type LatLon } from './mapMath';
+import { MAX_ZOOM, MIN_ZOOM, TILE, fit, metersPerPixel, pan, pxPerMile, project, ringExtent, unproject, zoomAround, type LatLon } from './mapMath';
 
 /**
  * The Community map you can move: drag to pan, wheel / pinch / +− / double-tap
@@ -11,9 +11,16 @@ import { MAX_ZOOM, MIN_ZOOM, TILE, fit, metersPerPixel, pan, pxPerMile, project,
  * positioned <img> tiles and some Web Mercator maths (mapMath.ts) are all it
  * takes, and it runs in the Android WebView. Tiles are OpenStreetMap's, drawn
  * under its usage policy with the attribution visible.
+ *
+ * Zoomed in to houses, a tap anywhere else drops a pin with "Add resident":
+ * the house's address is read from OpenStreetMap (core_api doorToDoor.houseAt)
+ * and handed to the caller to open the neighbor form, so the person can go
+ * house by house until they know everyone around them.
  */
 
 export interface MapNeighbor { uuid: string; label: string; number: string | null; address: string | null; notes: string | null; people: number; latitude: number; longitude: number }
+/** A house picked on the map, for the neighbor form. `address` is null when the map has none for it. */
+export interface ResidentDraft { address: string | null; latitude: number; longitude: number; street: string | null; failed: boolean }
 export interface MapPlaceItem { uuid: string; name: string; icon: string; latitude: number; longitude: number; radiusMiles: number }
 
 const located = (n: { latitude: number | null; longitude: number | null }): n is { latitude: number; longitude: number } =>
@@ -23,13 +30,30 @@ const FOOTPRINT_ZOOM = 17;
 const LABEL_ZOOM = 16;
 const NEIGHBOR = '#22c55e';
 const PICKED = '#f59e0b';
+const MILES_PER_DEGREE = 69;
+
+/** ", Troutman, NC 28166" from the nearest watched place's address, for an OpenStreetMap address that came without its town. */
+function townNear(places: WatchPlace[], lat: number, lon: number) {
+  let best: string | null = null;
+  let bestMiles = 8;
+  for (const p of places) {
+    const comma = (p.address || '').indexOf(',');
+    if (comma < 0) continue;
+    const miles = Math.hypot(p.latitude - lat, (p.longitude - lon) * Math.cos((lat * Math.PI) / 180)) * MILES_PER_DEGREE;
+    if (miles < bestMiles) { bestMiles = miles; best = (p.address as string).slice(comma); }
+  }
+  return best;
+}
 
 /** Esri's World Imagery, for the satellite view; its credit replaces OpenStreetMap's while it shows. */
 const SATELLITE = (z: number, x: number, y: number) => `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`;
 
-export function NeighborMap({ places, neighbors, icon, onNeighbors, height = 320, satellite = false }: {
+export function NeighborMap({ places, neighbors, icon, onNeighbors, onAddResident, onEditNeighbor, height = 320, satellite = false }: {
   places: WatchPlace[]; neighbors: Neighbor[]; icon: (kind: string) => string;
   onNeighbors?: (neighbors: Neighbor[]) => void; height?: number; satellite?: boolean;
+  /** Offered on a tap between markers once the map is zoomed in to houses. */
+  onAddResident?: (draft: ResidentDraft) => void;
+  onEditNeighbor?: (uuid: string) => void;
 }) {
   const shownPlaces = useMemo<MapPlaceItem[]>(() => places.filter(p => p.enabled && located(p)).map(p => ({ uuid: p.uuid, name: p.name, icon: icon(p.kind), latitude: p.latitude, longitude: p.longitude, radiusMiles: p.radiusMiles })), [places, icon]);
   const homes = useMemo<MapNeighbor[]>(() => neighbors.filter(located).map(n => ({
@@ -46,6 +70,8 @@ export function NeighborMap({ places, neighbors, icon, onNeighbors, height = 320
   const [picked, setPicked] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
+  const [spot, setSpot] = useState<LatLon | null>(null);
+  const [looking, setLooking] = useState(false);
   const touch = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
 
   useEffect(() => {
@@ -155,6 +181,7 @@ export function NeighborMap({ places, neighbors, icon, onNeighbors, height = 320
     const margin = 60;
     const inside = (p: { x: number; y: number }) => p.x > -margin && p.x < width + margin && p.y > -margin && p.y < height + margin;
     return {
+      left, top,
       tiles,
       places: shownPlaces.map(p => ({ ...p, ...at(p.latitude, p.longitude), ring: p.radiusMiles * pxPerMile(p.latitude, view.zoom) })).filter(inside),
       homes: homes.map(h => ({ ...h, ...at(h.latitude, h.longitude) })).filter(inside),
@@ -184,7 +211,26 @@ export function NeighborMap({ places, neighbors, icon, onNeighbors, height = 320
     if (placed) setView(null);
   }
 
+  /** The house under the pin: its address if the map has one, else the pin itself. A neighbor already there opens instead. */
+  async function addResident() {
+    if (!spot || !onAddResident) return;
+    setLooking(true);
+    try {
+      const h = await dashboardApi.houseAt(spot.lat, spot.lon);
+      setSpot(null);
+      if (h.household && onEditNeighbor) { onEditNeighbor(h.household.uuid); return; }
+      const address = h.address && !h.address.includes(',') ? `${h.address}${townNear(places, h.latitude, h.longitude) || ''}` : h.address;
+      onAddResident({ address, latitude: h.latitude, longitude: h.longitude, street: h.street, failed: false });
+    } catch {
+      // The form still opens: the person can type the address, and the pin places the house.
+      onAddResident({ address: null, latitude: spot.lat, longitude: spot.lon, street: null, failed: true });
+      setSpot(null);
+    } finally { setLooking(false); }
+  }
+
+  const picking = !!onAddResident && (view?.zoom ?? 0) >= FOOTPRINT_ZOOM;
   const chosen = frame?.homes.find(h => h.uuid === picked) || null;
+  const pin = frame && spot ? (() => { const p = project(spot.lat, spot.lon, view!.zoom); return { x: p.x - frame.left, y: p.y - frame.top }; })() : null;
   const zoom = view?.zoom ?? 0;
   if (!present) return unlocated.length ? <p className="community-hint">None of your neighbors are on the map yet — <button type="button" className="community-link" disabled={busy} onClick={() => void locateThem()}>{busy ? 'Placing…' : `place ${unlocated.length} from their addresses`}</button>.</p> : null;
   return <div className="community-map-wrap">
@@ -196,9 +242,15 @@ export function NeighborMap({ places, neighbors, icon, onNeighbors, height = 320
       role="application"
       aria-label={`Community map: ${homes.length} neighbor${homes.length === 1 ? '' : 's'} and ${shownPlaces.length} watched place${shownPlaces.length === 1 ? '' : 's'}. Arrow keys move, plus and minus zoom.`}
       onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}
-      onKeyDown={key}
-      onDoubleClick={e => { const r = box.current!.getBoundingClientRect(); zoomBy(1, e.clientX - r.left, e.clientY - r.top); }}
-      onClick={() => { if (!gesture.current.moved) setPicked(null); }}
+      onKeyDown={e => { if (e.key === 'Escape') { setSpot(null); setPicked(null); } else key(e); }}
+      onDoubleClick={e => { setSpot(null); const r = box.current!.getBoundingClientRect(); zoomBy(1, e.clientX - r.left, e.clientY - r.top); }}
+      onClick={e => {
+        if (gesture.current.moved) return;
+        setPicked(null);
+        if (!picking || !frame || !view) { setSpot(null); return; }
+        const r = box.current!.getBoundingClientRect();
+        setSpot(unproject(frame.left + e.clientX - r.left, frame.top + e.clientY - r.top, view.zoom));
+      }}
     >
       {frame && <>
         {frame.tiles.map(t => <img key={t.key} src={t.src} alt="" draggable={false} className="neighbor-tile" style={{ left: t.x, top: t.y, width: TILE + 1, height: TILE + 1 }} />)}
@@ -219,14 +271,22 @@ export function NeighborMap({ places, neighbors, icon, onNeighbors, height = 320
           key={h.uuid} type="button" className="neighbor-marker" style={{ left: h.x, top: h.y, background: h.uuid === picked ? PICKED : NEIGHBOR }}
           aria-label={`${h.label}${h.address ? `, ${h.address.split(',')[0]}` : ''}`}
           onPointerDown={e => e.stopPropagation()} onDoubleClick={e => e.stopPropagation()}
-          onClick={e => { e.stopPropagation(); setPicked(h.uuid === picked ? null : h.uuid); }}
+          onClick={e => { e.stopPropagation(); setSpot(null); setPicked(h.uuid === picked ? null : h.uuid); }}
         >{zoom >= LABEL_ZOOM && <span className="neighbor-label neighbor-label-home">{zoom >= 18 || !h.number ? h.label : h.number}</span>}</button>)}
         {chosen && <div className="neighbor-popup" style={{ left: Math.min(Math.max(chosen.x, 110), width - 110), top: Math.max(chosen.y - 18, 70) }} onPointerDown={e => e.stopPropagation()} onClick={e => e.stopPropagation()}>
           <strong>{chosen.label}</strong>
           {chosen.address && <small>{chosen.address.split(',')[0]}</small>}
           {chosen.people > 0 && <small>{chosen.people} linked contact{chosen.people === 1 ? '' : 's'}</small>}
           {chosen.notes && <small className="neighbor-popup-notes">{chosen.notes}</small>}
+          {onEditNeighbor && <button type="button" className="neighbor-popup-action" onClick={() => { setPicked(null); onEditNeighbor(chosen.uuid); }}>Edit household</button>}
         </div>}
+        {pin && <>
+          <span className="neighbor-pin" style={{ left: pin.x, top: pin.y }} aria-hidden />
+          <div className="neighbor-popup neighbor-menu" role="menu" style={{ left: Math.min(Math.max(pin.x, 90), width - 90), top: Math.max(pin.y - 14, 56) }} onPointerDown={e => e.stopPropagation()} onClick={e => e.stopPropagation()} onDoubleClick={e => e.stopPropagation()}>
+            <button type="button" role="menuitem" className="neighbor-popup-action" disabled={looking} onClick={() => void addResident()}>{looking ? 'Finding the address…' : 'Add resident'}</button>
+            <button type="button" role="menuitem" className="neighbor-menu-cancel" disabled={looking} onClick={() => setSpot(null)}>Cancel</button>
+          </div>
+        </>}
       </>}
       <div className="neighbor-controls" onPointerDown={e => e.stopPropagation()} onDoubleClick={e => e.stopPropagation()} onClick={e => e.stopPropagation()}>
         <button type="button" aria-label="Zoom in" disabled={zoom >= MAX_ZOOM} onClick={() => zoomBy(1)}>+</button>
@@ -238,7 +298,7 @@ export function NeighborMap({ places, neighbors, icon, onNeighbors, height = 320
         : <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer" className="neighbor-credit">© OpenStreetMap</a>}
     </div>
     <small className="community-hint neighbor-legend">
-      <span className="neighbor-swatch" aria-hidden /> {homes.length} neighbor{homes.length === 1 ? '' : 's'} on the map — zoom in to see each house{touch ? '; use two fingers to move the map' : ''}
+      <span className="neighbor-swatch" aria-hidden /> {homes.length} neighbor{homes.length === 1 ? '' : 's'} on the map — {onAddResident ? (picking ? 'tap a house to add who lives there' : 'zoom in to see each house and add who lives there') : 'zoom in to see each house'}{touch ? '; use two fingers to move the map' : ''}
       {unlocated.length > 0 && <> · {unlocated.length} not placed yet: <button type="button" className="community-link" disabled={busy} onClick={() => void locateThem()}>{busy ? 'Placing…' : 'place them from their addresses'}</button></>}
     </small>
     {note && <small className="community-hint">{note}</small>}

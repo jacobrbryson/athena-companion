@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { propertySecurityApi } from '../api/propertySecurity';
 
-export type IconName = 'hub' | 'camera' | 'doorbell' | 'motion' | 'storage' | 'refresh' | 'bell' | 'expand' | 'clip' | 'star' | 'trash' | 'close' | 'play' | 'person' | 'paw' | 'car' | 'plus' | 'eye';
+export type IconName = 'hub' | 'camera' | 'doorbell' | 'motion' | 'storage' | 'refresh' | 'bell' | 'expand' | 'clip' | 'star' | 'trash' | 'close' | 'play' | 'person' | 'paw' | 'car' | 'plus' | 'eye' | 'package';
 
 /** The few line icons this page draws, in the concept's thin cyan stroke. */
 export function Icon({ name }: { name: IconName }) {
@@ -23,6 +23,7 @@ export function Icon({ name }: { name: IconName }) {
     paw: <><circle cx="7" cy="10" r="1.8" /><circle cx="10.5" cy="6.5" r="1.8" /><circle cx="14.5" cy="6.5" r="1.8" /><circle cx="18" cy="10" r="1.8" /><ellipse cx="12.5" cy="16" rx="4.5" ry="3.6" /></>,
     car: <><path d="M4 16v-4l2-5h12l2 5v4z" /><path d="M4 12h16" /><circle cx="7.5" cy="16.5" r="1.8" /><circle cx="16.5" cy="16.5" r="1.8" /></>,
     plus: <path d="M12 5v14M5 12h14" />,
+    package: <><path d="M3 8l9-4 9 4v8l-9 4-9-4z" /><path d="M3 8l9 4 9-4" /><path d="M12 12v8" /></>,
     eye: <><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z" /><circle cx="12" cy="12" r="3" /></>,
   };
   return <svg className="ps-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>;

@@ -27,7 +27,12 @@ export function useThermostats(enabled: boolean) {
   // Loaded when first shown, not with the dashboard; kept while switching tabs.
   const [shown, setShown] = useState(false);
   useEffect(() => { if (enabled && !shown) { setShown(true); load(); } }, [enabled, shown, load]);
-  return { data, loading, error, retry: load };
+  // "Use for sleep" changes which device is marked; the list comes back whole.
+  const setSleep = useCallback(async (device: string | null) => {
+    const { devices } = await thermostatsApi.setSleepDevice(device);
+    setData(prev => prev && { ...prev, devices });
+  }, []);
+  return { data, loading, error, retry: load, setSleep };
 }
 export type ThermostatsState = ReturnType<typeof useThermostats>;
 
@@ -38,7 +43,14 @@ function since(iso: string) {
     : d.toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 }
 
-function ThermostatCard({ t }: { t: Thermostat }) {
+function ThermostatCard({ t, onSleep }: { t: Thermostat; onSleep: (device: string | null) => Promise<void> }) {
+  const [busy, setBusy] = useState(false);
+  const [sleepError, setSleepError] = useState('');
+  const toggleSleep = async () => {
+    setBusy(true);
+    setSleepError('');
+    try { await onSleep(t.sleepDevice ? null : t.name); } catch (e) { setSleepError((e as Error).message || 'Couldn’t save that.'); } finally { setBusy(false); }
+  };
   const r = t.readings || {};
   const silent = !!t.notReporting;
   const temp = silent ? null : degrees(r.temperatureC, r.scale);
@@ -59,12 +71,17 @@ function ThermostatCard({ t }: { t: Thermostat }) {
       </span>
       {silent && <small className="pt-note">Google lists it as online, but it’s sending no readings</small>}
       {offline && !silent && temp && <small className="pt-note">Last reading before it went offline</small>}
+      <button type="button" className="pt-link pt-sleep" aria-pressed={!!t.sleepDevice} onClick={toggleSleep} disabled={busy}
+        title="The thermostat I compare with your WHOOP sleep">
+        {t.sleepDevice ? '✓ Used for sleep' : 'Use for sleep'}
+      </button>
+      {sleepError && <small className="pt-note" role="alert">{sleepError}</small>}
     </div>
   </li>;
 }
 
 export function ThermostatList({ state, onConnect, connecting }: { state: ThermostatsState; onConnect: () => void; connecting?: boolean }) {
-  const { data, loading, error, retry } = state;
+  const { data, loading, error, retry, setSleep } = state;
   const connect = (label: string) => <div className="pi-list-foot"><DrawerButton primary onClick={onConnect} disabled={connecting}>{connecting ? 'Opening Google…' : label}</DrawerButton></div>;
   if (loading && !data) return <p className="pi-muted">Loading thermostats…</p>;
   if (error) return <p role="alert">{error} <button onClick={retry}>Retry</button></p>;
@@ -82,7 +99,7 @@ export function ThermostatList({ state, onConnect, connecting }: { state: Thermo
   </div>;
   return <div className="pt-list">
     {data.stale && <p className="pi-muted" role="status">Google couldn’t be reached just now — this is the last state I recorded.</p>}
-    <ul>{data.devices.map(t => <ThermostatCard key={t.name} t={t} />)}</ul>
+    <ul>{data.devices.map(t => <ThermostatCard key={t.name} t={t} onSleep={setSleep} />)}</ul>
     <p className="pi-muted pt-foot">Ask me to change one and I’ll show you a card to approve. With Initiative on, I alert you when one goes offline. <button type="button" className="pt-link" onClick={retry} disabled={loading}>{loading ? 'Refreshing…' : 'Refresh'}</button></p>
   </div>;
 }

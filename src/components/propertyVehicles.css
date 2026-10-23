@@ -24,3 +24,17 @@
 .pv-service-form input{width:100%;padding:9px 10px;border:1px solid #23485a;border-radius:8px;background:#06141d;color:#eaf6fc;font-size:13px}
 .pv-service-form input:focus{outline:2px solid #43c9ef66;border-color:#43c9ef}
 @media(max-width:700px){.pv-list ul{grid-template-columns:1fr}.pv-row-3{grid-template-columns:1fr 1fr}.pv-row-3>:first-child{grid-column:1/-1}}
+
+/* Safety recalls (vehicle details) */
+.pv-recalls li { display: block; }
+.pv-recall-head { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 10px; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.pv-recall-head small { margin-left: 6px; opacity: .7; }
+.pv-recall-closed { opacity: .65; }
+.pv-recall-body { margin-top: 8px; font-size: 13px; line-height: 1.5; }
+.pv-recall-body p { margin: 0 0 6px; }
+.pv-recall-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.pv-recall-note { margin-top: 8px; font-size: 12px; }
+/* Cars through Smartcar */
+.pv-car-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid #ffffff14; }
+.pv-car-row .pv-card-text { flex: 1 1 220px; }
+.pv-toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
