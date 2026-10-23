@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { encodeJpeg } from '../components/photoStore';
 import { visionApi, type LookRequest, type Scene } from '../api/companion';
+import { usePresentPoll } from './idle';
 
 /**
  * Athena's eyes, owned by the console rather than by a panel.
@@ -302,15 +303,11 @@ export function useSight(active: boolean): Sight {
       });
   }, [active, honour]);
 
-  useEffect(() => {
-    if (!active) return;
-    // Once straight away: a request that arrived while the tab was loading
-    // should not wait a whole interval, because by then the moment it was
-    // about has usually passed.
-    checkRequests();
-    const id = window.setInterval(checkRequests, REQUEST_POLL_MS);
-    return () => window.clearInterval(id);
-  }, [active, checkRequests]);
+  // Once straight away: a request that arrived while the tab was loading
+  // should not wait a whole interval, because by then the moment it was
+  // about has usually passed. Paused while nobody is here, unless the camera
+  // is already live — then someone chose to leave her watching.
+  usePresentPoll(checkRequests, REQUEST_POLL_MS, active, () => !!streamRef.current);
 
   // ----------------------------------------------------------- cadence ----
 

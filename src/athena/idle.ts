@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 /**
  * Is anyone actually here? A tab left open all day otherwise holds the chat
@@ -78,6 +78,50 @@ function start() {
 export function isIdle(): boolean {
   start();
   return idle;
+}
+
+/**
+ * Nobody is here to see what a poll would fetch: the tab is hidden, or idle.
+ * Hidden counts at once — a background tab is throttled to one timer a
+ * minute, which is exactly the all-day trickle that kept both services billed.
+ */
+export function isAway(): boolean {
+  return document.visibilityState === 'hidden' || isIdle();
+}
+
+/**
+ * Runs `fn` now, then every `ms` while someone is here, and once the moment
+ * they come back — so a paused poll catches up before anyone can notice it
+ * was paused. Nothing waits on these polls but the screen: what they fetch
+ * stays on the server until read, and pushes never depend on them.
+ * `keepAlive`, when it returns true, keeps polling through an absence.
+ */
+export function usePresentPoll(fn: () => void, ms: number, enabled = true, keepAlive?: () => boolean) {
+  const fnRef = useRef(fn);
+  fnRef.current = fn;
+  const keepAliveRef = useRef(keepAlive);
+  keepAliveRef.current = keepAlive;
+  useEffect(() => {
+    if (!enabled) return;
+    start();
+    fnRef.current();
+    const id = window.setInterval(() => {
+      if (!isAway() || keepAliveRef.current?.()) fnRef.current();
+    }, ms);
+    let away = isAway();
+    const onChange = () => {
+      const now = isAway();
+      if (away && !now) fnRef.current();
+      away = now;
+    };
+    listeners.add(onChange);
+    document.addEventListener('visibilitychange', onChange);
+    return () => {
+      window.clearInterval(id);
+      listeners.delete(onChange);
+      document.removeEventListener('visibilitychange', onChange);
+    };
+  }, [ms, enabled]);
 }
 
 /** Re-renders on every idle change. */

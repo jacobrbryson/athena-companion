@@ -12,7 +12,7 @@ const doc = new EventTarget();
 doc.visibilityState = 'visible';
 globalThis.document = doc;
 
-const { isIdle, IDLE_AFTER_MS } = await import('../src/athena/idle.ts');
+const { isIdle, isAway, IDLE_AFTER_MS } = await import('../src/athena/idle.ts');
 
 test('idle only after the full quiet period, awake again on input', () => {
   assert.equal(isIdle(), false);
@@ -36,4 +36,16 @@ test('coming back to the tab counts as being here', () => {
   assert.equal(isIdle(), true);
   doc.dispatchEvent(new Event('visibilitychange'));
   assert.equal(isIdle(), false);
+});
+
+test('a hidden tab is away at once, an idle one too', () => {
+  assert.equal(isAway(), false);
+  doc.visibilityState = 'hidden';
+  assert.equal(isAway(), true);
+  doc.visibilityState = 'visible';
+  assert.equal(isAway(), false);
+  mock.timers.tick(IDLE_AFTER_MS);
+  assert.equal(isAway(), true);
+  win.dispatchEvent(new Event('pointerdown'));
+  assert.equal(isAway(), false);
 });

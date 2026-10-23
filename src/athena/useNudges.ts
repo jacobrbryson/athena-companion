@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { initiativeApi, type Nudge } from '../api/companion';
+import { usePresentPoll } from './idle';
 
 /**
  * Things Athena said without being asked.
@@ -52,42 +53,40 @@ export function useNudges(enabled: boolean): NudgesState {
     nudgesRef.current = nudges;
   }, [nudges]);
 
+  // Read by an in-flight poll, so turning this off cannot be undone by a
+  // response that was already on its way.
+  const enabledRef = useRef(enabled);
+  enabledRef.current = enabled;
   useEffect(() => {
-    if (!enabled) {
-      setNudges([]);
-      return;
-    }
-    let cancelled = false;
-    const poll = () => {
-      initiativeApi
-        .pending()
-        .then((rows) => {
-          if (cancelled || !rows.length) return;
-          setNudges((current) => {
-            const seen = new Set([
-              ...current.map((n) => n.uuid),
-              ...answeredRef.current,
-            ]);
-            return [
-              ...current,
-              ...rows
-                .filter((r) => !seen.has(r.uuid))
-                .map((r) => ({ ...r, answered: false })),
-            ];
-          });
-        })
-        .catch(() => {
-          // Initiative being unreachable should cost nothing visible. The
-          // person did not ask for this and must not be shown its plumbing.
-        });
-    };
-    poll();
-    const timer = window.setInterval(poll, POLL_MS);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
+    if (!enabled) setNudges([]);
   }, [enabled]);
+
+  // Paused while nobody is here. That also keeps the read honest: fetching
+  // marks a nudge delivered, and a hidden tab is not someone hearing it.
+  const poll = useCallback(() => {
+    initiativeApi
+      .pending()
+      .then((rows) => {
+        if (!enabledRef.current || !rows.length) return;
+        setNudges((current) => {
+          const seen = new Set([
+            ...current.map((n) => n.uuid),
+            ...answeredRef.current,
+          ]);
+          return [
+            ...current,
+            ...rows
+              .filter((r) => !seen.has(r.uuid))
+              .map((r) => ({ ...r, answered: false })),
+          ];
+        });
+      })
+      .catch(() => {
+        // Initiative being unreachable should cost nothing visible. The
+        // person did not ask for this and must not be shown its plumbing.
+      });
+  }, []);
+  usePresentPoll(poll, POLL_MS, enabled);
 
   const dismiss = useCallback((uuid: string) => {
     answeredRef.current.add(uuid);

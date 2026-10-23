@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Drawer, Label, ago } from './Drawer';
+import { usePresentPoll } from '../athena/idle';
 import { brainApi, type DeviceModel, type EndpointStatus, type LlmStatus, type MonologueTurn } from '../api/companion';
 
 /**
@@ -18,20 +19,16 @@ const TIER_STYLE: Record<string, { label: string; dot: string; text: string }> =
 /** Polls the router status for the header pill. */
 export function useBrainStatus(intervalMs = 60_000) {
   const [status, setStatus] = useState<LlmStatus | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    const tick = () =>
-      brainApi
-        .status()
-        .then((s) => !cancelled && setStatus(s))
-        .catch(() => undefined);
-    void tick();
-    const id = window.setInterval(tick, intervalMs);
-    return () => {
-      cancelled = true;
-      window.clearInterval(id);
-    };
-  }, [intervalMs]);
+  const alive = useRef(true);
+  useEffect(() => () => { alive.current = false; }, []);
+  const tick = useCallback(() => {
+    brainApi
+      .status()
+      .then((s) => alive.current && setStatus(s))
+      .catch(() => undefined);
+  }, []);
+  // A header pill nobody is looking at needs no refreshing.
+  usePresentPoll(tick, intervalMs);
   return status;
 }
 

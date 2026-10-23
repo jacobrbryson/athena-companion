@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { dreamsApi, type DreamQuestion } from '../api/dashboard';
 import { DASHBOARD_REFRESH_EVENT } from './useChat';
+import { usePresentPoll } from './idle';
 
 /** Slow on purpose: a question waits for the person, nothing here is urgent. */
 const POLL_MS = 120_000;
@@ -21,11 +22,11 @@ export function useDreamQuestions(enabled: boolean) {
   }, [enabled]);
   useEffect(() => {
     if (!enabled) { setQuestions([]); return; }
-    refresh();
-    const timer = window.setInterval(refresh, POLL_MS);
     window.addEventListener(DASHBOARD_REFRESH_EVENT, refresh);
-    return () => { window.clearInterval(timer); window.removeEventListener(DASHBOARD_REFRESH_EVENT, refresh); };
+    return () => window.removeEventListener(DASHBOARD_REFRESH_EVENT, refresh);
   }, [enabled, refresh]);
+  // Paused while nobody is here; the questions wait on the server regardless.
+  usePresentPoll(refresh, POLL_MS, enabled);
   /** Close a question from the bell; removed locally first so it never lingers. */
   const dismiss = useCallback((uuid: string) => {
     setQuestions(prev => prev.filter(q => q.uuid !== uuid));
