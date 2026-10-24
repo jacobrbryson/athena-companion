@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { propertySecurityApi, type SecurityDevice, type SecurityEvent, type SecurityMedia, type SecurityStatus } from '../api/propertySecurity';
 import { Icon, useMediaUrl } from './securityShared';
 import { SecuritySightings } from './SecuritySightings';
+import { SecurityGuardian } from './SecurityGuardian';
 import './propertySecurity.css';
 
 const DAY = 24 * 60 * 60_000;
@@ -210,6 +211,8 @@ export function PropertySecurity({ enabled }: { enabled: boolean }) {
   return <div className="ps">
     <StatusStrip data={data} error={error} media={media} refreshing={refreshing} onRefresh={() => { setRefreshing(true); setRefresh(n => n + 1); }} />
     {error && <p className="ps-alert" role="alert">{error}</p>}
+    {/* Guardian reads its own state from the database, so it shows even while the bridge is down — that is when "couldn't verify" matters. */}
+    {!error.includes('not authorized') && <SecurityGuardian enabled={enabled} cameras={cameras} />}
     {(data?.status === 'not_connected' || data?.status === 'authorization_required') && <div className="ps-card ps-setup"><strong>Connection setup</strong><p>On the private household bridge host, the owner installs the Eufy bridge and completes Eufy sign-in there. If sign-in expired, run the bridge login command again on that host. No password or verification code belongs in Athena chat.</p></div>}
     {data?.status === 'ready' && <div className="ps-main">
       {cameras.length ? <ul className="ps-cams">{cameras.map(d => <CameraCard key={d.serial} device={d} latest={latestBySerial.get(d.serial) || null} onView={setViewing} onKept={onKept} />)}</ul> : <p className="ps-card ps-empty">No Eufy cameras were discovered for this account.</p>}
@@ -217,7 +220,7 @@ export function PropertySecurity({ enabled }: { enabled: boolean }) {
     </div>}
     {data?.status === 'ready' && <SecuritySightings enabled={enabled} cameras={cameras} media={media} />}
     {(data?.status === 'ready' || media.length > 0) && <KeptMedia media={media} error={mediaError} onOpen={m => setViewing({ kind: 'kept', media: m })} />}
-    <p className="ps-fine">Images and clips are captured only when someone asks, and each request may wake a battery camera. Every fresh image and recorded clip is kept in the household's private cloud bucket until deleted. Motion frames are sent to Athena to log who and what was seen; sightings are kept 30 days. She alerts only for alerts you set.</p>
+    <p className="ps-fine">Images and clips are captured only when someone asks — or by a Guardian check you switched on (the nightly sweep, and the umbrella when storms are near) — and each capture may wake a battery camera. A Guardian frame is kept only when it shows a problem. Every fresh image and recorded clip is kept in the household's private cloud bucket until deleted. Motion frames are sent to Athena to log who and what was seen; sightings are kept 30 days. She alerts only for alerts you set.</p>
     {viewing && <Viewer viewing={viewing} onClose={() => setViewing(null)} onChange={onChange} />}
   </div>;
 }

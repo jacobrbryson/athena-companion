@@ -12,11 +12,15 @@ import {
   type NeighborInput,
   type PlaceKind,
   type PlaceReminder,
+  type PlaceReminderPhone,
   type TimeReminder,
   type WatchPlace,
 } from '../api/dashboard';
 import { locationApi } from '../api/companion';
 import { downscale } from './photoStore';
+import { Drawer } from './Drawer';
+import { DrawerButton } from './ActionControls';
+import './propertyIssues.css';
 
 /**
  * The Community page's own panels: points of interest, neighbours and local
@@ -125,49 +129,45 @@ export function CommunityMap({ places, neighbors = [], onNeighbors, height = 320
   </>;
 }
 
-export function PointsOfInterest({ places, onPlaces, editRequest }: { places: WatchPlace[]; onPlaces: (places: WatchPlace[]) => void; editRequest?: { uuid: string; nonce: number } | null }) {
+/**
+ * Census answers in capitals ("120 ISLAND COVE LN, MOORESVILLE, NC, 28117");
+ * places saved before core_api tidied that (geocode.js tidyLabel) still say
+ * so. Shown as "120 Island Cove Ln, Mooresville, NC 28117". Anything with a
+ * lowercase letter was typed by a person and is left alone.
+ */
+const KEEP_CAPS = new Set(['N', 'S', 'E', 'W', 'NE', 'NW', 'SE', 'SW', 'PO', 'US', 'APT', 'STE']);
+export function tidyAddress(address: string | null | undefined): string {
+  const text = (address || '').trim();
+  if (!text || /[a-z]/.test(text)) return text;
+  const parts = text.split(',').map(p => p.trim()).filter(Boolean);
+  if (parts.length > 2 && /^\d{5}(-\d{4})?$/.test(parts[parts.length - 1]) && /^[A-Z]{2}$/.test(parts[parts.length - 2])) {
+    parts.splice(-2, 2, `${parts[parts.length - 2]} ${parts[parts.length - 1]}`);
+  }
+  return parts.map((part, i) => i === parts.length - 1 && /^[A-Z]{2}( \d{5}(-\d{4})?)?$/.test(part) ? part
+    : part.replace(/[A-Z][A-Z']*/g, w => (KEEP_CAPS.has(w) ? w : w[0] + w.slice(1).toLowerCase()))).join(', ');
+}
+
+const placeBody = (p: WatchPlace, photoBase64?: string | null) => ({
+  name: p.name, latitude: p.latitude, longitude: p.longitude, address: p.address,
+  radiusMiles: p.radiusMiles, enabled: p.enabled, kind: p.kind, notes: p.notes, photoBase64,
+});
+
+/**
+ * The full list of points of interest (/community/points-of-interest): radius
+ * and pause right on each row, everything else in the place drawer.
+ */
+export function PointsOfInterest({ places, onPlaces }: { places: WatchPlace[]; onPlaces: (places: WatchPlace[]) => void }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [adding, setAdding] = useState(false);
-  const [editing, setEditing] = useState<string | null>(null);
+  const [drawer, setDrawer] = useState<{ uuid: string | null } | null>(null);
 
-  useEffect(() => {
-    if (!editRequest) return;
-    setAdding(false);
-    setEditing(editRequest.uuid);
-  }, [editRequest]);
-  useEffect(() => {
-    if (editRequest?.uuid !== editing) return;
-    document.getElementById(`place-editor-${editing}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  }, [editing, editRequest]);
-
-  async function save(place: WatchPlace, patch: Partial<WatchPlace> & { photoBase64?: string | null }) {
+  async function save(place: WatchPlace, patch: Partial<WatchPlace>) {
     setError(null);
     setBusy(place.uuid);
     try {
-      const next = { ...place, ...patch };
-      const r = await dashboardApi.updateWatchPlace(place.uuid, {
-        name: next.name, latitude: next.latitude, longitude: next.longitude, address: next.address,
-        radiusMiles: next.radiusMiles, enabled: next.enabled, kind: next.kind, notes: next.notes, photoBase64: patch.photoBase64,
-      });
-      onPlaces(r.places);
-      return true;
+      onPlaces((await dashboardApi.updateWatchPlace(place.uuid, placeBody({ ...place, ...patch }))).places);
     } catch (err) {
       setError(errorText(err, 'Could not update that place.'));
-      return false;
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  async function remove(place: WatchPlace) {
-    if (!window.confirm(`Remove ${place.name}? I'll stop watching around it.`)) return;
-    setError(null);
-    setBusy(place.uuid);
-    try {
-      onPlaces((await dashboardApi.removeWatchPlace(place.uuid)).places);
-    } catch (err) {
-      setError(errorText(err, 'Could not remove that place.'));
     } finally {
       setBusy(null);
     }
@@ -181,7 +181,7 @@ export function PointsOfInterest({ places, onPlaces, editRequest }: { places: Wa
         {p.photoUrl ? <img className="community-place-photo" src={p.photoUrl} alt="" /> : <span className="community-icon" aria-hidden>{kindOf(p.kind).icon}</span>}
         <div className="community-body">
           <strong>{p.name}</strong>
-          <small>{[kindOf(p.kind).label, p.address || `${p.latitude.toFixed(4)}, ${p.longitude.toFixed(4)}`].join(' · ')}</small>
+          <small>{[kindOf(p.kind).label, tidyAddress(p.address) || `${p.latitude.toFixed(4)}, ${p.longitude.toFixed(4)}`].join(' · ')}</small>
           {p.notes && <p className="community-notes">{p.notes}</p>}
           <div className="community-controls">
             <label>within{' '}
@@ -190,118 +190,54 @@ export function PointsOfInterest({ places, onPlaces, editRequest }: { places: Wa
               </select>
             </label>
             <label><input type="checkbox" checked={p.enabled} disabled={busy === p.uuid} onChange={() => void save(p, { enabled: !p.enabled })} /> {p.enabled ? 'watching' : 'paused'}</label>
-            <button type="button" className="community-link" onClick={() => setEditing(editing === p.uuid ? null : p.uuid)}>{editing === p.uuid ? 'Close' : 'Edit'}</button>
-            <button type="button" className="community-link community-danger" disabled={busy === p.uuid} onClick={() => void remove(p)}>Remove</button>
+            <button type="button" className="community-link" onClick={() => setDrawer({ uuid: p.uuid })}>Edit</button>
           </div>
-          {editing === p.uuid && <PlaceDetailsForm place={p} busy={busy === p.uuid} onSave={async patch => { if (await save(p, patch)) setEditing(null); }} onCancel={() => setEditing(null)} />}
         </div>
       </li>)}
     </ul>
-    {adding
-      ? <AddPlace places={places} onCancel={() => setAdding(false)} onSaved={next => { onPlaces(next); setAdding(false); }} />
-      : <button type="button" className="dashboard-chat-cta" onClick={() => setAdding(true)}>Add a point of interest <span>＋</span></button>}
+    <button type="button" className="dashboard-chat-cta" onClick={() => setDrawer({ uuid: null })}>Add a point of interest <span>＋</span></button>
+    {drawer && <PlaceDrawer places={places} uuid={drawer.uuid} onPlaces={onPlaces} onClose={() => setDrawer(null)} />}
   </>;
 }
 
-/** Edit the saved place without changing its UUID, so linked events keep their place. */
-function PlaceDetailsForm({ place, busy, onSave, onCancel }: { place: WatchPlace; busy: boolean; onSave: (patch: Partial<WatchPlace> & { photoBase64?: string | null }) => void; onCancel: () => void }) {
-  const [name, setName] = useState(place.name);
-  const [kind, setKind] = useState<PlaceKind>(place.kind || 'other');
-  const [notes, setNotes] = useState(place.notes || '');
-  const [radiusMiles, setRadius] = useState(place.radiusMiles);
-  const [enabled, setEnabled] = useState(place.enabled);
-  const [address, setAddress] = useState(place.address || '');
-  const [picked, setPicked] = useState<AddressMatch | null>(null);
-  const [matches, setMatches] = useState<AddressMatch[]>([]);
-  const [finding, setFinding] = useState(false);
-  const [readingPhoto, setReadingPhoto] = useState(false);
-  const [photoBase64, setPhoto] = useState<string | null | undefined>(undefined);
-  const [error, setError] = useState<string | null>(null);
-  const addressChanged = address.trim() !== (place.address || '').trim();
-
-  async function find() {
-    setFinding(true); setError(null); setPicked(null);
-    try {
-      const result = await dashboardApi.lookupAddress(address);
-      setMatches(result.matches);
-      if (result.matches.length === 1) setPicked(result.matches[0]);
-      if (!result.matches.length) setError('I could not find that address. Check the street and town.');
-    } catch (err) { setError(errorText(err, 'Could not look up that address.')); }
-    finally { setFinding(false); }
-  }
-  async function pickPhoto(file?: File) {
-    if (!file) return;
-    setError(null); setReadingPhoto(true);
-    try {
-      if (!file.type.startsWith('image/')) throw new Error('Choose an image file.');
-      const { base64 } = await downscale(file, 320, 0.8);
-      if (base64.length > 180000) throw new Error('Choose a smaller picture.');
-      setPhoto(base64);
-    } catch (err) { setError(errorText(err, 'Could not read that picture.')); }
-    finally { setReadingPhoto(false); }
-  }
-  const photoUrl = photoBase64 === null ? null : photoBase64 ? `data:image/jpeg;base64,${photoBase64}` : place.photoUrl;
-  return <form id={`place-editor-${place.uuid}`} className="dashboard-form community-form community-place-editor" onSubmit={e => {
-    e.preventDefault();
-    if (addressChanged && !picked) { setError('Find and choose the new address before saving.'); return; }
-    onSave({ name: name.trim(), kind, notes: notes.trim() || null, radiusMiles, enabled,
-      address: picked ? picked.label : place.address, latitude: picked?.latitude ?? place.latitude, longitude: picked?.longitude ?? place.longitude, photoBase64 });
-  }}>
-    <Field label="Name"><input value={name} onChange={e => setName(e.target.value)} maxLength={60} required /></Field>
-    <Field label="What it is"><KindSelect value={kind} onChange={setKind} /></Field>
-    <div className="community-place-address"><Field label="Address"><input value={address} onChange={e => { setAddress(e.target.value); setPicked(null); setMatches([]); }} placeholder="Street address, town, state" /></Field>
-      <button type="button" className="source-fix" disabled={finding || address.trim().length < 5} onClick={() => void find()}>{finding ? 'Finding…' : 'Find address'}</button></div>
-    {matches.length > 1 && <div className="community-place-matches" role="group" aria-label="Matching addresses">{matches.map(m => <button type="button" key={`${m.latitude},${m.longitude}`} className={picked === m ? 'active' : ''} onClick={() => { setPicked(m); setAddress(m.label); }}>{m.label}</button>)}</div>}
-    {picked && <small className="community-hint">Location selected: {picked.label}</small>}
-    <Field label="Watch radius"><select value={radiusMiles} onChange={e => setRadius(Number(e.target.value))}>{[...new Set([...RADII, radiusMiles])].sort((a, b) => a - b).map(r => <option key={r} value={r}>{r} mi</option>)}</select></Field>
-    <label className="community-check"><input type="checkbox" checked={enabled} onChange={e => setEnabled(e.target.checked)} /> Watch this place</label>
-    <Field label="Notes for Athena"><textarea value={notes} onChange={e => setNotes(e.target.value)} maxLength={500} rows={2} placeholder="Wednesday night suppers; Pastor Jim" /></Field>
-    <div className="community-place-picture">{photoUrl ? <img src={photoUrl} alt="Preview of this place" /> : <span className="community-icon" aria-hidden>{kindOf(kind).icon}</span>}
-      <div><label>Picture<input type="file" accept="image/*" disabled={busy} onChange={e => void pickPhoto(e.target.files?.[0])} /></label>
-        {photoUrl && <button type="button" className="community-link" disabled={busy} onClick={() => setPhoto(null)}>Remove picture</button>}
-        <small className="community-hint">Saved privately with this place and shown on your devices.</small></div></div>
-    <Problem text={error} />
-    <div className="community-actions"><button className="dashboard-chat-cta" type="submit" disabled={busy || readingPhoto || !name.trim() || (addressChanged && !picked)}>{busy ? 'Saving…' : readingPhoto ? 'Preparing picture…' : 'Save changes'} <span>↗</span></button><button type="button" className="community-link" disabled={busy} onClick={onCancel}>Cancel</button></div>
-  </form>;
-}
-
-function KindSelect({ value, onChange }: { value: PlaceKind; onChange: (kind: PlaceKind) => void }) {
-  return <select value={value} onChange={e => onChange(e.target.value as PlaceKind)}>
-    {(Object.keys(PLACE_KINDS) as PlaceKind[]).map(k => <option key={k} value={k}>{PLACE_KINDS[k].icon} {PLACE_KINDS[k].label}</option>)}
-  </select>;
-}
-
 /**
- * A new point of interest: name and kind, then an address (looked up against
- * the US Census geocoder server-side) or "use my current location", a radius
- * shown as a ring on the map, and notes.
+ * Add or edit a point of interest in the side drawer — opened from the
+ * Community page's Watched Places card and from the full list. Editing keeps
+ * the place's UUID, so events and reminders linked to it keep their place.
+ * A new place needs a point first: an address (the US Census geocoder,
+ * server-side) or "use my current location".
  */
-function AddPlace({ places, onCancel, onSaved }: { places: WatchPlace[]; onCancel: () => void; onSaved: (places: WatchPlace[]) => void }) {
-  const [name, setName] = useState('');
-  const [kind, setKind] = useState<PlaceKind>(places.some(p => p.kind === 'home') ? 'church' : 'home');
-  const [address, setAddress] = useState('');
-  const [radius, setRadius] = useState(3);
-  const [notes, setNotes] = useState('');
+export function PlaceDrawer({ places, uuid, onPlaces, onClose }: { places: WatchPlace[]; uuid: string | null; onPlaces: (places: WatchPlace[]) => void; onClose: () => void }) {
+  const place = uuid ? places.find(p => p.uuid === uuid) || null : null;
+  const [name, setName] = useState(place?.name || '');
+  const [kind, setKind] = useState<PlaceKind>(place?.kind || (places.some(p => p.kind === 'home') ? 'church' : 'home'));
+  const [address, setAddress] = useState(tidyAddress(place?.address));
+  const [radiusMiles, setRadius] = useState(place?.radiusMiles ?? 3);
+  const [enabled, setEnabled] = useState(place?.enabled ?? true);
+  const [notes, setNotes] = useState(place?.notes || '');
   const [matches, setMatches] = useState<AddressMatch[] | null>(null);
   const [picked, setPicked] = useState<AddressMatch | null>(null);
-  const [busy, setBusy] = useState<string | null>(null);
+  // undefined: keep what is stored; null: remove it; a string: the new picture.
+  const [photoBase64, setPhoto] = useState<string | null | undefined>(undefined);
+  const [busy, setBusy] = useState<'find' | 'here' | 'photo' | 'save' | 'remove' | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // A changed address must be found again before it can be saved; a tidied one hasn't changed.
+  const addressChanged = address.trim().toLowerCase() !== tidyAddress(place?.address).toLowerCase();
+  const point = picked || (place && !addressChanged ? { label: place.address || '', latitude: place.latitude, longitude: place.longitude } : null);
+  const photoUrl = photoBase64 === null ? null : photoBase64 ? `data:image/jpeg;base64,${photoBase64}` : place?.photoUrl || null;
+  const working = busy === 'save' || busy === 'remove';
 
   async function find(e?: FormEvent) {
     e?.preventDefault();
-    setError(null);
-    setPicked(null);
-    setBusy('find');
+    setError(null); setPicked(null); setBusy('find');
     try {
       const r = await dashboardApi.lookupAddress(address);
       setMatches(r.matches);
       if (r.matches.length === 1) setPicked(r.matches[0]);
       if (!r.matches.length) setError("I couldn't find that address. Check the street and town, or use your current location.");
-    } catch (err) {
-      setError(errorText(err, 'Could not look that address up.'));
-    } finally {
-      setBusy(null);
-    }
+    } catch (err) { setError(errorText(err, 'Could not look that address up.')); }
+    finally { setBusy(null); }
   }
 
   function here() {
@@ -311,76 +247,113 @@ function AddPlace({ places, onCancel, onSaved }: { places: WatchPlace[]; onCance
     navigator.geolocation.getCurrentPosition(
       pos => {
         const match = { label: 'Current location', latitude: Math.round(pos.coords.latitude * 1e6) / 1e6, longitude: Math.round(pos.coords.longitude * 1e6) / 1e6 };
-        setMatches([match]);
-        setPicked(match);
-        setBusy(null);
+        setMatches([match]); setPicked(match); setAddress(''); setBusy(null);
       },
-      err => {
-        setError(err.code === err.PERMISSION_DENIED ? 'Location permission was refused.' : 'Could not get your location.');
-        setBusy(null);
-      },
+      err => { setError(err.code === err.PERMISSION_DENIED ? 'Location permission was refused.' : 'Could not get your location.'); setBusy(null); },
       { enableHighAccuracy: true, timeout: 15000 },
     );
   }
 
-  async function add() {
-    if (!picked) return;
-    const cleanName = name.trim();
-    if (!cleanName) { setError('Give the place a name, like Grace Church or Mom’s house.'); return; }
-    if (places.some(p => p.name.toLowerCase() === cleanName.toLowerCase())) {
-      setError(`You already have a place called ${cleanName}. Pick another name, or remove that one first.`);
-      return;
-    }
-    setError(null);
-    setBusy('add');
+  async function pickPhoto(file?: File) {
+    if (!file) return;
+    setError(null); setBusy('photo');
     try {
-      const r = await dashboardApi.saveWatchPlace({
-        name: cleanName, kind, latitude: picked.latitude, longitude: picked.longitude, radiusMiles: radius,
-        address: picked.label === 'Current location' ? null : picked.label, notes: notes.trim() || null,
-      });
-      onSaved(r.places);
-    } catch (err) {
-      setError(errorText(err, 'Could not save that place.'));
-    } finally {
-      setBusy(null);
-    }
+      if (!file.type.startsWith('image/')) throw new Error('Choose an image file.');
+      const { base64 } = await downscale(file, 320, 0.8);
+      if (base64.length > 180000) throw new Error('Choose a smaller picture.');
+      setPhoto(base64);
+    } catch (err) { setError(errorText(err, 'Could not read that picture.')); }
+    finally { setBusy(null); }
   }
 
-  return <div className="community-add">
-    <div className="dashboard-form community-form">
-      <Field label="Name"><input value={name} onChange={e => setName(e.target.value)} maxLength={60} placeholder="Grace Church, Mom’s house, Downtown" /></Field>
-      <Field label="What it is"><KindSelect value={kind} onChange={setKind} /></Field>
+  async function save() {
+    const cleanName = name.trim();
+    if (!cleanName) { setError('Give the place a name, like Grace Church or Mom’s house.'); return; }
+    if (places.some(p => p.uuid !== uuid && p.name.toLowerCase() === cleanName.toLowerCase())) {
+      setError(`You already have a place called ${cleanName}. Pick another name.`); return;
+    }
+    if (!point) { setError(place ? 'Find and choose the new address before saving.' : 'Find the address, or use your current location.'); return; }
+    const saved: WatchPlace = {
+      uuid: uuid || '', name: cleanName, kind, notes: notes.trim() || null, radiusMiles, enabled,
+      address: picked ? (picked.label === 'Current location' ? null : tidyAddress(picked.label)) : tidyAddress(place?.address) || null,
+      latitude: point.latitude, longitude: point.longitude,
+    };
+    setError(null); setBusy('save');
+    try {
+      let next: WatchPlace[];
+      if (place) next = (await dashboardApi.updateWatchPlace(place.uuid, placeBody(saved, photoBase64))).places;
+      else {
+        next = (await dashboardApi.saveWatchPlace(placeBody(saved))).places;
+        // A new place's picture goes on once it has a UUID to keep it under.
+        const added = photoBase64 ? next.find(p => p.name.toLowerCase() === cleanName.toLowerCase()) : null;
+        if (added) next = (await dashboardApi.updateWatchPlace(added.uuid, placeBody(added, photoBase64))).places;
+      }
+      onPlaces(next);
+      onClose();
+    } catch (err) { setError(errorText(err, 'Could not save that place.')); }
+    finally { setBusy(null); }
+  }
+
+  async function remove() {
+    if (!place || !window.confirm(`Remove ${place.name}? I'll stop watching around it.`)) return;
+    setError(null); setBusy('remove');
+    try {
+      onPlaces((await dashboardApi.removeWatchPlace(place.uuid)).places);
+      onClose();
+    } catch (err) { setError(errorText(err, 'Could not remove that place.')); }
+    finally { setBusy(null); }
+  }
+
+  return <Drawer eyebrow="POINTS OF INTEREST" title={place ? `Edit ${place.name}` : 'Add a place to watch'} onClose={() => { if (!working) onClose(); }}
+    footer={<div className="pi-footer">
+      {error && <p role="alert">{error}</p>}
+      {place && <DrawerButton className="cmp-remove" onClick={() => void remove()} disabled={!!busy}>{busy === 'remove' ? 'Removing…' : 'Remove'}</DrawerButton>}
+      <DrawerButton onClick={onClose} disabled={working}>Cancel</DrawerButton>
+      <DrawerButton primary onClick={() => void save()} disabled={!!busy || !name.trim() || !point}>{busy === 'save' ? 'Saving…' : place ? 'Save changes' : 'Watch this place'}</DrawerButton>
+    </div>}>
+    <div className="pi-form cmp-place-form">
+      <fieldset disabled={working}>
+        <legend>The place</legend>
+        <label className="pi-label">Name<input value={name} onChange={e => setName(e.target.value)} maxLength={60} placeholder="Grace Church, Mom’s house, Downtown" /></label>
+        <label className="pi-label">What it is<KindSelect value={kind} onChange={setKind} /></label>
+      </fieldset>
+      <fieldset disabled={working}>
+        <legend>Where it is</legend>
+        <form className="cmp-place-find" onSubmit={e => void find(e)}>
+          <label className="pi-label">Address<input value={address} onChange={e => { setAddress(e.target.value); setMatches(null); setPicked(null); }} placeholder="Street address, town, state" /></label>
+          <DrawerButton type="submit" disabled={busy === 'find' || address.trim().length < 5}>{busy === 'find' ? 'Finding…' : 'Find'}</DrawerButton>
+        </form>
+        <button type="button" className="community-link cmp-place-here" onClick={here} disabled={busy === 'here'}>{busy === 'here' ? 'Getting your location…' : 'or use my current location'}</button>
+        {matches && matches.length > 1 && <div className="community-matches" role="group" aria-label="Matching addresses">{matches.map(m =>
+          <button type="button" key={`${m.latitude},${m.longitude}`} className={picked === m ? 'active' : ''} onClick={() => { setPicked(m); setAddress(tidyAddress(m.label)); }}>{tidyAddress(m.label)}</button>)}</div>}
+        {picked && <p className="pi-muted">Location selected: {tidyAddress(picked.label)}</p>}
+        {place && addressChanged && !picked && <p className="pi-muted">Find the new address to move this place.</p>}
+        {point && <MiniMap places={[{ name: name.trim() || 'New place', latitude: point.latitude, longitude: point.longitude, radiusMiles, icon: kindOf(kind).icon }]} height={180} />}
+      </fieldset>
+      <fieldset disabled={working}>
+        <legend>Watching</legend>
+        <label className="pi-label">Tell me about anything within<select value={radiusMiles} onChange={e => setRadius(Number(e.target.value))}>{[...new Set([...RADII, radiusMiles])].sort((a, b) => a - b).map(r => <option key={r} value={r}>{r} mi</option>)}</select></label>
+        <label className="cmp-place-check"><input type="checkbox" checked={enabled} onChange={e => setEnabled(e.target.checked)} /> Watch this place day and night</label>
+        <label className="pi-label"><span>Notes for Athena <small>(optional)</small></span><textarea value={notes} onChange={e => setNotes(e.target.value)} maxLength={500} rows={3} placeholder="Who you know there, when you go, anything worth remembering" /></label>
+      </fieldset>
+      <fieldset disabled={working}>
+        <legend>Picture <small>(optional)</small></legend>
+        <div className="pi-photos">
+          {photoUrl ? <figure><img src={photoUrl} alt="This place" /><button type="button" aria-label="Remove picture" onClick={() => setPhoto(null)}>✕</button></figure>
+            : <label className="pi-add-photo"><input type="file" accept="image/*" onChange={e => { const file = e.target.files?.[0]; e.target.value = ''; void pickPhoto(file); }} /><span aria-hidden="true">＋</span>{busy === 'photo' ? 'Reading…' : 'Add picture'}</label>}
+        </div>
+        <p className="pi-muted">Saved privately with this place and shown on your devices.</p>
+      </fieldset>
     </div>
-    <form onSubmit={find} className="dashboard-form community-form community-inline">
-      <Field label="Address">
-        <input value={address} onChange={e => { setAddress(e.target.value); setMatches(null); setPicked(null); }} placeholder="Street address, town, state" />
-      </Field>
-      <button type="submit" className="source-fix" disabled={busy === 'find' || address.trim().length < 5}>{busy === 'find' ? 'Finding…' : 'Find'}</button>
-    </form>
-    <button type="button" className="community-link" onClick={here} disabled={busy === 'here'}>{busy === 'here' ? 'Getting your location…' : 'or use my current location'}</button>
-
-    {matches && matches.length > 1 && <ul className="community-matches">{matches.map(m => <li key={`${m.latitude},${m.longitude}`}>
-      <button type="button" className={picked === m ? 'active' : ''} onClick={() => setPicked(m)}>{m.label}</button>
-    </li>)}</ul>}
-
-    {picked && <div className="community-picked">
-      <p className="source-note">{picked.label}</p>
-      <MiniMap places={[{ name: name.trim() || 'New place', latitude: picked.latitude, longitude: picked.longitude, radiusMiles: radius, icon: kindOf(kind).icon }]} height={180} />
-      <div className="dashboard-form community-form">
-        <Field label="Tell me about anything within">
-          <select value={radius} onChange={e => setRadius(Number(e.target.value))}>{RADII.map(r => <option key={r} value={r}>{r} mi</option>)}</select>
-        </Field>
-        <Field label="Notes for Athena (optional)"><textarea value={notes} onChange={e => setNotes(e.target.value)} maxLength={500} rows={2} placeholder="Who you know there, when you go, anything worth remembering" /></Field>
-      </div>
-    </div>}
-
-    <Problem text={error} />
-    <div className="community-actions">
-      {picked && <button type="button" className="dashboard-chat-cta" onClick={() => void add()} disabled={busy === 'add'}>{busy === 'add' ? 'Saving…' : 'Watch this place'} <span>↗</span></button>}
-      <button type="button" className="community-link" onClick={onCancel}>Cancel</button>
-    </div>
-  </div>;
+  </Drawer>;
 }
+
+function KindSelect({ value, onChange }: { value: PlaceKind; onChange: (kind: PlaceKind) => void }) {
+  return <select value={value} onChange={e => onChange(e.target.value as PlaceKind)}>
+    {(Object.keys(PLACE_KINDS) as PlaceKind[]).map(k => <option key={k} value={k}>{PLACE_KINDS[k].icon} {PLACE_KINDS[k].label}</option>)}
+  </select>;
+}
+
 
 // --- Neighbours ------------------------------------------------------------
 // A neighbour is a household: kept by its address, with any number of the
@@ -795,16 +768,28 @@ function whenText(t: TimeReminder): string {
     return new Date(t.fireAt).toLocaleString();
   }
 }
+/**
+ * The phone can't hold its place fences, so reminders can't fire — said here
+ * and on the Community overview (2026-10-24: a lost "Allow all the time" went
+ * unnoticed for sixteen days). The words come from the server, which also
+ * gives them to Athena.
+ */
+export function PhoneFenceNotice({ phone, className = 'dashboard-notice' }: { phone: PlaceReminderPhone | null; className?: string }) {
+  if (!phone?.problem || !phone.message) return null;
+  return <p className={className} role="alert">{phone.message}</p>;
+}
+
 export function PlaceReminders({ onAsk }: { onAsk?: (text: string) => void }) {
   const [reminders, setReminders] = useState<PlaceReminder[] | null>(null);
   const [times, setTimes] = useState<TimeReminder[]>([]);
   const [sharing, setSharing] = useState<boolean | null>(null);
+  const [phone, setPhone] = useState<PlaceReminderPhone | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let live = true;
-    dashboardApi.placeReminders().then(r => { if (!live) return; setReminders(r.reminders); setTimes(r.timeReminders || []); }).catch(err => live && setError(errorText(err, 'Your place reminders couldn’t load.')));
+    dashboardApi.placeReminders().then(r => { if (!live) return; setReminders(r.reminders); setTimes(r.timeReminders || []); setPhone(r.phone || null); }).catch(err => live && setError(errorText(err, 'Your place reminders couldn’t load.')));
     // Unknown is not "off": only a definite "off" earns the warning.
     locationApi.status().then(r => live && setSharing(r.pref.enabled)).catch(() => undefined);
     return () => { live = false; };
@@ -832,6 +817,7 @@ export function PlaceReminders({ onAsk }: { onAsk?: (text: string) => void }) {
   return <>
     <Problem text={error} />
     {sharing === false && armed.length > 0 && <p className="dashboard-notice" role="status">Location sharing is off, so these can’t go off yet. Turn it on in the ⋯ menu → Initiative → location context, and allow Athena location “all the time” on your phone.</p>}
+    {sharing !== false && <PhoneFenceNotice phone={phone} />}
     {!armed.length && !upcoming.length && <p className="dashboard-empty">Tell me “next time I’m at Missy’s, remind me to…”, “when I get home from the gym…” or “at 7, remind me…” and I’ll send it to your phone.</p>}
     {upcoming.length > 0 && <ul className="community-list">
       {upcoming.map(t => <li key={t.uuid}>

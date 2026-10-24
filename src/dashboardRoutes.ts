@@ -2,7 +2,7 @@ import type { DashboardSection } from './components/Dashboard';
 
 const SECTION_PATHS: Record<DashboardSection, string> = {
   Dashboard: '/', Today: '/today', Health: '/health', Workouts: '/health/workouts',
-  Family: '/family', FamilyFinance: '/family/finance', FamilyTrading: '/family/trading', Community: '/community', Property: '/properties', Work: '/work',
+  Family: '/family', FamilyFinance: '/family/finance', FamilyTrading: '/family/trading', Community: '/community', CommunityPlaces: '/community/points-of-interest', Property: '/properties', Work: '/work',
   System: '/system', Calendar: '/system/calendar', Mail: '/system/mail',
   Projects: '/system/projects', News: '/system/news', Dreams: '/system/dreams',
   Finance: '/system/finance',

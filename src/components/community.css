@@ -30,17 +30,19 @@
 .cmp-rows small.cmp-clamp { display: -webkit-box; white-space: normal; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .cmp-rows .memory-avatar { flex-shrink: 0; width: 46px; height: 46px; font-size: 18px; }
 .cmp-place-photo, .community-place-photo { flex-shrink: 0; width: 46px; height: 46px; object-fit: cover; border-radius: 10px; }
-.community-place-editor { scroll-margin-top: 24px; }
-.community-place-address { display: flex; align-items: end; gap: 8px; }
-.community-place-address .community-field { flex: 1; min-width: 0; }
-.community-place-matches { display: grid; gap: 4px; }
-.community-place-matches button { padding: 8px; border: 1px solid #2a4a6a; border-radius: 7px; background: #0a1a2e; color: inherit; text-align: left; }
-.community-place-matches button.active { border-color: #4fb5ff; }
-.community-place-picture { display: flex; align-items: center; gap: 14px; }
-.community-place-picture>img, .community-place-picture>.community-icon { width: 72px; height: 72px; object-fit: cover; border-radius: 10px; }
-.community-place-picture>div { display: grid; gap: 5px; }
-.community-place-picture input { display: block; max-width: 100%; }
+/* The place drawer (Community.tsx PlaceDrawer), on the Property drawers' .pi-form. */
+.cmp-place-form select { width: 100%; padding: 11px 12px; border: 1px solid #23485a; border-radius: 8px; background: #06141d; color: #eaf6fc; font-size: 13px; }
+.cmp-place-find { display: flex; align-items: flex-end; gap: 8px; }
+.cmp-place-find .pi-label { flex: 1; min-width: 0; }
+.cmp-place-find .app-drawer-button { min-height: 43px; }
+.cmp-place-here { justify-self: start; align-self: flex-start; }
+.cmp-place-form .community-matches { max-width: none; margin-top: 0; }
+.cmp-place-check { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #cfe4ee; }
+.pi-form .cmp-place-check input { width: auto; flex: none; }
+.cmp-remove { margin-right: auto; border-color: #7f1d1d; background: #2a0d12; color: #fca5a5; }
+.cmp-remove:hover { border-color: #ef4444; background: #3b1016; }
 .cmp-paused { opacity: .6; }
+.cmp-phone-alert { margin: 0 0 12px; padding: 10px 12px; border: 1px solid #f6b23a; border-radius: 10px; background: #2a1f0a; color: #fde7b0; font-size: 13px; line-height: 1.45; }
 .cmp-serious>button { border-color: #6b2330; }
 .cmp-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 8px; }
 .cmp-meta em { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-style: normal; }
@@ -50,9 +52,11 @@
 .cmp-meta i { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
 .cmp-tag { align-self: flex-end; padding: 3px 10px; border: 1px solid #1d6a55; border-radius: 7px; background: #0f3a33; color: #33e0a1; font-size: 12px; font-style: normal; }
 .cmp-more { margin-top: 10px; }
-.cmp-places .fp-wide, .cmp-people .fp-wide { gap: 8px; }
+.cmp-places .fp-wide { gap: 8px; }
 
 /* --- Bottom row ------------------------------------------------------------------ */
+/* Two across: the weather moved up beside the map (2026-10-24). */
+.cmp .cp-bottom { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .cp-bottom .fp-empty-hero { padding: 26px 14px; }
 .cp-bottom .fp-empty-hero strong { font-size: 18px; }
 .cmp-weather>header>span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -91,6 +95,7 @@
   .cmp-updates>ul { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 760px) {
+  .cmp .cp-bottom { grid-template-columns: minmax(0, 1fr); }
   .cmp-hours { gap: 4px; }
   .cmp-hours li { padding: 8px 0; }
   .cmp-sky.hp-icon { width: 56px; height: 56px; }

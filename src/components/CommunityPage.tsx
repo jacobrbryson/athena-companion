@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { dashboardApi, type CommunityOverview, type CommunityWeather, type ForecastHour, type NearbyIncident, type WatchPlace, type WeatherAlert } from '../api/dashboard';
+import { dashboardApi, type CommunityOverview, type CommunityWeather, type ForecastHour, type NearbyIncident, type PlaceReminderPhone, type WatchPlace, type WeatherAlert } from '../api/dashboard';
 import type { CommunityEvent as CalendarMention } from './communityCalendar';
-import { CommunityMap, ContactAvatar, householdLabel, isPastEvent } from './Community';
+import { CommunityMap, PhoneFenceNotice, PlaceDrawer, isPastEvent, tidyAddress } from './Community';
 import { Icon } from './HealthPage';
 import { PageHeader } from './PageHeader';
 import './health.css';
@@ -14,7 +14,10 @@ import './community.css';
  * Norman behind the head, four numbers, the map beside the watched places and
  * the neighbors, then alerts, the weather at home and what's coming up, and
  * the latest local news. The editable lists stay below it (Dashboard.tsx);
- * every "Manage" and "Add" here scrolls to the one that does it.
+ * "View all" scrolls to the one that does it. Watched places are the
+ * exception (owner, 2026-10-24): a place opens in the side drawer to edit or
+ * add, and "Manage" goes to the full list at /community/points-of-interest.
+ * The weather sits beside the map, where nearby people used to.
  *
  * Everything shown is read from something real — the person's own lists,
  * the incident watcher, NWS and their news pages. Athena's line at the top is
@@ -35,7 +38,10 @@ interface Props {
   onNeighbors: (next: CommunityOverview['neighbors']) => void;
   /** Scroll to one of the detail panels below by its id. */
   onSection: (id: string) => void;
-  onEditPlace: (uuid: string) => void;
+  /** The places changed in the drawer: the saved list, as the server returned it. */
+  onPlaces: (next: WatchPlace[]) => void;
+  /** Open the full points-of-interest page. */
+  onManagePlaces: () => void;
   onAddNews: () => void;
 }
 
@@ -48,17 +54,16 @@ const badgeOf = (kind: WatchPlace['kind']) => KIND_BADGE[kind] || { icon: 'pin',
 
 /** "148 Rushing Water Lane, Troutman, NC 28166" → ["148 Rushing Water Lane", "Troutman, NC 28166"]. */
 function addressLines(address: string | null) {
-  const parts = (address || '').split(',').map(p => p.trim()).filter(Boolean);
+  const parts = tidyAddress(address).split(',').map(p => p.trim()).filter(Boolean);
   return parts.length > 1 ? [parts[0], parts.slice(1).join(', ')] : parts;
 }
 /** "Troutman, NC" from a full address, when it has a town and a state. */
 function townOf(address: string | null) {
   // The ZIP may ride with the state ("NC 28166") or stand alone ("NC, 28166"); either way it goes.
-  const parts = (address || '').split(',').map(p => p.trim().replace(/\s*\d{5}(-\d{4})?$/, '')).filter(Boolean);
+  // Census lookups come back in capitals; tidyAddress makes "TROUTMAN" read as "Troutman".
+  const parts = tidyAddress(address).split(',').map(p => p.trim().replace(/\s*\d{5}(-\d{4})?$/, '')).filter(Boolean);
   if (parts.length < 3) return null;
-  // Census lookups come back in capitals: "TROUTMAN" reads as "Troutman".
-  const town = parts[parts.length - 2].replace(/\b([A-Z])([A-Z]+)\b/g, (_, a: string, b: string) => a + b.toLowerCase());
-  return `${town}, ${parts[parts.length - 1]}`;
+  return `${parts[parts.length - 2]}, ${parts[parts.length - 1]}`;
 }
 function ago(value?: string | null) {
   const at = Date.parse(value || '');
@@ -101,12 +106,22 @@ function useHomeWeather(places: WatchPlace[] | undefined) {
   return { read, failed };
 }
 
-export function CommunityOverview({ community, waiting, calls, weatherAlerts, nearbyReady, calendar, onAsk, onNeighbors, onSection, onEditPlace, onAddNews }: Props) {
+export function CommunityOverview({ community, waiting, calls, weatherAlerts, nearbyReady, calendar, onAsk, onNeighbors, onSection, onPlaces, onManagePlaces, onAddNews }: Props) {
   const places = community?.places;
   const enabled = (places || []).filter(p => p.enabled);
   const home = enabled.find(p => p.kind === 'home') || enabled[0] || null;
   const neighbors = community?.neighbors || [];
   const { read: sky, failed: skyFailed } = useHomeWeather(places);
+  // The place drawer: a uuid to edit, null to add one.
+  const [placeDrawer, setPlaceDrawer] = useState<{ uuid: string | null } | null>(null);
+  const addPlace = () => setPlaceDrawer({ uuid: null });
+  // Whether place reminders can fire on the phone; a warning on Watched Places when they can't.
+  const [phone, setPhone] = useState<PlaceReminderPhone | null>(null);
+  useEffect(() => {
+    let alive = true;
+    dashboardApi.placeReminders().then(r => { if (alive) setPhone(r.phone || null); }).catch(() => undefined);
+    return () => { alive = false; };
+  }, []);
   const [satellite, setSatellite] = useState(() => { try { return window.localStorage.getItem(SATELLITE_KEY) !== 'map'; } catch { return true; } });
   const pickView = (on: boolean) => { setSatellite(on); try { window.localStorage.setItem(SATELLITE_KEY, on ? 'satellite' : 'map'); } catch { /* per-browser nicety only */ } };
   const tall = typeof window !== 'undefined' && !!window.matchMedia?.('(min-width: 900px)').matches;
@@ -145,7 +160,7 @@ export function CommunityOverview({ community, waiting, calls, weatherAlerts, ne
       </button>} />
 
     <section className="cp-stats" aria-label="Your community at a glance">
-      <button type="button" className="hp-tile cp-stat" onClick={() => onSection('community-places')}>
+      <button type="button" className="hp-tile cp-stat" onClick={onManagePlaces}>
         <span className="hp-badge hp-badge-lg hp-green"><Icon name="pin" /></span>
         <div><span>Watched places</span><strong>{community ? enabled.length : '—'}</strong><small>{community && (places?.length || 0) > enabled.length ? `${(places?.length || 0) - enabled.length} paused` : 'Monitored 24/7'}</small></div>
         <Icon name="chevron" className="hp-chev" />
@@ -178,7 +193,7 @@ export function CommunityOverview({ community, waiting, calls, weatherAlerts, ne
         </header>
         {waiting || (enabled.length || neighbors.some(n => n.latitude != null)
           ? <CommunityMap places={places || []} neighbors={neighbors} onNeighbors={onNeighbors} height={tall ? 470 : 320} satellite={satellite} />
-          : <div className="fp-empty-hero"><Icon name="map" className="fp-empty-icon" /><strong>Nothing on the map yet</strong><p>Add home, and the places you care about appear here with the ring I watch around each.</p><button type="button" className="cp-outline" onClick={() => onSection('community-places')}>Add a place to watch <Icon name="arrowRight" /></button></div>)}
+          : <div className="fp-empty-hero"><Icon name="map" className="fp-empty-icon" /><strong>Nothing on the map yet</strong><p>Add home, and the places you care about appear here with the ring I watch around each.</p><button type="button" className="cp-outline" onClick={addPlace}>Add a place to watch <Icon name="arrowRight" /></button></div>)}
         {enabled.length > 0 && <ul className="cmp-legend">
           {enabled.map(p => <li key={p.uuid}><i className={badgeOf(p.kind).tone} />{p.name} ({p.radiusMiles} mi)</li>)}
           {neighbors.length > 0 && <li><i className="cmp-neighbor-dot" />Known neighbor</li>}
@@ -187,14 +202,15 @@ export function CommunityOverview({ community, waiting, calls, weatherAlerts, ne
 
       <div className="hp-stack">
         <section className="hp-panel cmp-places">
-          <header><h2>Watched Places</h2><button type="button" className="hp-link" onClick={() => onSection('community-places')}>Manage <Icon name="arrowRight" /></button></header>
+          <header><h2>Watched Places</h2><button type="button" className="hp-link" onClick={onManagePlaces}>Manage <Icon name="arrowRight" /></button></header>
+          <PhoneFenceNotice phone={phone} className="cmp-phone-alert" />
           {waiting || <>
             {!places?.length ? <p className="hp-empty">Nothing watched yet — start with home, then your church, the kids’ school, the town square.</p>
               : <ul className="cmp-rows">{places.slice(0, 3).map(p => {
                 const b = badgeOf(p.kind);
                 const [line1, line2] = addressLines(p.address);
                 return <li key={p.uuid} className={p.enabled ? undefined : 'cmp-paused'}>
-                  <button type="button" onClick={() => onEditPlace(p.uuid)} aria-label={`Edit ${p.name}`}>
+                  <button type="button" onClick={() => setPlaceDrawer({ uuid: p.uuid })} aria-label={`Edit ${p.name}`}>
                     {p.photoUrl ? <img className="cmp-place-photo" src={p.photoUrl} alt="" /> : <span className={`hp-badge hp-badge-lg ${b.tone}`}><Icon name={b.icon} /></span>}
                     <div>
                       <strong>{p.name}</strong>
@@ -205,26 +221,26 @@ export function CommunityOverview({ community, waiting, calls, weatherAlerts, ne
                   </button>
                 </li>;
               })}</ul>}
-            {(places?.length || 0) > 3 && <button type="button" className="hp-link cmp-more" onClick={() => onSection('community-places')}>{(places?.length || 0) - 3} more <Icon name="arrowRight" /></button>}
-            <button type="button" className="cp-outline fp-wide" onClick={() => onSection('community-places')}><Icon name="plus" /> Add a place to watch</button>
+            {(places?.length || 0) > 3 && <button type="button" className="hp-link cmp-more" onClick={onManagePlaces}>{(places?.length || 0) - 3} more <Icon name="arrowRight" /></button>}
+            <button type="button" className="cp-outline fp-wide" onClick={addPlace}><Icon name="plus" /> Add a place to watch</button>
           </>}
         </section>
 
-        <section className="hp-panel cmp-people">
-          <header><h2>Nearby People</h2><button type="button" className="hp-link" onClick={() => onSection('community-neighbors')}>View all <Icon name="arrowRight" /></button></header>
-          {waiting || <>
-            {!neighbors.length ? <p className="hp-empty">Who lives around you? Add a house by its address and link the people there from your Google contacts.</p>
-              : <ul className="cmp-rows">{neighbors.slice(0, 3).map(n => {
-                const label = householdLabel(n);
-                const photo = n.contacts.find(c => c.card?.photoUrl)?.card?.photoUrl;
-                return <li key={n.uuid}><button type="button" onClick={() => onAsk(`Tell me about ${label}.`)}>
-                  <ContactAvatar name={label} photoUrl={photo} />
-                  <div><strong>{label}</strong><small className="cmp-clamp">{n.notes || n.where || (n.address || '').split(',')[0] || ' '}</small></div>
-                  <em className="cmp-tag">Neighbor</em>
-                </button></li>;
-              })}</ul>}
-            <button type="button" className="cp-outline fp-wide" onClick={() => onSection('community-neighbors')}><Icon name="plus" /> Add a neighbor</button>
-          </>}
+        <section className="hp-panel cmp-weather">
+          <header><h2>Local Weather</h2><button type="button" className="hp-link" onClick={() => onSection('community-weather')}>Forecast &amp; alerts <Icon name="arrowRight" /></button></header>
+          {!sky ? <p className="hp-empty">{skyFailed ? 'Weather is unavailable right now.' : places === undefined ? 'Loading…' : 'Checking the forecast…'}</p>
+            : !sky.weather ? <p className="hp-empty">{sky.status === 'no_place' ? 'Add home as a watched place and I’ll show the weather there.' : 'The National Weather Service didn’t answer just now.'}</p>
+              : <>
+                <button type="button" className="cmp-now" onClick={() => onAsk('What’s the weather looking like at home today?')}>
+                  <Icon name={skyIcon(sky.weather.now)} className={`cmp-sky cmp-sky-${skyIcon(sky.weather.now)}`} />
+                  <div><strong>{degrees(sky.weather.now.temperatureF)}</strong><span>{sky.weather.now.shortForecast || ''}</span>{temps.length > 0 && <small>H {degrees(Math.max(...temps))}  L {degrees(Math.min(...temps))}</small>}</div>
+                </button>
+                <ul className="cmp-hours">{strip.map((h, i) => {
+                  const icon = skyIcon(h);
+                  return <li key={h.start}><small>{i === 0 ? 'Now' : new Date(h.start).toLocaleTimeString(undefined, { hour: 'numeric' })}</small><Icon name={icon} className={`cmp-sky-${icon}`} /><span>{degrees(h.temperatureF)}</span></li>;
+                })}</ul>
+                <p className="hp-footnote">National Weather Service · {ago(sky.weather.checkedAt) || 'just now'}</p>
+              </>}
         </section>
       </div>
     </div>
@@ -244,23 +260,6 @@ export function CommunityOverview({ community, waiting, calls, weatherAlerts, ne
                 <div><strong>{c.what}</strong><small>{[c.where, `${c.miles} mi from ${c.place}`, ago(c.receivedAt)].filter(Boolean).join(' · ')}</small></div>
               </button></li>)}
             </ul>}
-      </section>
-
-      <section className="hp-panel cmp-weather">
-        <header><h2>Local Weather</h2><button type="button" className="hp-link" onClick={() => onSection('community-weather')}>Forecast &amp; alerts <Icon name="arrowRight" /></button></header>
-        {!sky ? <p className="hp-empty">{skyFailed ? 'Weather is unavailable right now.' : places === undefined ? 'Loading…' : 'Checking the forecast…'}</p>
-          : !sky.weather ? <p className="hp-empty">{sky.status === 'no_place' ? 'Add home as a watched place and I’ll show the weather there.' : 'The National Weather Service didn’t answer just now.'}</p>
-            : <>
-              <button type="button" className="cmp-now" onClick={() => onAsk('What’s the weather looking like at home today?')}>
-                <Icon name={skyIcon(sky.weather.now)} className={`cmp-sky cmp-sky-${skyIcon(sky.weather.now)}`} />
-                <div><strong>{degrees(sky.weather.now.temperatureF)}</strong><span>{sky.weather.now.shortForecast || ''}</span>{temps.length > 0 && <small>H {degrees(Math.max(...temps))}  L {degrees(Math.min(...temps))}</small>}</div>
-              </button>
-              <ul className="cmp-hours">{strip.map((h, i) => {
-                const icon = skyIcon(h);
-                return <li key={h.start}><small>{i === 0 ? 'Now' : new Date(h.start).toLocaleTimeString(undefined, { hour: 'numeric' })}</small><Icon name={icon} className={`cmp-sky-${icon}`} /><span>{degrees(h.temperatureF)}</span></li>;
-              })}</ul>
-              <p className="hp-footnote">National Weather Service · {ago(sky.weather.checkedAt) || 'just now'}</p>
-            </>}
       </section>
 
       <section className="hp-panel cmp-coming">
@@ -291,5 +290,6 @@ export function CommunityOverview({ community, waiting, calls, weatherAlerts, ne
             return <li key={`${n.url}-${i}`}>{n.url ? <a href={n.url} target="_blank" rel="noopener noreferrer">{body}</a> : <button type="button" onClick={() => onAsk(`Tell me about "${n.title}".`)}>{body}</button>}</li>;
           })}</ul>)}
     </section>
+    {placeDrawer && <PlaceDrawer places={places || []} uuid={placeDrawer.uuid} onPlaces={onPlaces} onClose={() => setPlaceDrawer(null)} />}
   </div>;
 }

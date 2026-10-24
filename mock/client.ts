@@ -1275,6 +1275,16 @@ async function route(method: string, path: string, body?: any): Promise<any> {
     }
     return { places: mockWatchPlaces() };
   }
+  if (p.startsWith('/api/v1/dashboard/incidents/places/') && method === 'PATCH') {
+    const uuid = decodeURIComponent(p.split('/').pop() || '');
+    const list = mockWatchPlaces();
+    const at = list.findIndex((x) => x.uuid === uuid);
+    if (at < 0) fail(404, 'That place is gone.');
+    const { photoBase64, ...fields } = body;
+    list[at] = { ...list[at], ...fields, ...(photoBase64 === null ? { photoUrl: null } : photoBase64 ? { photoUrl: `data:image/jpeg;base64,${photoBase64}` } : {}) };
+    localStorage.setItem('mock_watch_places', JSON.stringify(list));
+    return { places: mockWatchPlaces() };
+  }
   if (p.startsWith('/api/v1/dashboard/incidents/places/') && method === 'DELETE') {
     const uuid = decodeURIComponent(p.split('/').pop() || '');
     localStorage.setItem('mock_watch_places', JSON.stringify(mockWatchPlaces().filter((x) => x.uuid !== uuid)));
@@ -1310,7 +1320,11 @@ async function route(method: string, path: string, body?: any): Promise<any> {
     const uuid = p.split('/')[4] ? decodeURIComponent(p.split('/')[4]) : null;
     let list = mockPlaceReminders();
     if (method === 'DELETE') { list = list.filter((x) => x.uuid !== uuid); localStorage.setItem('mock_place_reminders', JSON.stringify(list)); }
-    return { reminders: list };
+    // ?phone=problem: the phone has lost "Allow all the time" (the 10-08 case).
+    const phone = new URLSearchParams(window.location.search).get('phone') === 'problem'
+      ? { problem: 'no_background_location', message: "Your phone isn't letting Athena use location in the background, so place reminders can't fire. On the phone: Settings → Apps → Athena → Permissions → Location → Allow all the time.", armed: list.length, fences: 0, reportedAt: new Date(Date.now() - (90) * 60000).toISOString(), syncedAt: new Date(Date.now() - (16 * 1440) * 60000).toISOString(), phone: 'Athena Android' }
+      : { problem: null, message: null, armed: list.length, fences: list.length, reportedAt: new Date(Date.now() - (30) * 60000).toISOString(), syncedAt: new Date(Date.now() - (12) * 60000).toISOString(), phone: 'Athena Android' };
+    return { reminders: list, phone };
   }
   if (p === '/api/v1/dashboard/health/body/calibration' && method === 'POST') {
     const reference = { uuid: `c${Date.now()}`, measured_on: body.measured_on, source: body.source || null, height_cm: body.height_cm ?? null, body_fat_percent: body.body_fat_percent ?? null, skeletal_muscle_kg: body.skeletal_muscle_kg ?? null, fat_free_mass_kg: body.fat_free_mass_kg ?? null, body_water_percent: body.body_water_percent ?? null };
@@ -2130,6 +2144,56 @@ Sam` };
     return { media: { id: p.split('/').pop(), deviceSerial: 'T8171B', deviceName: 'Backyard', type: 'image', contentType: 'image/jpeg', bytes: 1000, durationSeconds: null, important: !!body?.important, capturedBy: 1, capturedAt: new Date().toISOString() } };
   }
   if (method === 'DELETE' && /^\/api\/v1\/projects\/property\/security\/media\/[^/]+$/.test(p)) return undefined;
+  // Guardian: an open garage incident from tonight's sweep and wind on the way.
+  if (p.startsWith('/api/v1/projects/property/security/guardian')) {
+    const ago = (m: number) => new Date(Date.now() - m * 60_000).toISOString();
+    const policy = [
+      { id: 'camera.fresh_snapshot', label: 'Request a fresh camera image', level: 1, allowed: true, reasons: [] },
+      { id: 'notify.household', label: 'Send a safety notification to approved household adults', level: 2, allowed: true, reasons: [] },
+      { id: 'device.garage_close', label: 'Close a garage door', level: 3, allowed: false, reasons: ["physical security actions need a person's approval"] },
+      { id: 'security.change_permissions', label: 'Change security permissions', level: 4, allowed: false, reasons: ['security permissions are changed only by the owner'] },
+    ];
+    const common = { recipients: [], escalateAfterMinutes: 30, retries: 2, retryDelaySeconds: 20, minConfidence: 0.75, maxEvidenceAgeSeconds: 120, autonomy: {}, simulation: false };
+    const g = (window as any).__mockGuardian ||= {
+      protocols: [
+        { id: 'nightly_sweep', label: 'Nightly Guardian Sweep', describe: 'At lights-out, check that the garage doors are closed — and the patio umbrella is down when the weather calls for it.', version: 1, enabled: true, updatedBy: 1, updatedAt: ago(600), policy,
+          config: { ...common, quiet: { from: 0, to: 0 }, schedule: { time: '22:00', timeZone: 'America/New_York' }, overdueAfterMinutes: 15, garageDoors: [{ key: 'main', name: 'Garage door', serial: 'T8171S', region: 'the double door on the left' }], includeUmbrella: true } },
+        { id: 'storm_umbrella', label: 'Storm umbrella watch', describe: 'When storms or strong gusts are on the way, check the backyard camera and say if the patio umbrella is still up — at any hour, not just at lights-out.', version: 1, enabled: true, updatedBy: 1, updatedAt: ago(600), policy,
+          config: { ...common, escalateAfterMinutes: 0, quiet: { from: 22, to: 7 }, umbrella: { key: 'patio', name: 'Patio umbrella', serial: 'T8171B', region: 'by the table' }, placeUuid: null, weather: { gustMph: 20, stormChance: 30, lookaheadHours: 6, urgentWithinHours: 6 } } },
+      ],
+      incidents: [
+        { id: '7f0c2c1e-0000-4000-8000-000000000001', protocol: 'nightly_sweep', check: 'garage_door', subject: 'main', subjectName: 'Garage door', camera: 'Side Yard', state: 'notified', condition: 'open', severity: 'urgent', confidence: 0.93, reason: null, weather: null, trigger: 'schedule',
+          firstDetectedAt: ago(12), lastVerifiedAt: ago(2), acknowledgedBy: null, acknowledgedAt: null, assignedTo: null, resolvedAt: null, resolution: null, dismissReason: null, rechecks: 1, nextRecheckAt: new Date(Date.now() + 13 * 60_000).toISOString(), escalatedAt: null, evidenceMediaId: '00000000-0000-4000-8000-000000000004', observedAt: ago(2),
+          notifications: [{ profileId: 1, kind: 'alert', status: 'sent', attempts: 1, holdUntil: null, lastAttemptAt: ago(12), skipped: null }, { profileId: 2, kind: 'alert', status: 'in_app', attempts: 1, holdUntil: null, lastAttemptAt: ago(12), skipped: 'not enabled' }] },
+        { id: '7f0c2c1e-0000-4000-8000-000000000002', protocol: 'storm_umbrella', check: 'patio_umbrella', subject: 'patio', subjectName: 'Patio umbrella', camera: 'Backyard', state: 'resolved', condition: 'up', severity: 'urgent', confidence: 0.9, reason: null, weather: { reasons: [{ text: 'gusts up to 32 mph around 7 PM' }], earliestAt: ago(-60) }, trigger: 'weather',
+          firstDetectedAt: ago(300), lastVerifiedAt: ago(270), acknowledgedBy: 1, acknowledgedAt: ago(290), assignedTo: null, resolvedAt: ago(270), resolution: 'verified_safe', dismissReason: null, rechecks: 1, nextRecheckAt: null, escalatedAt: null, evidenceMediaId: null, observedAt: ago(270), notifications: [] },
+      ],
+      runs: [
+        { id: 'r3', protocol: 'nightly_sweep', trigger: 'recheck', state: 'attention_required', scheduledFor: ago(2), startedAt: ago(2), finishedAt: ago(2), attempts: 1, simulated: false, results: [{ check: 'garage_door', subject: 'main', status: 'open', reason: null }], missed: false, reason: null, risk: null },
+        { id: 'r2', protocol: 'nightly_sweep', trigger: 'schedule', state: 'notified', scheduledFor: ago(12), startedAt: ago(12), finishedAt: ago(12), attempts: 1, simulated: false, results: [{ check: 'garage_door', subject: 'main', status: 'open', reason: null }, { check: 'patio_umbrella', subject: 'patio', status: 'down', reason: null }], missed: false, reason: null, risk: { atRisk: true, known: true } },
+        { id: 'r1', protocol: 'storm_umbrella', trigger: 'weather', state: 'notified', scheduledFor: ago(300), startedAt: ago(300), finishedAt: ago(300), attempts: 1, simulated: false, results: [{ check: 'patio_umbrella', subject: 'patio', status: 'up', reason: null }], missed: false, reason: null, risk: { atRisk: true, known: true } },
+      ],
+    };
+    const view = () => {
+      const active = g.incidents.filter((i: any) => ['open', 'notified', 'acknowledged'].includes(i.state));
+      return { status: active.some((i: any) => i.condition !== 'unknown') ? 'attention' : active.length ? 'unverified' : 'secure', bridge: 'ready', protocols: g.protocols,
+        lastSweep: g.runs.find((r: any) => r.protocol === 'nightly_sweep' && r.trigger === 'schedule') || null, nextSweepAt: new Date(Date.now() + 23 * 3_600_000).toISOString(),
+        incidents: g.incidents, runs: g.runs, events: [],
+        weather: { atRisk: true, known: true, urgent: true, reasons: [{ kind: 'wind', text: 'gusts up to 32 mph around 11 PM' }], earliestAt: new Date(Date.now() + 60 * 60_000).toISOString(), checkedAt: ago(1), sources: { forecast: 'ok', alerts: 'ok' } },
+        cameras: [{ serial: 'T8171S', name: 'Side Yard', watched: true, lastSeenAt: ago(120), batteryPercent: 100, freshSnapshotAvailable: true }, { serial: 'T8171B', name: 'Backyard', watched: true, lastSeenAt: ago(120), batteryPercent: 98, freshSnapshotAvailable: true }],
+        recipients: [{ id: 1, name: 'Jacob' }, { id: 2, name: 'Alex' }],
+        health: { runs: 9, safe: 6, attention: 2, unknown: 1, failed: 0, missed: 0, notificationsFailed: 0 } };
+    };
+    const incident = g.incidents.find((i: any) => p.includes(i.id));
+    if (method === 'GET') return view();
+    if (method === 'PUT' && /\/protocols\//.test(p)) { const pr = g.protocols.find((x: any) => p.includes(x.id)); Object.assign(pr, { enabled: body?.enabled ?? pr.enabled, config: body?.config || pr.config }); return view(); }
+    if (method === 'POST' && /\/run$/.test(p)) { await new Promise(r => setTimeout(r, 1200)); g.runs.unshift({ id: crypto.randomUUID(), protocol: 'nightly_sweep', trigger: 'manual', state: 'safe', scheduledFor: ago(0), startedAt: ago(0), finishedAt: ago(0), attempts: 1, simulated: !!body?.scenario, results: [{ check: 'garage_door', subject: 'main', status: body?.scenario?.garage_door?.main || 'closed', reason: null }], missed: false, reason: null, risk: null }); return { run: 'x', claimed: true, state: 'safe' }; }
+    if (incident && /\/acknowledge$/.test(p)) { Object.assign(incident, { state: 'acknowledged', acknowledgedBy: 1, acknowledgedAt: ago(0) }); return undefined; }
+    if (incident && /\/dismiss$/.test(p)) { Object.assign(incident, { state: 'dismissed', dismissReason: body?.reason, resolvedAt: ago(0) }); return undefined; }
+    if (incident && /\/assignee$/.test(p)) { incident.assignedTo = body?.profileId ? Number(body.profileId) : null; return undefined; }
+    if (incident && /\/recheck$/.test(p)) { await new Promise(r => setTimeout(r, 1000)); incident.lastVerifiedAt = ago(0); return {}; }
+    return undefined;
+  }
   // Sightings: an in-memory gallery, zones, rules and log.
   if (p.startsWith('/api/v1/projects/property/security/') && /\/(sightings|subjects|zones|rules)/.test(p)) {
     const ago = (m: number) => new Date(Date.now() - m * 60_000).toISOString();

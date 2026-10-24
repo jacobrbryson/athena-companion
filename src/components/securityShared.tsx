@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { propertySecurityApi } from '../api/propertySecurity';
 
-export type IconName = 'hub' | 'camera' | 'doorbell' | 'motion' | 'storage' | 'refresh' | 'bell' | 'expand' | 'clip' | 'star' | 'trash' | 'close' | 'play' | 'person' | 'paw' | 'car' | 'plus' | 'eye' | 'package';
+export type IconName = 'hub' | 'camera' | 'doorbell' | 'motion' | 'storage' | 'refresh' | 'bell' | 'expand' | 'clip' | 'star' | 'trash' | 'close' | 'play' | 'person' | 'paw' | 'car' | 'plus' | 'eye' | 'package' | 'shield' | 'garage' | 'umbrella' | 'wind';
 
 /** The few line icons this page draws, in the concept's thin cyan stroke. */
 export function Icon({ name }: { name: IconName }) {
@@ -25,6 +25,10 @@ export function Icon({ name }: { name: IconName }) {
     plus: <path d="M12 5v14M5 12h14" />,
     package: <><path d="M3 8l9-4 9 4v8l-9 4-9-4z" /><path d="M3 8l9 4 9-4" /><path d="M12 12v8" /></>,
     eye: <><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z" /><circle cx="12" cy="12" r="3" /></>,
+    shield: <><path d="M12 3 5 6v5c0 4.4 3 8.3 7 10 4-1.7 7-5.6 7-10V6z" /><path d="m9 12 2 2 4-4" /></>,
+    garage: <><path d="M3 10 12 4l9 6v10H3z" /><path d="M6.5 20v-8h11v8M6.5 15h11M6.5 17.5h11" /></>,
+    umbrella: <><path d="M3 12a9 9 0 0 1 18 0z" /><path d="M12 12v6.5a2 2 0 0 1-4 0M12 3v0" /></>,
+    wind: <><path d="M3 8h11a3 3 0 1 0-3-3" /><path d="M3 12h16a3 3 0 1 1-3 3" /><path d="M3 16h7" /></>,
   };
   return <svg className="ps-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>;
 }

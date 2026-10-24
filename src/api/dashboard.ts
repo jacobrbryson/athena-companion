@@ -185,6 +185,14 @@ export interface LocalNewsItem extends NewsItem { matched: string; via?: 'text' 
 /** "Next time I'm at Missy's, remind me to ..." — set by approving Athena's remind_at_place card. */
 /** What has to happen before a place reminder can fire ("from the gym", "after the last game"). */
 export interface ReminderCondition { kind: 'place' | 'time'; label: string | null; after: string | null; metAt: string | null }
+/**
+ * Whether the phone can hold its place fences (core_api placeReminders.phoneStatus).
+ * `problem` null: fine. Null overall: the server can't tell yet.
+ */
+export interface PlaceReminderPhone {
+  problem: 'no_background_location' | 'no_location_permission' | 'location_off' | 'register_failed' | 'not_syncing' | 'no_phone' | null;
+  message: string | null; armed: number; fences: number | null; reportedAt: string | null; syncedAt: string | null; phone: string | null;
+}
 export interface PlaceReminder { uuid: string; placeUuid: string | null; placeName: string; address: string | null; latitude: number; longitude: number; radiusM: number; reminder: string; repeats: boolean; status: 'armed' | 'waiting' | 'done' | 'expired'; condition: ReminderCondition | null; expiresAt: string | null; fireCount: number; lastFiredAt: string | null; doneAt: string | null; createdAt: string }
 /** "Remind me at 7 to…". */
 export interface TimeReminder { uuid: string; reminder: string; fireAt: string; timeZone: string | null; status: 'armed' | 'done'; firedAt: string | null; createdAt: string }
@@ -499,7 +507,7 @@ export const dashboardApi = {
     ? api.patch<{ events: CommunityEvent[] }>(`/api/v1/dashboard/community/events/${encodeURIComponent(uuid)}`, input)
     : api.post<{ events: CommunityEvent[] }>('/api/v1/dashboard/community/events', input),
   /** Place reminders: armed ones, then the last fortnight's finished ones. Setting one is an action, not here. */
-  placeReminders: () => api.get<{ reminders: PlaceReminder[]; timeReminders?: TimeReminder[] }>('/api/v1/place-reminders'),
+  placeReminders: () => api.get<{ reminders: PlaceReminder[]; timeReminders?: TimeReminder[]; phone?: PlaceReminderPhone | null }>('/api/v1/place-reminders'),
   removePlaceReminder: (uuid: string) => api.del<{ reminders: PlaceReminder[]; timeReminders?: TimeReminder[] }>(`/api/v1/place-reminders/${encodeURIComponent(uuid)}`),
   removeEvent: (uuid: string) => api.del<{ events: CommunityEvent[] }>(`/api/v1/dashboard/community/events/${encodeURIComponent(uuid)}`),
   /** Door-to-door street checks: list a street ahead of time, then mark each house. */

@@ -62,7 +62,7 @@ const FAMILY_CARD_ROWS = 7;
 
 /** Open a console panel; `consentFor` opens Connected apps on that provider's consent prompt. */
 export type OpenPanel = (panel: 'integrations' | 'memory' | 'actions' | 'notifications' | 'knows' | 'photo' | 'devices', options?: { consentFor?: string }) => void;
-export type DashboardSection = 'Dashboard' | 'Property' | 'Today' | 'Calendar' | 'Health' | 'Family' | 'Community' | 'Mail' | 'Work' | 'Projects' | 'News' | 'Dreams' | 'System' | 'Finance' | 'Workouts' | 'FamilyFinance' | 'FamilyTrading';
+export type DashboardSection = 'Dashboard' | 'Property' | 'Today' | 'Calendar' | 'Health' | 'Family' | 'Community' | 'Mail' | 'Work' | 'Projects' | 'News' | 'Dreams' | 'System' | 'Finance' | 'Workouts' | 'FamilyFinance' | 'FamilyTrading' | 'CommunityPlaces';
 // Icons live in ./icons — one registry, so a drawn icon looks the same in
 // the nav, on its card and in the phone's bottom bar.
 export { DashboardIcon } from './icons';
@@ -76,7 +76,7 @@ export { DashboardIcon } from './icons';
 export const dashboardSections: DashboardSection[] = ['Dashboard', 'Health', 'Family', 'Community', 'Property', 'Work', 'System'];
 /** The nav entry a page lights up: a System tab lights System, a workout lights Health. */
 export const navSectionOf = (section: DashboardSection): DashboardSection =>
-  section === 'Workouts' ? 'Health' : section === 'FamilyFinance' || section === 'FamilyTrading' ? 'Family' : SYSTEM_TAB_IDS.includes(section) ? 'System' : section;
+  section === 'Workouts' ? 'Health' : section === 'CommunityPlaces' ? 'Community' : section === 'FamilyFinance' || section === 'FamilyTrading' ? 'Family' : SYSTEM_TAB_IDS.includes(section) ? 'System' : section;
 /** Family's tabs (2026-10-20): the family itself, and the household's money (Webull, read-only). Not System's Finance, which is Athena's own costs. */
 const FAMILY_TABS = [
   { id: 'Family', label: 'Overview', icon: 'Family' },
@@ -731,7 +731,6 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
   const [healthResolving, setHealthResolving] = useState<string | null>(null);
   const [familyEdit, setFamilyEdit] = useState<RosterRow | null>(null);
   const [familyMemoriesOpen, setFamilyMemoriesOpen] = useState(false);
-  const [placeEditRequest, setPlaceEditRequest] = useState<{ uuid: string; nonce: number } | null>(null);
   const [familyHealthEdit, setFamilyHealthEdit] = useState<{ name: string; watch?: FamilyHealthStatus } | null>(null);
   const [reconnecting, setReconnecting] = useState<string | null>(null);
   // Projects: one load shared by the cards, the pages and the editors.
@@ -1419,13 +1418,9 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
       ask="What’s going on around my community that I should know about?"
       hero={<CommunityOverview community={community ?? null} waiting={waiting} calls={nearbyCalls} weatherAlerts={nearbyWeather}
         nearbyReady={!!data.nearby.data} calendar={communityCal} onAsk={onAsk} onNeighbors={next => patch({ neighbors: next })}
-        onSection={toSection} onEditPlace={uuid => { setPlaceEditRequest({ uuid, nonce: Date.now() }); toSection('community-places'); }} onAddNews={() => setSourcesOpen(true)} />}
+        onSection={toSection} onPlaces={next => patch({ places: next })} onManagePlaces={go('CommunityPlaces')} onAddNews={() => setSourcesOpen(true)} />}
     >
       <h2 className="fp-details-head section-panel-wide">THE DETAIL</h2>
-      <Panel id="community-places" title="Points of interest" note="watched day and night" wide>
-        <p className="community-blurb">I keep watch around every place on this list, all the time. A 911 call or a severe-weather warning inside a ring reaches you straight away — here, on your phone, and by text — and I pick out news about these places from the pages I read for you. Home, your church, the kids’ school, the town square: the more you add, the more of your community I can look after.</p>
-        {waiting || <PointsOfInterest places={places} onPlaces={next => patch({ places: next })} editRequest={placeEditRequest} />}
-      </Panel>
       <Panel title="On your calendar" note={communityCal.length ? 'events that mention your community' : undefined} wide>
         {waiting || (!ready(summary?.calendar) ? unavailable('calendar', 'Google Calendar')
           : communityCal.length ? <ul className="dashboard-data-list calendar-events">{communityCal.map((c, i) => <li key={`${c.event.id}-${i}`}><span className="event-dot" /><div><strong>{c.what}</strong><small>{c.when}{c.who ? ` · ${c.who}` : ''}{c.event.location ? ` · ${c.event.location}` : ''}</small></div></li>)}</ul>
@@ -1470,6 +1465,22 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
       </Panel>
       {areaStrip('community', 'Community')}
       {drawers}
+    </SectionPage>;
+  }
+
+  function CommunityPlacesPage() {
+    // Every point of interest, reached from Watched Places' "Manage" on the Community page.
+    const waiting = data.community.error ? <EmptyCta text="Your community list couldn’t load." action="Retry" onClick={retryData} />
+      : !community ? <p className="dashboard-empty">Loading…</p> : null;
+    return <SectionPage ctx={ctx}
+      eyebrow="THE PLACE AROUND YOU" title="Points of interest" blurb="Every place I watch for you, day and night."
+      ask="Look at the places you watch for me. Is there anywhere I should add?"
+    >
+      <button type="button" className="source-fix section-panel-wide" onClick={go('Community')}><span>←</span> Back to Community</button>
+      <Panel id="community-places" title="Points of interest" note="watched day and night" wide>
+        <p className="community-blurb">I keep watch around every place on this list, all the time. A 911 call or a severe-weather warning inside a ring reaches you straight away — here, on your phone, and by text — and I pick out news about these places from the pages I read for you. Home, your church, the kids’ school, the town square: the more you add, the more of your community I can look after.</p>
+        {waiting || <PointsOfInterest places={community!.places} onPlaces={next => data.patchCommunity({ places: next })} />}
+      </Panel>
     </SectionPage>;
   }
 
@@ -1815,10 +1826,11 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
         note={!ready(summary?.recovery) ? (summary ? statusText[summary.recovery.status] : 'Loading…') : recoveryDelta ? `${recoveryDelta.delta > 0 ? '+' : ''}${recoveryDelta.delta} points vs ${recoveryDelta.previous.date}` : readiness?.headline || 'No scored result'}
         freshness={ready(summary?.recovery) && recovery ? `Reading ${recovery.date}` : undefined}
         spark={ready(summary?.recovery) && <Spark tone="green" values={week(scoredDays, r => r.recovery_score).map(d => d.value)} label="Recovery over the last seven calendar days" />} />
-      <HomeStat icon="Gym" label="Gym" onClick={go('Health')} tone={session?.status === 'done' ? 'good' : 'idle'}
-        value={home.plan.loading ? '—' : !home.plan.data ? 'Unavailable' : !activeProgram ? 'No plan' : restDay ? 'Rest day' : session!.title}
-        note={home.plan.loading ? 'Loading…' : !home.plan.data ? 'Training plan couldn’t load' : !activeProgram ? 'Set one on Health' : restDay ? activeProgram.name
-          : session!.status === 'done' ? 'Done' : session!.status === 'skipped' ? 'Skipped' : session!.focus || 'Today'} />
+      <HomeStat icon="Health" label="Sleep" onClick={go('Health')} tone={sleep?.sleep_performance_percent != null && sleep.sleep_performance_percent >= 85 ? 'good' : 'idle'}
+        value={ready(summary?.sleep) && sleep ? hoursMinutes(sleep.hours_asleep) : '—'}
+        note={!ready(summary?.sleep) ? (summary ? statusText[summary.sleep.status] : 'Loading…')
+          : sleep?.sleep_performance_percent != null ? `${sleep.sleep_performance_percent}% of need`
+            : sleep ? 'Sleep performance unavailable' : 'No sleep recorded'} />
       <HomeStat icon="Calendar" label={lead ? `Next event · ${lead.ongoing ? 'on now' : dayWord(lead.event)}` : 'Next event'} onClick={go('Calendar')} tone={lead?.ongoing ? 'warn' : 'idle'}
         value={lead ? eventTime(lead.event, timeZone) : ready(summary?.calendar) ? 'Clear' : '—'}
         note={lead ? `${lead.event.title} · ${lead.ongoing ? 'on now' : `in ${untilLabel(lead.ms)}`}` : ready(summary?.calendar) ? 'Nothing timed coming up' : summary ? statusText[summary.calendar.status] : 'Loading…'} freshness={checked('calendar')} />
@@ -2001,6 +2013,7 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
     if (section === 'FamilyFinance') return FamilyFinancePage();
     if (section === 'FamilyTrading') return FamilyTradingPage();
     if (section === 'Community') return CommunityPage();
+    if (section === 'CommunityPlaces') return CommunityPlacesPage();
     if (section === 'Mail') return MailPage();
     if (section === 'Work') return WorkPage();
     if (section === 'Projects') return ProjectsPage();
