@@ -11,6 +11,8 @@ export interface Vehicle {
   propertyUuid: string | null;
   name: string; year: number | null; make: string | null; model: string | null; color: string | null;
   plate: string | null; vin: string | null;
+  /** Two-letter state, the number on the registration card, and where it's inspected. */
+  registrationState: string | null; registrationNumber: string | null; inspectionStation: string | null;
   odometer: number | null; odometerOn: string | null;
   registrationDue: string | null; inspectionDue: string | null; insuranceDue: string | null;
   serviceDue: string | null; serviceDueMiles: number | null;
@@ -20,7 +22,8 @@ export interface Vehicle {
   /** NHTSA safety recalls for its model year, open first (absent before the recalls migration). */
   recalls?: Recall[];
 }
-export type RecallStatus = 'open' | 'done' | 'not_applicable';
+/** 'acknowledged' is seen but not yet repaired; 'done' is repaired. */
+export type RecallStatus = 'open' | 'acknowledged' | 'done' | 'not_applicable';
 export interface Recall {
   campaign: string; component: string | null; summary: string | null; consequence: string | null; remedy: string | null;
   reportedOn: string | null;
@@ -68,7 +71,7 @@ export const vehiclesApi = {
 };
 
 export type DueTone = 'overdue' | 'soon' | 'later';
-export interface DueItem { label: string; tone: DueTone; when: string }
+export interface DueItem { label: string; tone: DueTone; when: string; /** The date field it came from; absent for service by miles. */ kind?: keyof Vehicle }
 
 const DAY = 86_400_000;
 const localDay = () => new Date().toLocaleDateString('en-CA');
@@ -86,10 +89,11 @@ function inWords(days: number, day: string) {
 
 /** What comes due on a vehicle, soonest first. */
 export function dueItems(v: Vehicle): DueItem[] {
-  const dated: [string, string | null][] = [['Registration', v.registrationDue], ['Inspection', v.inspectionDue], ['Insurance', v.insuranceDue], ['Service', v.serviceDue]];
-  const items = dated.filter((d): d is [string, string] => !!d[1]).map(([label, day]) => {
+  const dated: [string, keyof Vehicle][] = [['Registration', 'registrationDue'], ['Inspection', 'inspectionDue'], ['Insurance', 'insuranceDue'], ['Service', 'serviceDue']];
+  const items: (DueItem & { sort: number })[] = dated.filter(([, kind]) => !!v[kind]).map(([label, kind]) => {
+    const day = v[kind] as string;
     const n = daysUntil(day);
-    return { label, tone: (n < 0 ? 'overdue' : n <= SOON_DAYS ? 'soon' : 'later') as DueTone, when: inWords(n, day), sort: n };
+    return { label, kind, tone: (n < 0 ? 'overdue' : n <= SOON_DAYS ? 'soon' : 'later') as DueTone, when: inWords(n, day), sort: n };
   });
   if (v.serviceDueMiles !== null) {
     const left = v.odometer === null ? null : v.serviceDueMiles - v.odometer;
@@ -99,8 +103,37 @@ export function dueItems(v: Vehicle): DueItem[] {
       when: left === null ? `at ${v.serviceDueMiles.toLocaleString()} mi` : left < 0 ? `${(-left).toLocaleString()} mi overdue` : `in ${left.toLocaleString()} mi`,
     });
   }
-  return items.sort((a, b) => a.sort - b.sort).map(({ label, tone, when }) => ({ label, tone, when }));
+  return items.sort((a, b) => a.sort - b.sort).map(({ sort: _sort, ...item }) => item);
 }
+
+/** Within this many days a registration, inspection or insurance date takes over the top of Home. */
+export const DEADLINE_DAYS = 14;
+/** Within this many days (or overdue) it goes red. */
+export const URGENT_DAYS = 7;
+export type DeadlineKind = 'registrationDue' | 'inspectionDue' | 'insuranceDue';
+export interface Deadline { vehicle: Vehicle; kind: DeadlineKind; label: string; day: string; days: number; when: string }
+const DEADLINES: [DeadlineKind, string][] = [['registrationDue', 'Registration'], ['inspectionDue', 'Inspection'], ['insuranceDue', 'Insurance']];
+
+/**
+ * The legal deadlines — registration, inspection, insurance — overdue or due
+ * within DEADLINE_DAYS, across every vehicle, soonest first. Service is left
+ * out: a late oil change is a nudge, an expired registration is a ticket.
+ */
+export function deadlines(vehicles: Vehicle[]): Deadline[] {
+  return vehicles.flatMap(vehicle => DEADLINES.flatMap(([kind, label]) => {
+    const day = vehicle[kind];
+    if (!day) return [];
+    const days = daysUntil(day);
+    return days <= DEADLINE_DAYS ? [{ vehicle, kind, label, day, days, when: inWords(days, day) }] : [];
+  })).sort((a, b) => a.days - b.days);
+}
+
+/** The same date a year on — the usual next due date once something is renewed. */
+export const yearAfter = (day: string) => {
+  const [y, m, d] = day.split('-').map(Number);
+  // Feb 29 lands on Mar 1 rather than an invalid date.
+  return new Date(Date.UTC(y + 1, m - 1, d)).toISOString().slice(0, 10);
+};
 
 /** "2021 BMW X5", or nothing when only the name is known. */
 export const carOf = (v: Pick<Vehicle, 'year' | 'make' | 'model'>) => [v.year, v.make, v.model].filter(Boolean).join(' ');

@@ -31,7 +31,7 @@ const REASON: Record<string, string> = {
   dispatch_unavailable: "sweep didn't run", no_camera: 'no camera assigned', capture_failed: 'no picture returned', not_configured: 'bridge not set up',
 };
 const RESULT_WORD: Record<string, string> = { closed: 'Closed', open: 'Open', down: 'Down', up: 'Up', unknown: 'Unknown', offline: 'Offline', not_applicable: 'Not needed' };
-const TRIGGER: Record<string, string> = { schedule: 'Nightly sweep', weather: 'Weather', recheck: 'Recheck', manual: 'Run by hand' };
+const TRIGGER: Record<string, string> = { schedule: 'Nightly sweep', weather: 'Weather', recheck: 'Recheck', manual: 'Run by hand', report: 'Morning report' };
 const NOTE_STATUS: Record<string, string> = { sent: 'sent', held: 'held for quiet hours', failed: 'failed', simulated: 'test only', in_app: 'in the app only', pending: 'sending', superseded: 'not needed' };
 
 function Evidence({ id, label }: { id: string; label: string }) {
@@ -89,7 +89,8 @@ function RunRow({ run, subjectNames }: { run: GuardianRun; subjectNames: Map<str
   return <li>
     <span className={`ps-state ${run.state === 'safe' ? 'is-on' : run.state === 'scheduled' ? 'is-off' : 'is-warn'}`} />
     <div><strong>{TRIGGER[run.trigger] || run.trigger}{run.simulated ? ' · test' : ''}</strong>
-      <small>{run.state === 'scheduled' ? `Booked for ${stamp(run.scheduledFor)}` : run.missed ? `Missed — ${REASON[run.reason || ''] || 'it never ran'}` : looked.length ? looked.map(r => `${named(r)}: ${RESULT_WORD[r.status] || r.status}${r.reason && REASON[r.reason] ? ` (${REASON[r.reason]})` : ''}`).join(' · ') : 'Nothing needed checking'}</small></div>
+      {run.report && <small className="ps-guard-report">“{run.report.text}”</small>}
+      <small>{run.state === 'scheduled' ? `Booked for ${stamp(run.scheduledFor)}` : run.trigger === 'report' ? (run.missed ? 'Not sent in time' : `Sent to ${run.report?.deliveries.length ?? 0}`) : run.missed ? `Missed — ${REASON[run.reason || ''] || 'it never ran'}` : looked.length ? looked.map(r => `${named(r)}: ${RESULT_WORD[r.status] || r.status}${r.reason && REASON[r.reason] ? ` (${REASON[r.reason]})` : ''}`).join(' · ') : 'Nothing needed checking'}</small></div>
     <time>{stamp(run.finishedAt || run.scheduledFor)}</time>
   </li>;
 }
@@ -138,10 +139,17 @@ function ProtocolSettings({ protocol, cameras, recipients, onSave }: { protocol:
     <header><label className="ps-radio"><input type="checkbox" checked={enabled} onChange={e => { setSaved(false); setEnabled(e.target.checked); }} /><strong>{protocol.label}</strong></label><small>{protocol.describe}</small></header>
     {protocol.id === 'nightly_sweep' && <>
       <div className="ps-form">
-        <label className="ps-field"><span>Lights-out time</span><input type="time" value={config.schedule?.time || '22:00'} onChange={e => set({ schedule: { time: e.target.value, timeZone: config.schedule?.timeZone || 'America/New_York' } })} /></label>
-        <label className="ps-field"><span>Time zone</span><input value={config.schedule?.timeZone || 'America/New_York'} onChange={e => set({ schedule: { time: config.schedule?.time || '22:00', timeZone: e.target.value } })} /></label>
-        <label className="ps-radio"><input type="checkbox" checked={config.includeUmbrella !== false} onChange={e => set({ includeUmbrella: e.target.checked })} />Check the umbrella too when the weather calls for it</label>
+        <label className="ps-field"><span>Sweep time</span><input type="time" value={config.schedule?.time || '21:00'} onChange={e => set({ schedule: { time: e.target.value, timeZone: config.schedule?.timeZone || 'America/New_York' } })} /></label>
+        <label className="ps-field"><span>Time zone</span><input value={config.schedule?.timeZone || 'America/New_York'} onChange={e => set({ schedule: { time: config.schedule?.time || '21:00', timeZone: e.target.value } })} /></label>
+        <label className="ps-radio"><input type="checkbox" checked={config.includeUmbrella !== false} onChange={e => set({ includeUmbrella: e.target.checked })} />Check the umbrella too</label>
       </div>
+      <h4 className="ps-h4">Reports</h4>
+      <div className="ps-form">
+        <label className="ps-radio"><input type="checkbox" checked={config.reports?.evening !== false} onChange={e => set({ reports: { evening: e.target.checked, morning: config.reports?.morning !== false, morningTime: config.reports?.morningTime || '06:00' } })} />Evening report at the sweep — even when all is clear</label>
+        <label className="ps-radio"><input type="checkbox" checked={config.reports?.morning !== false} onChange={e => set({ reports: { evening: config.reports?.evening !== false, morning: e.target.checked, morningTime: config.reports?.morningTime || '06:00' } })} />Morning report about the night</label>
+        <label className="ps-field"><span>Morning report time</span><input type="time" disabled={config.reports?.morning === false} value={config.reports?.morningTime || '06:00'} onChange={e => set({ reports: { evening: config.reports?.evening !== false, morning: config.reports?.morning !== false, morningTime: e.target.value } })} /></label>
+      </div>
+      <small>With the evening report on, anything the sweep finds is in that one message instead of a separate alert. You can also ask Athena to change these times.</small>
       <h4 className="ps-h4">Garage doors</h4>
       {doors.map((d, i) => <SubjectEditor key={i} subject={d} cameras={cameras} onChange={s => set({ garageDoors: doors.map((x, j) => j === i ? s : x) })} onRemove={() => set({ garageDoors: doors.filter((_, j) => j !== i) })} />)}
       {doors.length < 6 && <button type="button" className="ps-btn" onClick={() => set({ garageDoors: [...doors, { key: `door-${Date.now().toString(36).slice(-4)}`, name: doors.length ? `Garage door ${doors.length + 1}` : 'Garage door', serial: null, region: null }] })}><Icon name="plus" />Add a garage door</button>}
@@ -264,7 +272,7 @@ export function SecurityGuardian({ enabled, cameras }: { enabled: boolean; camer
       <div>
         <h3>Guardian</h3>
         <span className={`ps-state ${status.cls}`}>{status.label}</span>
-        <small>{status.note} {data.lastSweep ? `Last sweep ${stamp(data.lastSweep.finishedAt || data.lastSweep.scheduledFor)}.` : ''} {sweep.enabled && data.nextSweepAt ? `Next ${stamp(data.nextSweepAt)}.` : ''}</small>
+        <small>{status.note} {data.lastSweep ? `Last sweep ${stamp(data.lastSweep.finishedAt || data.lastSweep.scheduledFor)}.` : ''} {sweep.enabled && data.nextSweepAt ? `Next sweep ${stamp(data.nextSweepAt)}.` : ''} {sweep.enabled && data.nextMorningReportAt ? `Morning report ${stamp(data.nextMorningReportAt)}.` : ''}</small>
       </div>
       <div className="ps-chips" role="group" aria-label="Guardian view">
         <button className={view === 'status' ? 'active' : ''} aria-pressed={view === 'status'} onClick={() => setView('status')}>Status</button>

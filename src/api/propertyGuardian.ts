@@ -8,13 +8,15 @@ export type GuardianConfig = {
   minConfidence: number; maxEvidenceAgeSeconds: number; autonomy: Record<string, number>; simulation: boolean;
   // nightly_sweep
   schedule?: { time: string; timeZone: string }; overdueAfterMinutes?: number; garageDoors?: GuardianSubject[]; includeUmbrella?: boolean;
+  reports?: { evening: boolean; morning: boolean; morningTime: string };
   // storm_umbrella
   umbrella?: GuardianSubject | null; placeUuid?: string | null; weather?: { gustMph: number; stormChance: number; lookaheadHours: number; urgentWithinHours: number };
 };
 export type GuardianPermission = { id: string; label: string; level: number; allowed: boolean; reasons: string[] };
 export type GuardianProtocol = { id: 'nightly_sweep' | 'storm_umbrella'; label: string; describe: string; version: number; enabled: boolean; config: GuardianConfig; updatedBy: number | null; updatedAt: string | null; policy: GuardianPermission[] };
 export type GuardianResult = { check: string; subject: string | null; status: string; reason: string | null; confidence?: number | null; incident?: string | null };
-export type GuardianRun = { id: string; protocol: string; trigger: 'schedule' | 'weather' | 'recheck' | 'manual'; state: string; scheduledFor: string; startedAt: string | null; finishedAt: string | null; attempts: number; simulated: boolean; results: GuardianResult[]; missed: boolean; reason: string | null; risk: { atRisk: boolean; known: boolean } | null };
+export type GuardianRun = { id: string; protocol: string; trigger: 'schedule' | 'weather' | 'recheck' | 'manual' | 'report'; state: string; scheduledFor: string; startedAt: string | null; finishedAt: string | null; attempts: number; simulated: boolean; results: GuardianResult[]; missed: boolean; reason: string | null; risk: { atRisk: boolean; known: boolean } | null;
+  report: { kind: 'evening' | 'morning'; text: string; deliveries: { profileId: number; status: string }[] } | null };
 export type GuardianNotification = { profileId: number; kind: 'alert' | 'update' | 'escalation' | 'resolved'; status: 'pending' | 'sent' | 'held' | 'failed' | 'simulated' | 'in_app' | 'superseded'; attempts: number; holdUntil: string | null; lastAttemptAt: string | null; skipped: string | null };
 export type GuardianIncident = {
   id: string; protocol: string; check: 'garage_door' | 'patio_umbrella'; subject: string; subjectName: string; camera: string | null;
@@ -27,7 +29,7 @@ export type GuardianIncident = {
 export type GuardianWeather = { atRisk: boolean; known: boolean; urgent: boolean; reasons: { kind: string; text: string }[]; earliestAt: string | null; checkedAt: string; sources: { forecast: string; alerts: string } };
 export type GuardianOverview = {
   status: 'secure' | 'attention' | 'unverified' | 'waiting' | 'off'; bridge: string | null;
-  protocols: GuardianProtocol[]; lastSweep: GuardianRun | null; nextSweepAt: string | null; incidents: GuardianIncident[]; runs: GuardianRun[];
+  protocols: GuardianProtocol[]; lastSweep: GuardianRun | null; nextSweepAt: string | null; nextMorningReportAt?: string | null; incidents: GuardianIncident[]; runs: GuardianRun[];
   events: { kind: string; actor: string; at: string; detail: Record<string, unknown> | null }[];
   weather: GuardianWeather | null;
   cameras: { serial: string; name: string; watched: boolean; lastSeenAt: string | null; batteryPercent: number | null; freshSnapshotAvailable: boolean }[];

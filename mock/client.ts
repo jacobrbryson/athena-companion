@@ -2157,7 +2157,7 @@ Sam` };
     const g = (window as any).__mockGuardian ||= {
       protocols: [
         { id: 'nightly_sweep', label: 'Nightly Guardian Sweep', describe: 'At lights-out, check that the garage doors are closed — and the patio umbrella is down when the weather calls for it.', version: 1, enabled: true, updatedBy: 1, updatedAt: ago(600), policy,
-          config: { ...common, quiet: { from: 0, to: 0 }, schedule: { time: '22:00', timeZone: 'America/New_York' }, overdueAfterMinutes: 15, garageDoors: [{ key: 'main', name: 'Garage door', serial: 'T8171S', region: 'the double door on the left' }], includeUmbrella: true } },
+          config: { ...common, quiet: { from: 0, to: 0 }, schedule: { time: '21:00', timeZone: 'America/New_York' }, reports: { evening: true, morning: true, morningTime: '06:00' }, overdueAfterMinutes: 15, garageDoors: [{ key: 'main', name: 'Garage door', serial: 'T8171S', region: 'the double door on the left' }], includeUmbrella: true } },
         { id: 'storm_umbrella', label: 'Storm umbrella watch', describe: 'When storms or strong gusts are on the way, check the backyard camera and say if the patio umbrella is still up — at any hour, not just at lights-out.', version: 1, enabled: true, updatedBy: 1, updatedAt: ago(600), policy,
           config: { ...common, escalateAfterMinutes: 0, quiet: { from: 22, to: 7 }, umbrella: { key: 'patio', name: 'Patio umbrella', serial: 'T8171B', region: 'by the table' }, placeUuid: null, weather: { gustMph: 20, stormChance: 30, lookaheadHours: 6, urgentWithinHours: 6 } } },
       ],
@@ -2170,14 +2170,17 @@ Sam` };
       ],
       runs: [
         { id: 'r3', protocol: 'nightly_sweep', trigger: 'recheck', state: 'attention_required', scheduledFor: ago(2), startedAt: ago(2), finishedAt: ago(2), attempts: 1, simulated: false, results: [{ check: 'garage_door', subject: 'main', status: 'open', reason: null }], missed: false, reason: null, risk: null },
-        { id: 'r2', protocol: 'nightly_sweep', trigger: 'schedule', state: 'notified', scheduledFor: ago(12), startedAt: ago(12), finishedAt: ago(12), attempts: 1, simulated: false, results: [{ check: 'garage_door', subject: 'main', status: 'open', reason: null }, { check: 'patio_umbrella', subject: 'patio', status: 'down', reason: null }], missed: false, reason: null, risk: { atRisk: true, known: true } },
+        { id: 'r2', protocol: 'nightly_sweep', trigger: 'schedule', state: 'notified', scheduledFor: ago(12), startedAt: ago(12), finishedAt: ago(12), attempts: 1, simulated: false, results: [{ check: 'garage_door', subject: 'main', status: 'open', reason: null }, { check: 'patio_umbrella', subject: 'patio', status: 'down', reason: null }], missed: false, reason: null, risk: { atRisk: true, known: true },
+          report: { kind: 'evening', text: 'ALERT: Your garage door is still open. There\'s gusts up to 32 mph around 11 PM tonight.', deliveries: [{ profileId: 1, status: 'sent' }, { profileId: 2, status: 'in_app' }] } },
+        { id: 'r0', protocol: 'nightly_sweep', trigger: 'report', state: 'safe', scheduledFor: ago(900), startedAt: ago(900), finishedAt: ago(900), attempts: 1, simulated: false, results: [], missed: false, reason: null, risk: null,
+          report: { kind: 'morning', text: 'Good morning, I hope you slept well through the night. All quiet — nothing happened overnight.', deliveries: [{ profileId: 1, status: 'sent' }, { profileId: 2, status: 'sent' }] } },
         { id: 'r1', protocol: 'storm_umbrella', trigger: 'weather', state: 'notified', scheduledFor: ago(300), startedAt: ago(300), finishedAt: ago(300), attempts: 1, simulated: false, results: [{ check: 'patio_umbrella', subject: 'patio', status: 'up', reason: null }], missed: false, reason: null, risk: { atRisk: true, known: true } },
       ],
     };
     const view = () => {
       const active = g.incidents.filter((i: any) => ['open', 'notified', 'acknowledged'].includes(i.state));
       return { status: active.some((i: any) => i.condition !== 'unknown') ? 'attention' : active.length ? 'unverified' : 'secure', bridge: 'ready', protocols: g.protocols,
-        lastSweep: g.runs.find((r: any) => r.protocol === 'nightly_sweep' && r.trigger === 'schedule') || null, nextSweepAt: new Date(Date.now() + 23 * 3_600_000).toISOString(),
+        lastSweep: g.runs.find((r: any) => r.protocol === 'nightly_sweep' && r.trigger === 'schedule') || null, nextSweepAt: new Date(Date.now() + 23 * 3_600_000).toISOString(), nextMorningReportAt: new Date(Date.now() + 9 * 3_600_000).toISOString(),
         incidents: g.incidents, runs: g.runs, events: [],
         weather: { atRisk: true, known: true, urgent: true, reasons: [{ kind: 'wind', text: 'gusts up to 32 mph around 11 PM' }], earliestAt: new Date(Date.now() + 60 * 60_000).toISOString(), checkedAt: ago(1), sources: { forecast: 'ok', alerts: 'ok' } },
         cameras: [{ serial: 'T8171S', name: 'Side Yard', watched: true, lastSeenAt: ago(120), batteryPercent: 100, freshSnapshotAvailable: true }, { serial: 'T8171B', name: 'Backyard', watched: true, lastSeenAt: ago(120), batteryPercent: 98, freshSnapshotAvailable: true }],

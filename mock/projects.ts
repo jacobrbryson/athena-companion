@@ -21,6 +21,16 @@ const MOCK_RECALLS = [
 ];
 let mockCars: Any[] = [{ id: 'aaaabbbb-1111-2222-3333-444455556666', vehicleUuid: null, vehicleName: null, make: 'BMW', model: 'X5', year: 2019, vin: '5UXCR6C56KLL12345', odometerMi: 31069, fuel: { percent: 42, rangeMi: 186 }, battery: null, locked: false, locationEnabled: false, location: null, syncedAt: new Date().toISOString() }];
 const vehiclePhotos = new Map<string, string>();
+// Dev-only: mock_vehicle_deadline=true starts with a property and a car whose
+// registration and inspection are due in three days — the Home deadline banner.
+if (localStorage.getItem('mock_vehicle_deadline') === 'true') {
+  const inDays = (n: number) => { const d = new Date(); d.setDate(d.getDate() + n); return d.toLocaleDateString('en-CA'); };
+  property = { uuid: 'property-mock', name: 'Home', address: '1 Main St' };
+  vehicles = [{ uuid: 'vehicle-mock-x5', propertyUuid: property.uuid, name: 'BMW X5', year: 2019, make: 'BMW', model: 'X5', color: 'Black', plate: 'BRSN1', vin: null,
+    registrationState: 'VA', registrationNumber: 'R1234567', inspectionStation: null, odometer: 31069, odometerOn: inDays(-3),
+    registrationDue: inDays(3), inspectionDue: inDays(3), insuranceDue: inDays(90), serviceDue: null, serviceDueMiles: null, notes: null,
+    hasPhoto: false, createdAt: now(), updatedAt: now(), service: [], recalls: MOCK_RECALLS }];
+}
 const issuePhotos = new Map<string, string>();
 
 // Linked, one thermostat online and one offline — the case the panel exists for.
@@ -210,7 +220,7 @@ export function mockProjectsRoute(method: string, p: string, query: URLSearchPar
       const next = { ...v, ...b, photo: undefined, updatedAt: now() };
       next.name = (b.name ?? v.name ?? '').trim() || [next.year, next.make, next.model].filter(Boolean).join(' ');
       if (!next.name) fail(400, 'Give the vehicle a name, or its make and model.');
-      for (const k of ['make', 'model', 'color', 'plate', 'vin', 'notes']) next[k] = typeof next[k] === 'string' ? next[k].trim() || null : next[k] ?? null;
+      for (const k of ['make', 'model', 'color', 'plate', 'vin', 'registrationState', 'registrationNumber', 'inspectionStation', 'notes']) next[k] = typeof next[k] === 'string' ? next[k].trim() || null : next[k] ?? null;
       if (b.odometer !== undefined && b.odometer !== v.odometer) next.odometerOn = b.odometer === null ? null : now().slice(0, 10);
       if (b.photo !== undefined) { if (b.photo) vehiclePhotos.set(next.uuid, b.photo); else vehiclePhotos.delete(next.uuid); }
       next.hasPhoto = vehiclePhotos.has(next.uuid);
@@ -218,7 +228,7 @@ export function mockProjectsRoute(method: string, p: string, query: URLSearchPar
     };
     if (method === 'POST') {
       if (!property) fail(400, 'Add your property first — vehicles live at a property.');
-      const blank = { recalls: MOCK_RECALLS, uuid: uid('vehicle'), propertyUuid: property.uuid, year: null, make: null, model: null, color: null, plate: null, vin: null, odometer: null, odometerOn: null, registrationDue: null, inspectionDue: null, insuranceDue: null, serviceDue: null, serviceDueMiles: null, notes: null, createdAt: now(), service: [] };
+      const blank = { recalls: MOCK_RECALLS, uuid: uid('vehicle'), propertyUuid: property.uuid, year: null, make: null, model: null, color: null, plate: null, vin: null, registrationState: null, registrationNumber: null, inspectionStation: null, odometer: null, odometerOn: null, registrationDue: null, inspectionDue: null, insuranceDue: null, serviceDue: null, serviceDueMiles: null, notes: null, createdAt: now(), service: [] };
       vehicles = [...vehicles, shape({ ...body, propertyUuid: body.propertyUuid || property.uuid }, blank)];
     } else if (method === 'PATCH') vehicles = vehicles.map(v => v.uuid === uuid ? shape(body, v) : v);
     else if (method === 'DELETE') { vehicles = vehicles.filter(v => v.uuid !== vehicle.uuid); vehiclePhotos.delete(vehicle.uuid); }

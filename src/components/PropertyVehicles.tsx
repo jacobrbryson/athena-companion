@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { carOf, dueItems, vehiclesApi, type RecallStatus, type ServiceInput, type SmartcarCar, type SmartcarList, type Vehicle, type VehicleInput } from '../api/propertyVehicles';
+import { carOf, deadlines, dueItems, URGENT_DAYS, vehiclesApi, yearAfter, type DueItem, type RecallStatus, type ServiceInput, type SmartcarCar, type SmartcarList, type Vehicle, type VehicleInput } from '../api/propertyVehicles';
 import { Drawer } from './Drawer';
 import { DrawerButton } from './ActionControls';
 import { readImage } from './Property';
@@ -70,6 +70,7 @@ function VehicleCard({ v, onOpen }: { v: Vehicle; onOpen: () => void }) {
   const top = due.find(d => d.tone !== 'later');
   const open = (v.recalls || []).filter(r => r.status === 'open');
   const urgent = open.find(r => r.parkIt || r.parkOutside);
+  const undated = !v.registrationDue && !v.inspectionDue;
   return <li><button type="button" className="pv-card" onClick={onOpen}>
     <span className="pv-thumb">{photo ? <img src={photo} alt="" /> : CAR}</span>
     <span className="pv-card-text">
@@ -78,6 +79,7 @@ function VehicleCard({ v, onOpen }: { v: Vehicle; onOpen: () => void }) {
       <small>{v.odometer !== null ? `${milesLabel(v.odometer)} · as of ${dayLabel(v.odometerOn!)}` : 'No mileage yet'}</small>
       {urgent ? <span className="pv-chip pv-overdue">Recall: {urgent.parkIt ? 'don’t drive it' : 'park outside'}</span>
         : top ? <span className={`pv-chip pv-${top.tone}`}>{top.label} {top.when}</span> : due.length ? <span className="pv-chip pv-later">Nothing due soon</span> : null}
+      {undated && <span className="pv-chip pv-soon">Add registration &amp; inspection dates</span>}
       {!urgent && open.length > 0 && <span className="pv-chip pv-soon">{open.length === 1 ? '1 open recall' : `${open.length} open recalls`}</span>}
     </span>
   </button></li>;
@@ -95,10 +97,11 @@ export function VehicleList({ state, propertyName, hasProperty, onOpen, onAdd }:
   </div>;
 }
 
-type Draft = Record<'name' | 'year' | 'make' | 'model' | 'color' | 'plate' | 'vin' | 'odometer' | 'registrationDue' | 'inspectionDue' | 'insuranceDue' | 'serviceDue' | 'serviceDueMiles' | 'notes', string>;
+type Draft = Record<'name' | 'year' | 'make' | 'model' | 'color' | 'plate' | 'vin' | 'registrationState' | 'registrationNumber' | 'inspectionStation' | 'odometer' | 'registrationDue' | 'inspectionDue' | 'insuranceDue' | 'serviceDue' | 'serviceDueMiles' | 'notes', string>;
 const toDraft = (v?: Vehicle | null): Draft => ({
   name: v?.name || '', year: v?.year?.toString() || '', make: v?.make || '', model: v?.model || '', color: v?.color || '',
   plate: v?.plate || '', vin: v?.vin || '', odometer: v?.odometer?.toString() || '',
+  registrationState: v?.registrationState || '', registrationNumber: v?.registrationNumber || '', inspectionStation: v?.inspectionStation || '',
   registrationDue: v?.registrationDue || '', inspectionDue: v?.inspectionDue || '', insuranceDue: v?.insuranceDue || '',
   serviceDue: v?.serviceDue || '', serviceDueMiles: v?.serviceDueMiles?.toString() || '', notes: v?.notes || '',
 });
@@ -122,6 +125,7 @@ export function VehicleDrawer({ state, vehicle, propertyUuid, onClose }: { state
     try {
       const body: VehicleInput = {
         name: draft.name.trim(), year: num(draft.year), make: draft.make, model: draft.model, color: draft.color, plate: draft.plate, vin: draft.vin,
+        registrationState: draft.registrationState, registrationNumber: draft.registrationNumber, inspectionStation: draft.inspectionStation,
         odometer: num(draft.odometer), registrationDue: draft.registrationDue || null, inspectionDue: draft.inspectionDue || null,
         insuranceDue: draft.insuranceDue || null, serviceDue: draft.serviceDue || null, serviceDueMiles: num(draft.serviceDueMiles), notes: draft.notes,
         ...(photo !== undefined ? { photo } : {}),
@@ -154,11 +158,19 @@ export function VehicleDrawer({ state, vehicle, propertyUuid, onClose }: { state
         {vehicle?.odometerOn && <p className="pi-muted">Last reading {dayLabel(vehicle.odometerOn)}. A new number is dated today; logging service with its mileage updates it too.</p>}
       </fieldset>
       <fieldset disabled={busy}>
-        <legend>Coming due <small>(optional)</small></legend>
+        <legend>Registration &amp; inspection <small>(the dates put it on Home when they’re close)</small></legend>
         <div className="pv-row">
-          {field('registrationDue', 'Registration renews', { type: 'date' })}
+          {field('registrationState', 'State', { maxLength: 2, autoCapitalize: 'characters', placeholder: 'VA' })}
+          {field('registrationNumber', 'Registration number', { maxLength: 40, spellCheck: false })}
+        </div>
+        <div className="pv-row">
+          {field('registrationDue', 'Registration expires', { type: 'date' })}
           {field('inspectionDue', 'Inspection due', { type: 'date' })}
         </div>
+        {field('inspectionStation', 'Inspected at (optional)', { maxLength: 100, placeholder: 'e.g. the shop on Main St' })}
+      </fieldset>
+      <fieldset disabled={busy}>
+        <legend>Insurance &amp; service <small>(optional)</small></legend>
         <div className="pv-row">
           {field('insuranceDue', 'Insurance renews', { type: 'date' })}
           {field('serviceDue', 'Next service by date', { type: 'date' })}
@@ -217,43 +229,137 @@ function ServiceLog({ state, vehicle }: { state: VehiclesState; vehicle: Vehicle
   </section>;
 }
 
-const RECALL_WORD: Record<RecallStatus, string> = { open: 'Open', done: 'Done', not_applicable: 'Doesn’t apply' };
+const RECALL_WORD: Record<RecallStatus, string> = { open: 'Open', acknowledged: 'Acknowledged', done: 'Repaired', not_applicable: 'Doesn’t apply' };
+const unrepaired = (status: RecallStatus) => status === 'open' || status === 'acknowledged';
 
-/** NHTSA recalls for the model year; the person marks each done or not applicable. */
+/**
+ * NHTSA recalls for the model year. Folded to one line unless an open one says
+ * don't drive it or park it outside; each recall is acknowledged (seen, not
+ * fixed yet), confirmed repaired, or marked doesn't apply.
+ */
 function RecallList({ state, vehicle }: { state: VehiclesState; vehicle: Vehicle }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [openOne, setOpenOne] = useState<string | null>(null);
   const recalls = vehicle.recalls || [];
+  const open = recalls.filter(r => r.status === 'open');
+  const seen = recalls.filter(r => r.status === 'acknowledged');
+  const closed = recalls.length - open.length - seen.length;
+  const [expanded, setExpanded] = useState(() => open.some(r => r.parkIt || r.parkOutside));
   const mark = async (campaign: string, status: RecallStatus) => {
     setBusy(campaign); setError('');
     try { await state.setRecall(vehicle.uuid, campaign, status); } catch (e) { setError((e as Error).message); } finally { setBusy(null); }
   };
+  const tally = [open.length ? `${open.length} open` : '', seen.length ? `${seen.length} acknowledged` : '', closed ? `${closed} closed` : ''].filter(Boolean).join(' · ');
   return <section className="pv-due pv-recalls" aria-label="Safety recalls">
-    <h3>Safety recalls</h3>
-    {!recalls.length ? <p className="pi-muted">{vehicle.vin || (vehicle.year && vehicle.make && vehicle.model)
-      ? 'NHTSA lists no recalls for this model year, as of the last check.'
-      : 'Add the VIN, or the year, make and model, and I’ll check NHTSA for safety recalls.'}</p>
-      : <ul>{recalls.map(r => <li key={r.campaign} className={r.status === 'open' ? undefined : 'pv-recall-closed'}>
-        <button type="button" className="pv-recall-head" aria-expanded={openOne === r.campaign} onClick={() => setOpenOne(o => (o === r.campaign ? null : r.campaign))}>
-          <span>{r.component || 'Recall'} <small className="pv-mono">{r.campaign}</small></span>
-          <span className={`pv-chip ${r.status !== 'open' ? 'pv-later' : r.parkIt || r.parkOutside ? 'pv-overdue' : 'pv-soon'}`}>
-            {r.status === 'open' && r.parkIt ? 'Don’t drive it' : r.status === 'open' && r.parkOutside ? 'Park outside' : RECALL_WORD[r.status]}
-          </span>
-        </button>
-        {openOne === r.campaign && <div className="pv-recall-body">
-          {r.summary && <p>{r.summary}</p>}
-          {r.consequence && <p><strong>Risk:</strong> {r.consequence}</p>}
-          {r.remedy && <p><strong>Fix:</strong> {r.remedy}</p>}
-          <div className="pv-recall-actions">
-            {r.status !== 'done' && <DrawerButton onClick={() => void mark(r.campaign, 'done')} disabled={busy === r.campaign}>Done</DrawerButton>}
-            {r.status !== 'not_applicable' && <DrawerButton onClick={() => void mark(r.campaign, 'not_applicable')} disabled={busy === r.campaign}>Doesn’t apply</DrawerButton>}
-            {r.status !== 'open' && <DrawerButton onClick={() => void mark(r.campaign, 'open')} disabled={busy === r.campaign}>Reopen</DrawerButton>}
-          </div>
-        </div>}
-      </li>)}</ul>}
-    <p className="pi-muted pv-recall-note">From NHTSA, for this model year — a dealer can tell you from the VIN whether yours was already fixed.</p>
+    <button type="button" className="pv-recall-toggle" aria-expanded={expanded} onClick={() => setExpanded(x => !x)}>
+      <h3>Safety recalls</h3>
+      <span className={`pv-chip ${open.some(r => r.parkIt || r.parkOutside) ? 'pv-overdue' : open.length ? 'pv-soon' : 'pv-later'}`}>{tally || 'None listed'}</span>
+      <span aria-hidden="true" className="pv-recall-caret">{expanded ? '▴' : '▾'}</span>
+    </button>
+    {expanded && <>
+      {!recalls.length ? <p className="pi-muted">{vehicle.vin || (vehicle.year && vehicle.make && vehicle.model)
+        ? 'NHTSA lists no recalls for this model year, as of the last check.'
+        : 'Add the VIN, or the year, make and model, and I’ll check NHTSA for safety recalls.'}</p>
+        : <ul>{recalls.map(r => <li key={r.campaign} className={unrepaired(r.status) ? undefined : 'pv-recall-closed'}>
+          <button type="button" className="pv-recall-head" aria-expanded={openOne === r.campaign} onClick={() => setOpenOne(o => (o === r.campaign ? null : r.campaign))}>
+            <span>{r.component || 'Recall'} <small className="pv-mono">{r.campaign}</small></span>
+            <span className={`pv-chip ${!unrepaired(r.status) ? 'pv-later' : r.status === 'open' && (r.parkIt || r.parkOutside) ? 'pv-overdue' : 'pv-soon'}`}>
+              {r.status === 'open' && r.parkIt ? 'Don’t drive it' : r.status === 'open' && r.parkOutside ? 'Park outside' : RECALL_WORD[r.status]}
+            </span>
+          </button>
+          {openOne === r.campaign && <div className="pv-recall-body">
+            {r.summary && <p>{r.summary}</p>}
+            {r.consequence && <p><strong>Risk:</strong> {r.consequence}</p>}
+            {r.remedy && <p><strong>Fix:</strong> {r.remedy}</p>}
+            {r.status === 'acknowledged' && (r.parkIt || r.parkOutside) && <p><strong>NHTSA still says {r.parkIt ? 'don’t drive it' : 'park it outside'} until it’s repaired.</strong></p>}
+            <div className="pv-recall-actions">
+              {r.status === 'open' && <DrawerButton onClick={() => void mark(r.campaign, 'acknowledged')} disabled={busy === r.campaign}>Acknowledge</DrawerButton>}
+              {r.status !== 'done' && <DrawerButton primary onClick={() => void mark(r.campaign, 'done')} disabled={busy === r.campaign}>Confirm repaired</DrawerButton>}
+              {r.status !== 'not_applicable' && <DrawerButton onClick={() => void mark(r.campaign, 'not_applicable')} disabled={busy === r.campaign}>Doesn’t apply</DrawerButton>}
+              {r.status !== 'open' && <DrawerButton onClick={() => void mark(r.campaign, 'open')} disabled={busy === r.campaign}>Reopen</DrawerButton>}
+            </div>
+          </div>}
+        </li>)}</ul>}
+      <p className="pi-muted pv-recall-note">From NHTSA, for this model year — a dealer can tell you from the VIN whether yours was already fixed. Acknowledge one you’ve seen but haven’t had fixed yet.</p>
+    </>}
     {error && <p role="alert">{error}</p>}
+  </section>;
+}
+
+/** One line of Coming due; a registration, inspection or insurance date can be marked renewed with its next date. */
+function DueRow({ state, vehicle, item }: { state: VehiclesState; vehicle: Vehicle; item: DueItem }) {
+  const kind = item.kind === 'registrationDue' || item.kind === 'inspectionDue' || item.kind === 'insuranceDue' ? item.kind : null;
+  const [next, setNext] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const save = async () => {
+    if (!kind || !next) return;
+    setBusy(true); setError('');
+    try { await state.update(vehicle.uuid, { [kind]: next }); setNext(null); } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
+  };
+  return <li className="pv-due-row">
+    <span>{item.label}</span>
+    <span className="pv-due-right">
+      <span className={`pv-chip pv-${item.tone}`}>{item.when}</span>
+      {kind && item.tone !== 'later' && next === null && <button type="button" className="pv-link" onClick={() => setNext(yearAfter(vehicle[kind]!))}>Renewed?</button>}
+    </span>
+    {next !== null && <form className="pv-renew" onSubmit={e => { e.preventDefault(); void save(); }}>
+      <label className="pi-label">Next {item.label.toLowerCase()} due<input type="date" value={next} min={localDay()} disabled={busy} onChange={e => setNext(e.target.value)} /></label>
+      <DrawerButton type="submit" primary disabled={busy || !next}>{busy ? 'Saving…' : 'Save'}</DrawerButton>
+      <DrawerButton onClick={() => setNext(null)} disabled={busy}>Cancel</DrawerButton>
+      {error && <p role="alert">{error}</p>}
+    </form>}
+  </li>;
+}
+
+const names = (list: string[]) => (list.length <= 1 ? list.join('') : `${list.slice(0, -1).join(', ')} and ${list[list.length - 1]}`);
+
+/**
+ * Across the top of Home while a registration, inspection or insurance date
+ * is overdue or close (deadlines(): within two weeks, red inside a week). It
+ * has no "Got it": it goes when the date does — renewed or edited — because
+ * the owner wants Home impossible to miss on this (2026-10-25).
+ */
+export function VehicleDeadlineBanner({ vehicles, onOpen, onAsk }: { vehicles: Vehicle[]; onOpen: (uuid: string) => void; onAsk: (prompt: string) => void }) {
+  const list = deadlines(vehicles);
+  if (!list.length) return null;
+  const first = list[0];
+  const urgent = first.days <= URGENT_DAYS;
+  // Everything on the same car that is as pressing goes in one headline.
+  const together = list.filter(d => d.vehicle.uuid === first.vehicle.uuid && (d === first || d.days <= Math.max(first.days, URGENT_DAYS)));
+  const what = names(together.map(d => d.label.toLowerCase()));
+  const headline = first.days < 0
+    ? `${first.vehicle.name} ${what} ${together.length > 1 ? 'are' : 'is'} overdue`
+    : `${first.vehicle.name} ${what} due ${first.days === 0 ? 'today' : first.days === 1 ? 'tomorrow' : `in ${first.days} days`}`;
+  const ask = `My ${first.vehicle.name}'s ${what} ${first.days < 0 ? (together.length > 1 ? 'are overdue' : 'is overdue') : `${together.length > 1 ? 'are' : 'is'} due ${first.when}`}${first.vehicle.registrationState ? ` (registered in ${first.vehicle.registrationState})` : ''}. Walk me through getting it done this week: what to bring, where to go, and what it costs.`;
+  return <section role="alert" aria-live="polite"
+    className={`overflow-hidden rounded-xl border-2 shadow-2xl ${urgent ? 'border-red-400 bg-red-700 text-white shadow-red-900/60' : 'border-amber-300 bg-amber-400 text-black'}`}>
+    <div className="flex items-start gap-3 px-4 pt-4">
+      <span className="relative mt-1 flex h-4 w-4 shrink-0" aria-hidden>
+        {urgent && <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-white opacity-75" />}
+        <span className={`relative inline-flex h-4 w-4 rounded-full ${urgent ? 'bg-white' : 'bg-black/70'}`} />
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="font-mono text-[11px] uppercase tracking-[0.2em] opacity-80">{urgent ? 'Vehicle deadline' : 'Vehicle deadline coming up'}</p>
+        <h2 className="mt-1 text-2xl font-bold leading-tight sm:text-3xl">{headline}</h2>
+      </div>
+    </div>
+    <ul className={`mx-4 mt-3 divide-y rounded-lg ${urgent ? 'divide-white/15 bg-black/20' : 'divide-black/10 bg-white/40'}`}>
+      {list.map(d => <li key={`${d.vehicle.uuid}:${d.kind}`} className="flex flex-wrap items-baseline gap-x-3 px-3 py-2 text-sm">
+        <strong className="min-w-0 flex-1 font-semibold">{d.vehicle.name} · {d.label}</strong>
+        <span className="shrink-0">{new Date(`${d.day}T12:00:00`).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}</span>
+        <span className="shrink-0 font-semibold">{d.when}</span>
+      </li>)}
+    </ul>
+    <div className="flex flex-wrap gap-2 px-4 pb-4 pt-3">
+      <button type="button" onClick={() => onOpen(first.vehicle.uuid)} className={`rounded-lg px-4 py-2 text-sm font-bold ${urgent ? 'bg-white text-red-700' : 'bg-black text-amber-300'}`}>
+        Open {first.vehicle.name}
+      </button>
+      <button type="button" onClick={() => onAsk(ask)} className={`rounded-lg border px-4 py-2 text-sm font-semibold ${urgent ? 'border-white/60' : 'border-black/40'}`}>
+        Help me get it done
+      </button>
+    </div>
   </section>;
 }
 
@@ -322,14 +428,17 @@ export function VehicleDetailsDrawer({ state, vehicle, propertyName, onClose, on
         {vehicle.color && <><dt>Color</dt><dd>{vehicle.color}</dd></>}
         {vehicle.plate && <><dt>Plate</dt><dd>{vehicle.plate}</dd></>}
         {vehicle.vin && <><dt>VIN</dt><dd className="pv-mono">{vehicle.vin}</dd></>}
+        {(vehicle.registrationState || vehicle.registrationNumber) && <><dt>Registration</dt><dd>{vehicle.registrationState}{vehicle.registrationState && vehicle.registrationNumber ? ' · ' : ''}{vehicle.registrationNumber && <span className="pv-mono">{vehicle.registrationNumber}</span>}</dd></>}
+        {vehicle.inspectionStation && <><dt>Inspected at</dt><dd>{vehicle.inspectionStation}</dd></>}
         <dt>Odometer</dt><dd>{vehicle.odometer !== null ? `${milesLabel(vehicle.odometer)} · as of ${dayLabel(vehicle.odometerOn!)}` : 'Not recorded'}</dd>
         {propertyName && <><dt>Lives at</dt><dd>{propertyName}</dd></>}
         {vehicle.notes && <><dt>For Athena</dt><dd>{vehicle.notes}</dd></>}
       </dl>
       <section className="pv-due" aria-label="Coming due">
         <h3>Coming due</h3>
-        {due.length ? <ul>{due.map((d, i) => <li key={i}><span>{d.label}</span><span className={`pv-chip pv-${d.tone}`}>{d.when}</span></li>)}</ul>
+        {due.length ? <ul>{due.map((d, i) => <DueRow key={i} state={state} vehicle={vehicle} item={d} />)}</ul>
           : <p className="pi-muted">No dates yet. Add registration, inspection, insurance or service dates with <strong>Edit</strong>.</p>}
+        {due.length > 0 && !vehicle.registrationDue && !vehicle.inspectionDue && <p className="pi-muted">No registration or inspection date yet — add them with <strong>Edit</strong> and I’ll put them on Home when they’re close.</p>}
       </section>
       <RecallList state={state} vehicle={vehicle} />
       <div className="pi-actions"><DrawerButton onClick={() => onAsk(vehicle)}>Ask Athena about it</DrawerButton></div>

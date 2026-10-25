@@ -34,6 +34,16 @@
 .pv-recall-body p { margin: 0 0 6px; }
 .pv-recall-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
 .pv-recall-note { margin-top: 8px; font-size: 12px; }
+/* Recalls fold to one line (the toggle); Coming due rows can be marked renewed */
+.pv-recall-toggle { display: flex; width: 100%; align-items: center; gap: 10px; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.pv-recall-toggle h3 { margin: 0; flex: 1; }
+.pv-recall-toggle + * { margin-top: 8px; }
+.pv-recall-caret { opacity: .7; }
+.pv-due li.pv-due-row { flex-wrap: wrap; }
+.pv-due-right { display: inline-flex; align-items: center; gap: 10px; }
+.pv-link { padding: 0; border: 0; background: none; color: #7fd6f2; font-size: 12px; text-decoration: underline; cursor: pointer; }
+.pv-renew { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; width: 100%; }
+.pv-renew input { color-scheme: dark; }
 /* Cars through Smartcar */
 .pv-car-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid #ffffff14; }
 .pv-car-row .pv-card-text { flex: 1 1 220px; }

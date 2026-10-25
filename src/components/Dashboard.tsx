@@ -49,7 +49,7 @@ import { Stat } from './SectionMetric';
 import { WeatherPanel } from './WeatherPanel';
 import { usePropertyIssues, reportedWhen, ReportIssueDrawer, IssueDetailsDrawer, ActiveIssueBanner, IssueList, troubleshootPrompt, findProPrompt } from './PropertyIssues';
 import type { PropertyIssue } from '../api/propertyIssues';
-import { useVehicles, VehicleList, VehicleDrawer, VehicleDetailsDrawer, vehiclePrompt, SmartcarPanel } from './PropertyVehicles';
+import { useVehicles, VehicleList, VehicleDrawer, VehicleDetailsDrawer, vehiclePrompt, SmartcarPanel, VehicleDeadlineBanner } from './PropertyVehicles';
 import { useThermostats, ThermostatList } from './PropertyThermostats';
 import { PropertySecurity } from './PropertySecurity';
 import { SystemOverview, SystemTabs, SYSTEM_TAB_IDS, type SystemTab, type SystemTile } from './SystemPage';
@@ -744,6 +744,9 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
   const [issueDrawer, setIssueDrawer] = useState<{ kind: 'report' } | { kind: 'view' | 'edit'; uuid: string } | null>(null);
   const propertyTab = propertyTabFromPath(location.pathname);
   const setPropertyTab = (tab: PropertyTab) => navigate(propertyTabPath(property.property?.uuid, tab));
+  // A registration, inspection or insurance deadline: Home shows it until the date moves (owner, 2026-10-25).
+  const vehicleDeadline = <VehicleDeadlineBanner vehicles={vehicles.vehicles} onAsk={onAsk}
+    onOpen={uuid => { navigate(propertyTabPath(property.property?.uuid, 'property-vehicles')); setVehicleDrawer({ kind: 'view', uuid }); }} />;
   useEffect(() => {
     if (compact || section !== 'Property' || !property.property?.uuid) return;
     const canonical = propertyTabPath(property.property.uuid, propertyTab);
@@ -1990,6 +1993,7 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
       <HomeHero greeting={greeting} firstName={firstName} blurb={blurb} nodes={nodes} />
       {data.summary.error && <p className="dashboard-notice" role="status">Connected data is unavailable. {data.summary.error}</p>}
       <EmergencyBanner onAsk={onAsk} onPlaces={onPlaces} inline />
+      {vehicleDeadline}
       <WorkBanner events={events} workingLocations={summary?.calendar.data?.workingLocations} timeZone={timeZone} now={now} jira={summary?.jira.status === 'ready' ? summary.jira.data : null} onOpen={go('Calendar')} onOpenWork={go('Work')} />
       <HomeChanges updates={updates} now={now} onOpen={area => onNavigate?.(area)} compact />
       {statStrip}
@@ -2046,6 +2050,7 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
         leaves the banner out of its own header on this page so it shows once;
         the compact drawer skips it, the console's banner is already above it. */}
     {!compact && <EmergencyBanner onAsk={onAsk} onPlaces={onPlaces} inline />}
+    {vehicleDeadline}
     <WorkBanner events={events} workingLocations={summary?.calendar.data?.workingLocations} timeZone={timeZone} now={now} jira={summary?.jira.status === 'ready' ? summary.jira.data : null} onOpen={go('Calendar')} onOpenWork={go('Work')} />
     {/* While the work banner is up it already answers "what now" — the next
         meeting, the ticket in progress — so Right Now stays out of its way. */}
