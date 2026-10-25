@@ -14,9 +14,16 @@ export function dashboardPath(section: DashboardSection): string {
 
 export const dashboardRoutePaths = [...new Set(Object.values(SECTION_PATHS))];
 
+/** A project's own page: /properties/<id>/projects/<uuid> or /system/projects/<uuid>. Null on every other path. */
+export function projectUuidFromPath(pathname: string): string | null {
+  const m = pathname.match(/^\/(?:properties\/[^/]+|system)\/projects\/([^/]+)\/?$/);
+  return m ? decodeURIComponent(m[1]) : null;
+}
+
 export function sectionFromPath(pathname: string): DashboardSection {
   const path = pathname.replace(/\/+$/, '') || '/';
   if (path === '/dashboard') return 'Dashboard';
+  if (path.startsWith(`${SECTION_PATHS.Projects}/`)) return 'Projects';
   if (path === '/properties' || path.startsWith('/properties/')) return 'Property';
   return (Object.entries(SECTION_PATHS).find(([, entry]) => entry === path)?.[0] as DashboardSection | undefined) ?? 'Dashboard';
 }

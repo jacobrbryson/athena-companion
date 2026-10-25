@@ -3,6 +3,8 @@
 // The rules here are a stand-in — derived "blocked", progress and a rough rank —
 // just enough to exercise the UI; the real arithmetic lives in core_api.
 
+import { execution, completion, closeout, criteriaOf } from './projectExecution';
+
 type Any = Record<string, any>;
 const CLOSED = new Set(['done', 'dropped']);
 const now = () => new Date().toISOString();
@@ -25,7 +27,7 @@ const vehiclePhotos = new Map<string, string>();
 // registration and inspection are due in three days — the Home deadline banner.
 if (localStorage.getItem('mock_vehicle_deadline') === 'true') {
   const inDays = (n: number) => { const d = new Date(); d.setDate(d.getDate() + n); return d.toLocaleDateString('en-CA'); };
-  property = { uuid: 'property-mock', name: 'Home', address: '1 Main St' };
+  property = { uuid: 'property-mock', name: 'Home', address: '1 Main St', areas: [] };
   vehicles = [{ uuid: 'vehicle-mock-x5', propertyUuid: property.uuid, name: 'BMW X5', year: 2019, make: 'BMW', model: 'X5', color: 'Black', plate: 'BRSN1', vin: null,
     registrationState: 'VA', registrationNumber: 'R1234567', inspectionStation: null, odometer: 31069, odometerOn: inDays(-3),
     registrationDue: inDays(3), inspectionDue: inDays(3), insuranceDue: inDays(90), serviceDue: null, serviceDueMiles: null, notes: null,
@@ -52,10 +54,12 @@ function project(over: Any): Any {
     cost: { diyLow: null, diyHigh: null, proLow: null, proHigh: null, note: null },
     valueNote: null, seasonMonths: null, conditions: [], serves: [], involvesChildren: false, visibility: 'private',
     areas: [{ area: 'home', primary: true }], steps: [], lastProgressAt: null, completedAt: null,
-    source: 'manual', importKey: null, createdAt: now(), updatedAt: now(), ...over,
+    source: 'manual', importKey: null, refCode: null, revision: null, pinnedAt: null,
+    budget: { working: null, ceiling: null, note: null }, items: [], createdAt: now(), updatedAt: now(), ...over,
   };
 }
-const step = (title: string, status = 'todo') => ({ uuid: uid('step'), ordinal: 0, title, detail: null, status, who: 'me', blockedOn: null, dueOn: null, effortMinutes: null, indoor: null, completedAt: null });
+const step = (title: string, status = 'todo', over: Any = {}) => ({ uuid: uid('step'), ordinal: 0, title, detail: null, status, who: 'me', blockedOn: null, dueOn: null, effortMinutes: null, indoor: null, completedAt: null,
+  phase: null, acceptanceCriteria: null, waitingOnActor: null, reviewAt: null, unblockAction: null, dependsOn: [] as string[], ...over });
 const inDays = (d: number) => new Date(Date.now() + d * 86400e3).toISOString().slice(0, 10);
 
 const water = project({ title: 'Keep water away from the foundation', kind: 'program', status: 'active', priority: 5, serves: ['protect_house'] });
@@ -68,9 +72,31 @@ const shelves = project({ title: 'Rehang the garage shelves', status: 'ready', e
 const steps = project({ title: 'Front walkway steps', status: 'active', steps: [step('Set the bottom step'), step('Plants'), step('Accent lighting')] });
 const bulk = project({ title: 'Put on 20 lb of muscle', status: 'active', priority: 4, areas: [{ area: 'health', primary: true }], startsOn: inDays(-8), endsOn: inDays(143), metric: { source: 'weight', start: 180, target: 200, unit: 'lb' } });
 const coaching = project({ title: 'Coach the U10 team', status: 'active', areas: [{ area: 'community', primary: true }, { area: 'family', primary: false }, { area: 'health', primary: false }], endsOn: inDays(9), involvesChildren: true });
+const item = (kind: 'spec' | 'material', label: string, value: string | null, unit: string | null, status = 'pending', cost: [number, number] | null = null) =>
+  ({ uuid: uid('item'), kind, ordinal: 0, label, value, unit, status, costLow: cost?.[0] ?? null, costHigh: cost?.[1] ?? null, note: null, confirmedAt: status === 'confirmed' ? now() : null });
+// The side yard, wired like the owner's plan: what each step needs first, one blocker past its check-back day.
+const sy = {
+  layout: step('Produce a dimensioned overhead site layout', 'done', { phase: 'Design and Approvals', dueOn: inDays(1) }),
+  line: step('Measure and mark the 32-foot fence line', 'todo', { phase: 'Design and Approvals', dueOn: inDays(6), effortMinutes: 45, indoor: false, detail: 'From the house (behind the pad) toward the evergreens. Mark the fence line and the 4 ft gate opening.' }),
+  gate: step('Mark the gate opening', 'todo', { phase: 'Design and Approvals', effortMinutes: 20, acceptanceCriteria: 'Opening is 4 ft clear' }),
+  wall: step('Verify the structural wall attachment', 'blocked', { phase: 'Procurement and Site Prep', dueOn: inDays(10), blockedOn: 'house framing check', waitingOnActor: 'the contractor', reviewAt: new Date(Date.now() - 86400e3).toISOString() }),
+  pour: step('Excavate, set footings and pour', 'todo', { phase: 'Concrete and Foundations', dueOn: inDays(18) }),
+};
+sy.line.dependsOn = [sy.layout.uuid];
+sy.gate.dependsOn = [sy.line.uuid];
+sy.pour.dependsOn = [sy.gate.uuid, sy.wall.uuid];
+const sideyard = project({ title: 'Side yard: awning, pad, fence & gate', refCode: 'HOME-SIDEYARD-2026-001', revision: '1.2', status: 'planning', priority: 4, pinnedAt: now(),
+  budget: { working: 3200, ceiling: 4200, note: 'Until the final material takeoff' }, cost: { diyLow: 3200, diyHigh: 4200, proLow: null, proHigh: null, note: 'DIY' },
+  indoor: false, conditions: ['dry'],
+  doneWhen: 'Concrete pad drains away from the house\nAwning is secure and weather-resistant\nFence is stable and 6\' tall\nGate opens and latches correctly\nTrash cans roll through easily\nSite is cleaned up\nRequired inspections are complete',
+  doneWhenConfirmed: [],
+  sessions: [{ uuid: uid('session'), stepUuid: sy.line.uuid, plannedStart: `${inDays(6)}T13:00:00.000Z`, plannedMinutes: 120, actualMinutes: null, status: 'planned', madeProgress: null, calendarEventId: null, calendarInSync: null, notes: null, completedAt: null, createdAt: now() }],
+  steps: [sy.layout, sy.line, sy.gate, sy.wall, sy.pour],
+  items: [item('spec', 'Fence alignment', 'House wall → evergreens', null, 'confirmed'), item('spec', 'Fence run', '32', 'ft', 'confirmed'), item('spec', 'Gate location', 'Beside the pad', null),
+    item('material', 'Freestanding fence posts', '5–7', 'posts', 'estimate', [150, 260]), item('material', 'Gate, 4 ft', '1', 'gate', 'estimate', [250, 450])] });
 const launch = project({ title: 'Launch the online store', status: 'active', priority: 4, areas: [{ area: 'work', primary: true }] });
 
-let projects: Any[] = [water, inspect, barrier, gutters, rain, insulate, shelves, steps, bulk, coaching, launch];
+let projects: Any[] = [sideyard, water, inspect, barrier, gutters, rain, insulate, shelves, steps, bulk, coaching, launch];
 let links: Any[] = [
   { from: inspect.uuid, to: water.uuid, relation: 'contributes_to', note: null },
   { from: barrier.uuid, to: water.uuid, relation: 'contributes_to', note: null },
@@ -116,6 +142,8 @@ function bound(p: Any) {
 
 const fail = (status: number, message: string): never => { throw Object.assign(new Error(message), { status }); };
 
+let prefs = { focusLimit: 3, preferFinishing: true };
+
 function snapshot() {
   const byId = new Map(projects.map(p => [p.uuid, p]));
   const out = projects.map(p => {
@@ -128,23 +156,34 @@ function snapshot() {
     const why: string[] = [];
     if (severity >= 4) why.push('answers an open concern');
     if (days !== null && days <= 45) why.push(days < 0 ? 'past its deadline' : `deadline in ${days} days`);
-    const rank = CLOSED.has(p.status) ? null : p.priority * 10 + severity * 6 + (days !== null && days <= 45 ? 10 : 0) + (effectiveStatus === 'active' ? 5 : 0) - (['blocked', 'waiting'].includes(effectiveStatus) ? 15 : 0);
+    const pins = projects.filter(x => x.pinnedAt && !CLOSED.has(x.status)).sort((a, b) => b.pinnedAt.localeCompare(a.pinnedAt));
+    if (p.pinnedAt && !CLOSED.has(p.status)) why.unshift('you moved it to the front');
+    const rank = CLOSED.has(p.status) ? null : p.pinnedAt ? 100_000 + pins.length - pins.indexOf(p) : p.priority * 10 + severity * 6 + (days !== null && days <= 45 ? 10 : 0) + (effectiveStatus === 'active' ? 5 : 0) - (['blocked', 'waiting'].includes(effectiveStatus) ? 15 : 0);
     return {
       ...p, effectiveStatus, primaryArea: (p.areas.find((a: Any) => a.primary) || p.areas[0]).area,
       steps: p.steps.map((s: Any, i: number) => ({ ...s, ordinal: i })),
+      items: p.items.map((it: Any, i: number) => ({ ...it, ordinal: i })),
       progress: { steps: { done: counted.filter((s: Any) => s.status === 'done').length, total: counted.length }, contributors: { done: parts.filter((x: Any) => x.status === 'done').length, total: parts.length } },
       rank, rankWhy: rank === null ? [] : why,
       bindings: boundTo.get(p.uuid) || [],
       media: { entries: (journal.get(p.uuid) || []).length, photos: (journal.get(p.uuid) || []).filter(e => e.type === 'photo').length, cover: null },
     };
-  });
-  return { success: true, projects: out, links, concerns, charters };
+  }).map(p => ({ ...p, sessions: p.sessions || [], execution: execution(p), completion: completion(p), closeout: closeout(p) }));
+  const active = out.filter(p => p.effectiveStatus === 'active').length;
+  return {
+    success: true, projects: out, links, concerns, charters, prefs,
+    execution: {
+      nextActions: out.map(p => p.execution?.nextAction).filter(Boolean), followUps: out.flatMap(p => p.execution?.dueFollowUps || []),
+      upcomingSessions: [], focus: { active, limit: prefs.focusLimit, preferFinishing: prefs.preferFinishing, over: prefs.preferFinishing && active >= prefs.focusLimit }, metrics: {},
+    },
+  };
 }
 
 function merge(p: Any, body: Any) {
   const next = { ...p };
   for (const [k, v] of Object.entries(body || {})) {
-    if (['effort', 'cost', 'metric'].includes(k)) next[k] = v === null ? null : { ...(p[k] || {}), ...(v as Any) };
+    if (k === 'pinned') next.pinnedAt = v ? now() : null;
+    else if (['effort', 'cost', 'metric', 'budget'].includes(k)) next[k] = v === null ? null : { ...(p[k] || {}), ...(v as Any) };
     else if (k === 'areas' || k === 'primaryArea') continue;
     else next[k] = v;
   }
@@ -154,6 +193,14 @@ function merge(p: Any, body: Any) {
     next.areas = [...new Set([primary, ...list])].map(a => ({ area: a, primary: a === primary }));
   }
   if (next.status !== 'waiting') next.waitingOn = null;
+  const checks = criteriaOf(next.doneWhen);
+  if (next.status === 'done' && p.status !== 'done' && checks.length) {
+    if (body?.outcomeConfirmed !== true) fail(400, `"${p.title}" says what done looks like. Confirm the outcome to close it out.`);
+    next.doneWhenConfirmed = checks;
+    next.outcomeConfirmedAt = now();
+  }
+  delete next.outcomeConfirmed;
+  next.doneWhenConfirmed = (next.doneWhenConfirmed || []).filter((c: string) => checks.includes(c));
   next.completedAt = next.status === 'done' ? p.completedAt || now() : null;
   next.updatedAt = now();
   return next;
@@ -264,6 +311,7 @@ export function mockProjectsRoute(method: string, p: string, query: URLSearchPar
     }
     return snapshot();
   }
+  if (parts[0] === 'prefs') { prefs = { ...prefs, ...body }; return snapshot(); }
   if (parts[0] === 'binding-options') return { sports: [{ sport: 'Weightlifting', count: 40 }, { sport: 'Running', count: 12 }, { sport: 'Mountain Biking', count: 10 }, { sport: 'Soccer', count: 9 }], metrics: ['weight'] };
   if (parts[0] === 'concerns') {
     if (method === 'POST') concerns = [...concerns, { uuid: uid('concern'), resolvedAt: null, projects: [], status: 'open', severity: 3, ...body }];
@@ -287,10 +335,37 @@ export function mockProjectsRoute(method: string, p: string, query: URLSearchPar
   if (parts[1] === 'steps') {
     let list = [...target.steps];
     if (parts[2] === 'reorder') list = body.order.map((u: string) => list.find((s: Any) => s.uuid === u)).filter(Boolean);
-    else if (!parts[2]) list.push(step(body.title, body.status));
+    else if (!parts[2]) list.push(step(body.title, body.status, body.phase ? { phase: body.phase } : {}));
+    else if (parts[3] === 'dependencies') {
+      const dep = method === 'DELETE' ? parts[4] : body.dependsOn;
+      if (dep === parts[2]) fail(400, "A step can't need itself first.");
+      // Would the new edge loop back? Walk from the prerequisite through what it needs.
+      const needs = (u: string, seen = new Set<string>()): boolean => u === parts[2] || (!seen.has(u) && (seen.add(u), (list.find((x: Any) => x.uuid === u)?.dependsOn || []).some((v: string) => needs(v, seen))));
+      if (method !== 'DELETE' && needs(dep)) fail(400, 'That would make those steps wait on each other.');
+      list = list.map((s: Any) => (s.uuid !== parts[2] ? s : { ...s, dependsOn: method === 'DELETE' ? s.dependsOn.filter((u: string) => u !== dep) : [...new Set([...s.dependsOn, dep])] }));
+    }
     else if (method === 'DELETE') list = list.filter((s: Any) => s.uuid !== parts[2]);
-    else list = list.map((s: Any) => (s.uuid === parts[2] ? { ...s, ...body } : s));
+    else list = list.map((s: Any) => (s.uuid !== parts[2] ? s : { ...s, ...body, ...((body.status ?? s.status) !== 'blocked' ? { blockedOn: null, waitingOnActor: null, reviewAt: null, unblockAction: null } : {}),
+      ...(body.reviewAt && /^\d{4}-\d{2}-\d{2}$/.test(body.reviewAt) ? { reviewAt: `${body.reviewAt}T12:00:00.000Z` } : {}) }));
     projects = projects.map(x => (x.uuid === target.uuid ? { ...x, steps: list } : x));
+    return snapshot();
+  }
+  if (parts[1] === 'items') {
+    let list = [...target.items];
+    if (!parts[2]) {
+      if (!body?.label?.trim()) fail(400, 'Say what it is — a label like "Fence length".');
+      list.push({ ...item(body.kind || 'spec', body.label.trim(), body.value || null, body.unit || null, body.status || 'pending'), costLow: body.costLow ?? null, costHigh: body.costHigh ?? null, note: body.note || null });
+    } else if (method === 'DELETE') list = list.filter((it: Any) => it.uuid !== parts[2]);
+    else list = list.map((it: Any) => (it.uuid === parts[2] ? { ...it, ...body, kind: it.kind, confirmedAt: (body.status ?? it.status) === 'confirmed' ? it.confirmedAt || now() : null } : it));
+    projects = projects.map(x => (x.uuid === target.uuid ? { ...x, items: list } : x));
+    return snapshot();
+  }
+  if (parts[1] === 'sessions') {
+    let list = [...(target.sessions || [])];
+    if (method === 'POST') list.push({ uuid: uid('session'), stepUuid: body.stepUuid ?? null, plannedStart: body.plannedStart, plannedMinutes: body.plannedMinutes, actualMinutes: null, status: 'planned', madeProgress: null, calendarEventId: null, calendarInSync: null, notes: null, completedAt: null, createdAt: now() });
+    else if (method === 'DELETE') list = list.filter((s: Any) => s.uuid !== parts[2]);
+    else list = list.map((s: Any) => (s.uuid === parts[2] ? { ...s, ...body, ...(body.plannedStart && s.calendarEventId ? { calendarInSync: false } : {}) } : s));
+    projects = projects.map(x => (x.uuid === target.uuid ? { ...x, sessions: list } : x));
     return snapshot();
   }
   if (parts[1] === 'bound') return { bindings: bound(target) };

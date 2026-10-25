@@ -369,7 +369,9 @@ export interface Place {
 export type ProjectStatus = 'todo' | 'in_progress' | 'blocked' | 'done';
 /** What Athena is putting in front of them, and everything it was drawn from. */
 export interface Suggestion {
-  id: string; kind: 'place' | 'project' | 'goal' | 'work' | 'rest'; title: string; why: string | null;
+  id: string; kind: 'place' | 'project' | 'goal' | 'work' | 'rest' | 'followup'; title: string; why: string | null;
+  /** project: set when this is a project's next ready step (title is the step). followup: the project waiting. */
+  projectTitle?: string; stepUuid?: string; reasons?: string[]; multiSession?: boolean; startsNew?: boolean;
   activity?: string; url?: string; distanceMi?: number | null; driveMinutes?: number | null;
   closesAt?: string | null; closesInMinutes?: number | null; todaysHours?: string[];
   usableMinutes?: number | null; weatherDependent?: boolean;
@@ -386,6 +388,8 @@ export interface RightNow {
   alternates: Suggestion[];
   /** Why the obvious answer is not on offer — a closed park beats a blank card. */
   ruledOut: { id: string; title: string; reason: string; url?: string }[];
+  /** Projects with nothing ready right now, why, and what would unstick them. Older servers omit it. */
+  held?: { id: string; title: string; reason: string; unblock: string | null }[];
   window: { freeMinutes: number | null; busyWith: string | null;
     nextEvent: { title: string; start: string; inMinutes: number | null } | null };
   reason?: string | null;

@@ -56,8 +56,10 @@ self.addEventListener("push", (event) => {
 			// ninety minutes, and is a silent way to lose things now that she
 			// can raise two at once. A redelivery of the same nudge still
 			// collapses onto itself, because the uuid is the same.
-			tag: data.uuid ? `nudge-${data.uuid}` : data.kind === "test" ? "athena-test" : "athena",
+			tag: data.uuid ? `${data.kind === "trading" ? "trading" : "nudge"}-${data.uuid}` : data.kind === "test" ? "athena-test" : "athena",
 			renotify: true,
+			// The person's own choice in Trading → Settings → Notifications.
+			silent: data.silent === "1",
 			data,
 		})
 	);
@@ -65,13 +67,23 @@ self.addEventListener("push", (event) => {
 
 self.addEventListener("notificationclick", (event) => {
 	event.notification.close();
-	const target = new URL("/", self.location.origin).href;
+	// A notification may name the page it is about (a trading setup carries
+	// /family/trading?setup=…). Only same-origin paths are honoured, so a
+	// payload can never send the browser anywhere else.
+	const data = event.notification.data || {};
+	const path = typeof data.url === "string" && data.url.startsWith("/") && !data.url.startsWith("//") ? data.url : "/";
+	const target = new URL(path, self.location.origin).href;
 
 	event.waitUntil(
 		(async () => {
 			const open = await clients.matchAll({ type: "window", includeUncontrolled: true });
 			for (const client of open) {
 				if (client.url.startsWith(self.location.origin)) {
+					// Already on the page the notification names: hand it over
+					// (the page re-checks the setup). Elsewhere: go there.
+					if (path !== "/" && !client.url.startsWith(new URL(path.split("?")[0], self.location.origin).href) && "navigate" in client) {
+						return client.focus().then((c) => c.navigate(target)).catch(() => clients.openWindow(target));
+					}
 					// Hand the tab the nudge as well as the focus, so she can
 					// open what she was talking about rather than the person
 					// arriving at a home screen and having to find it.

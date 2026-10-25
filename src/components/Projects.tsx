@@ -3,9 +3,10 @@ import { Drawer } from './Drawer';
 import { DrawerButton } from './ActionControls';
 import { ProjectJournal } from './ProjectJournal';
 import { ProjectData } from './ProjectData';
+import { ProjectExecution, StepDetails } from './ProjectExecution';
 import {
-  projectsApi, AREAS, AREA_LABEL, STATES, STATE_LABEL, PRIORITY_LABEL, CONDITIONS,
-  type Area, type Concern, type Project, type ProjectInput, type ProjectsSnapshot, type ProjectState, type Relation,
+  projectsApi, AREAS, AREA_LABEL, STATES, STATE_LABEL, PRIORITY_LABEL, CONDITIONS, ITEM_STATUS_LABEL, COMPLETION_LABEL, criteriaOf,
+  type Area, type Concern, type ItemKind, type ItemStatus, type Project, type ProjectInput, type ProjectItem, type ProjectsSnapshot, type ProjectState, type Relation,
 } from '../api/projects';
 
 /**
@@ -55,7 +56,7 @@ export function useProjects(enabled = true): ProjectsState {
     setError('');
     try {
       const next = await write();
-      setSnap({ projects: next.projects, links: next.links, concerns: next.concerns, charters: next.charters });
+      setSnap({ projects: next.projects, links: next.links, concerns: next.concerns, charters: next.charters, prefs: next.prefs, execution: next.execution });
       return true;
     } catch (e) {
       setError((e as Error).message);
@@ -83,6 +84,14 @@ export function effortLine(p: Project) {
   const r = range(p.effort.min, p.effort.max, hours);
   return [r, p.effort.note].filter(Boolean).join(' ') || null;
 }
+/** "$3.2k budget · $4.2k ceiling", or null. */
+export function budgetLine(p: Project) {
+  const b = p.budget;
+  if (!b || (b.working === null && b.ceiling === null)) return null;
+  return [b.working !== null && `${money(b.working)} budget`, b.ceiling !== null && `${money(b.ceiling)} ceiling`].filter(Boolean).join(' · ');
+}
+/** Specs and materials still waiting on a measurement or a decision. */
+export const toVerify = (p: Project) => (p.items ?? []).filter(i => i.status === 'pending');
 function deadlineLine(p: Project) {
   if (!p.hardDeadline) return null;
   const days = Math.floor((Date.parse(`${p.hardDeadline}T23:59:59`) - Date.now()) / 86_400_000);
@@ -133,27 +142,39 @@ function nextStepOf(p: Project) {
 export function ProjectRow({ p, snap, onOpen, compact = false }: { p: Project; snap: ProjectsSnapshot; onOpen: (uuid: string) => void; compact?: boolean }) {
   const links = linksOf(snap, p.uuid);
   const blockers = links.needs.filter(n => !CLOSED.has(n.project.status)).map(n => n.project.title);
-  const next = nextStepOf(p);
+  // The server's next action when it sent one (ready, not just next in order); older servers, the first open step.
+  const ex = p.execution;
+  const next = ex ? (ex.nextAction ? { title: ex.nextAction.title } : null) : nextStepOf(p);
+  const followUp = ex?.dueFollowUps[0] ?? null;
+  const session = ex?.upcomingSessions[0] ?? null;
+  const finishing = p.completion && ['outcome_unverified', 'ready_for_confirmation'].includes(p.completion.state) ? p.completion : null;
   const progress = p.progress.contributors.total
     ? { ...p.progress.contributors, label: 'parts done' }
     : p.progress.steps.total ? { ...p.progress.steps, label: 'steps done' } : null;
-  const facts = compact ? [deadlineLine(p)] : [deadlineLine(p), effortLine(p), costLine(p)];
+  const pending = toVerify(p).length;
+  const facts = compact ? [deadlineLine(p)] : [deadlineLine(p), effortLine(p), budgetLine(p) ?? costLine(p), pending ? `${pending} to verify` : null];
   return <li>
     <button type="button" onClick={() => onOpen(p.uuid)}
       className="flex w-full flex-col gap-1 rounded-lg border border-slate-800 bg-slate-950/60 p-3 text-left hover:border-cyan-700">
       <span className="flex w-full items-start justify-between gap-2">
         <strong className="min-w-0 text-sm font-medium text-slate-100">
+          {p.pinnedAt && <span className="mr-1 text-[10px] uppercase tracking-widest text-amber-300" title="You moved this to the front of the line">▲ First</span>}
           {p.kind === 'program' && <span className="mr-1 text-[10px] uppercase tracking-widest text-cyan-400">Program</span>}
           {p.title}
+          {p.refCode && !compact && <span className="ml-2 font-mono text-[10px] text-slate-500">{p.refCode}{p.revision ? ` v${p.revision}` : ''}</span>}
         </strong>
         <StateChip state={p.effectiveStatus} />
       </span>
       <small className="text-xs text-slate-400">
-        {[p.priority >= 4 ? PRIORITY_LABEL[p.priority] : null, ...facts, p.rankWhy[0], !compact && p.media?.photos ? `${p.media.photos} photo${p.media.photos === 1 ? '' : 's'}` : null].filter(Boolean).join(' · ') || ' '}
+        {[p.priority >= 4 ? PRIORITY_LABEL[p.priority] : null, ...facts, p.pinnedAt ? null : p.rankWhy[0], !compact && p.media?.photos ? `${p.media.photos} photo${p.media.photos === 1 ? '' : 's'}` : null].filter(Boolean).join(' · ') || ' '}
       </small>
       {blockers.length > 0 && <small className="text-xs text-rose-200/80">Needs first: {blockers.slice(0, 2).join(', ')}{blockers.length > 2 ? ` +${blockers.length - 2}` : ''}</small>}
       {p.effectiveStatus === 'waiting' && p.waitingOn && <small className="text-xs text-amber-200/80">Waiting on {p.waitingOn}</small>}
       {next && !compact && <small className="text-xs text-slate-300">Next: {next.title}</small>}
+      {!next && !compact && ex?.noActionReason && !CLOSED.has(p.status) && <small className="text-xs text-slate-400">{ex.noActionReason}</small>}
+      {followUp && <small className="text-xs text-amber-200/90">Follow up: {followUp.action}</small>}
+      {session && !compact && <small className="text-xs text-cyan-200/80">Session {new Date(session.plannedStart).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</small>}
+      {finishing && <small className="text-xs text-emerald-200/90">{COMPLETION_LABEL[finishing.state]}</small>}
       {progress && <span className="mt-1 flex items-center gap-2 text-[10px] text-slate-500">
         <span className="h-1 flex-1 overflow-hidden rounded bg-slate-800"><span className="block h-full bg-cyan-500/70" style={{ width: `${progress.total ? (progress.done / progress.total) * 100 : 0}%` }} /></span>
         {progress.done}/{progress.total} {progress.label}
@@ -191,6 +212,7 @@ export function ProjectBoard({ state, onOpen, onNew, area: fixedArea }: {
       <DrawerButton primary onClick={() => onNew(area)}><span aria-hidden="true">＋</span>New project</DrawerButton>
     </div>
     {state.error && <p role="alert" className="text-sm text-amber-200">{state.error} <button className="underline" onClick={state.reload}>Retry</button></p>}
+    {!fixedArea && state.snap.execution && <FocusLine state={state} />}
     {state.loading && !state.snap.projects.length ? <p className="dashboard-empty">Loading projects…</p>
       : <ProjectList projects={open} snap={state.snap} onOpen={onOpen}
         empty={q ? 'Nothing matches that.' : area ? `No open ${AREA_LABEL[area]} projects.` : 'No projects yet — start one.'} />}
@@ -199,6 +221,28 @@ export function ProjectBoard({ state, onOpen, onNew, area: fixedArea }: {
       <div className="mt-3"><ProjectList projects={closed} snap={state.snap} onOpen={onOpen} /></div>
     </details>}
   </div>;
+}
+
+/**
+ * The work-in-progress preference: how many active projects to keep moving.
+ * It only changes what Athena suggests first — nothing is paused or hidden.
+ */
+function FocusLine({ state }: { state: ProjectsState }) {
+  const focus = state.snap.execution!.focus;
+  const prefs = state.snap.prefs ?? { focusLimit: focus.limit, preferFinishing: focus.preferFinishing };
+  return <p className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
+    <span className={focus.over ? 'text-amber-200' : ''}>{focus.active} active</span>
+    <span>· Focus on about</span>
+    <select aria-label="How many active projects to focus on" className="rounded border border-slate-700 bg-slate-950 text-xs" value={prefs.focusLimit} disabled={state.busy}
+      onChange={e => void state.run(() => projectsApi.putPrefs({ focusLimit: Number(e.target.value) }))}>
+      {[1, 2, 3, 4, 5, 6, 8, 10].map(n => <option key={n} value={n}>{n}</option>)}
+    </select>
+    <label className="flex items-center gap-1">
+      <input type="checkbox" checked={prefs.preferFinishing} disabled={state.busy} onChange={e => void state.run(() => projectsApi.putPrefs({ preferFinishing: e.target.checked }))} />
+      finish before starting new
+    </label>
+    {focus.over && prefs.preferFinishing && <span className="text-amber-200/80">— I'll suggest steps on those before anything new.</span>}
+  </p>;
 }
 
 // --- Editor -----------------------------------------------------------------
@@ -211,6 +255,7 @@ const str = (v: number | null | undefined) => (v === null || v === undefined ? '
 
 interface Draft {
   title: string; goal: string; kind: string; status: ProjectState; waitingOn: string; priority: number;
+  refCode: string; revision: string; budgetWorking: string; budgetCeiling: string; budgetNote: string;
   areas: Area[]; primaryArea: Area;
   startsOn: string; endsOn: string; hardDeadline: string;
   effortMin: string; effortMax: string; effortNote: string; indoor: '' | 'yes' | 'no';
@@ -224,6 +269,8 @@ function draftOf(p: Project | null, area: Area): Draft {
   return {
     title: p?.title ?? '', goal: p?.goal ?? '', kind: p?.kind ?? '', status: p?.status ?? 'idea',
     waitingOn: p?.waitingOn ?? '', priority: p?.priority ?? 3,
+    refCode: p?.refCode ?? '', revision: p?.revision ?? '',
+    budgetWorking: str(p?.budget?.working), budgetCeiling: str(p?.budget?.ceiling), budgetNote: p?.budget?.note ?? '',
     areas: p?.areas.map(a => a.area) ?? [area], primaryArea: p?.primaryArea ?? area,
     startsOn: p?.startsOn ?? '', endsOn: p?.endsOn ?? '', hardDeadline: p?.hardDeadline ?? '',
     effortMin: p?.effort.min != null ? String(p.effort.min / 60) : '', effortMax: p?.effort.max != null ? String(p.effort.max / 60) : '',
@@ -241,6 +288,8 @@ function inputOf(d: Draft): ProjectInput {
   return {
     title: d.title, goal: d.goal || null, kind: d.kind || null, status: d.status,
     waitingOn: d.status === 'waiting' ? d.waitingOn || null : null, priority: d.priority,
+    refCode: d.refCode.trim() || null, revision: d.revision.trim().replace(/^v/i, '') || null,
+    budget: { working: num(d.budgetWorking), ceiling: num(d.budgetCeiling), note: d.budgetNote || null },
     areas: d.areas, primaryArea: d.primaryArea,
     startsOn: d.startsOn || null, endsOn: d.endsOn || null, hardDeadline: d.hardDeadline || null,
     effort: { min: mins(d.effortMin), max: mins(d.effortMax), note: d.effortNote || null },
@@ -305,6 +354,30 @@ export function ProjectEditor({ state, uuid, area = 'home', onClose, onOpen }: {
       setDraft(d => ({ ...d, status: patch.status ?? d.status, waitingOn: patch.waitingOn ?? d.waitingOn, priority: patch.priority ?? d.priority }));
     }
   };
+  // A new version of the spec: bump the revision and log what changed as a decision in the journal.
+  const newVersion = async () => {
+    if (!project) return;
+    const guess = project.revision && /^\d+(\.\d+)?$/.test(project.revision) ? (Math.round((Number(project.revision) + 0.1) * 10) / 10).toFixed(1) : '';
+    const revision = window.prompt('New version number', guess);
+    if (!revision?.trim()) return;
+    const v = revision.trim().replace(/^v/i, '');
+    const change = window.prompt(`What changed in v${v}?`, '');
+    if (change === null) return;
+    if (!await state.run(() => projectsApi.update(project.uuid, { revision: v }))) return;
+    setDraft(d => ({ ...d, revision: v }));
+    if (change.trim()) await state.run(() => projectsApi.addEntry(project.uuid, { type: 'decision', body: `v${v} — ${change.trim()}` }));
+  };
+  const first = !!project?.pinnedAt && project.rank !== null && project.rank === Math.max(...state.snap.projects.map(p => p.rank ?? -1e9));
+  // "Mark done" on a project that says what done looks like is closing it out:
+  // the person confirms each check (the server refuses it otherwise).
+  const markDone = () => {
+    if (!project) return;
+    const checks = criteriaOf(project.doneWhen);
+    if (!checks.length) return void quick({ status: 'done' });
+    const open = project.steps.filter(s => !['done', 'skipped'].includes(s.status)).length;
+    const message = `Close out "${project.title}"?${open ? ` ${open} step${open === 1 ? ' is' : 's are'} still open.` : ''} You're confirming:\n\n${checks.map(c => `✓ ${c}`).join('\n')}`;
+    if (window.confirm(message)) void quick({ status: 'done', outcomeConfirmed: true });
+  };
   const hold = () => {
     const reason = window.prompt('Waiting on what? (rain, a delivery, a quote, a person…)', project?.waitingOn ?? '');
     if (reason !== null) void quick({ status: 'waiting', waitingOn: reason.trim() || null });
@@ -334,13 +407,18 @@ export function ProjectEditor({ state, uuid, area = 'home', onClose, onOpen }: {
     {project && <div className="mb-4 flex flex-wrap items-center gap-2">
       <StateChip state={project.effectiveStatus} />
       {project.effectiveStatus === 'blocked' && project.status !== 'blocked' && <span className="text-xs text-rose-200/80">until what it needs is done</span>}
+      {project.pinnedAt && !CLOSED.has(project.status) && <span className="text-xs text-amber-300">▲ Front of the line</span>}
       <span className="flex-1" />
+      {!CLOSED.has(project.status) && !first && <button type="button" className={chip(false)} disabled={state.busy} onClick={() => void quick({ pinned: true })} title="Put this above every other project">Move to front</button>}
+      {!CLOSED.has(project.status) && project.pinnedAt && <button type="button" className={chip(false)} disabled={state.busy} onClick={() => void quick({ pinned: false })} title="Let the usual ordering place it again">Unpin</button>}
       {project.status !== 'active' && !CLOSED.has(project.status) && <button type="button" className={chip(false)} disabled={state.busy} onClick={() => void quick({ status: 'active' })}>Start</button>}
-      {!CLOSED.has(project.status) && <button type="button" className={chip(false)} disabled={state.busy} onClick={() => void quick({ status: 'done' })}>Mark done</button>}
+      {!CLOSED.has(project.status) && <button type="button" className={chip(false)} disabled={state.busy} onClick={markDone}>Mark done</button>}
       {!CLOSED.has(project.status) && project.status !== 'waiting' && <button type="button" className={chip(false)} disabled={state.busy} onClick={hold}>Hold</button>}
       {!CLOSED.has(project.status) && <button type="button" className={chip(false)} disabled={state.busy} onClick={() => void quick({ status: 'dropped' })}>Drop</button>}
       {CLOSED.has(project.status) && <button type="button" className={chip(false)} disabled={state.busy} onClick={() => void quick({ status: 'ready' })}>Reopen</button>}
     </div>}
+
+    {project && <ProjectExecution state={state} project={project} />}
 
     <Section title="The project">
       <div><label className={label} htmlFor="pj-title">Title</label>
@@ -375,6 +453,13 @@ export function ProjectEditor({ state, uuid, area = 'home', onClose, onOpen }: {
           </span>;
         })}</div>
       </div>
+      <div className="grid grid-cols-[1fr_6rem] gap-2">
+        <div><label className={label} htmlFor="pj-ref">Reference code</label>
+          <input id="pj-ref" className={`${field} font-mono`} value={draft.refCode} maxLength={48} onChange={e => set('refCode', e.target.value)} placeholder="HOME-SIDEYARD-2026-001" /></div>
+        <div><label className={label} htmlFor="pj-rev">Version</label>
+          <input id="pj-rev" className={field} value={draft.revision} maxLength={16} onChange={e => set('revision', e.target.value)} placeholder="1.0" /></div>
+      </div>
+      {project && <button type="button" className="self-start text-xs text-cyan-300 underline" disabled={state.busy || dirty} title={dirty ? 'Save your changes first' : undefined} onClick={() => void newVersion()}>New version… (logs what changed in Photos &amp; notes)</button>}
       <div><label className={label} htmlFor="pj-kind">Kind (optional)</label>
         <input id="pj-kind" className={field} value={draft.kind} maxLength={32} onChange={e => set('kind', e.target.value)} placeholder="program, fitness, coaching…" />
         <p className="mt-1 text-xs text-slate-500">"program" makes this an umbrella that other projects are part of.</p></div>
@@ -398,7 +483,7 @@ export function ProjectEditor({ state, uuid, area = 'home', onClose, onOpen }: {
         })}</div></div>
     </Section>
 
-    <Section title="Effort & cost" open={!!(draft.effortMin || draft.diyLow || draft.proLow)}>
+    <Section title="Effort, cost & budget" open={!!(draft.effortMin || draft.diyLow || draft.proLow || draft.budgetWorking || draft.budgetCeiling)}>
       <div className="grid grid-cols-3 gap-2">
         <div><label className={label} htmlFor="pj-emin">Hours (low)</label><input id="pj-emin" inputMode="decimal" className={field} value={draft.effortMin} onChange={e => set('effortMin', e.target.value)} /></div>
         <div><label className={label} htmlFor="pj-emax">Hours (high)</label><input id="pj-emax" inputMode="decimal" className={field} value={draft.effortMax} onChange={e => set('effortMax', e.target.value)} /></div>
@@ -414,6 +499,11 @@ export function ProjectEditor({ state, uuid, area = 'home', onClose, onOpen }: {
         <div><label className={label} htmlFor="pj-pl">Hired $ low</label><input id="pj-pl" inputMode="decimal" className={field} value={draft.proLow} onChange={e => set('proLow', e.target.value)} /></div>
         <div><label className={label} htmlFor="pj-ph">Hired $ high</label><input id="pj-ph" inputMode="decimal" className={field} value={draft.proHigh} onChange={e => set('proHigh', e.target.value)} /></div>
       </div>
+      <div className="grid grid-cols-2 gap-2">
+        <div><label className={label} htmlFor="pj-bw">Working budget $</label><input id="pj-bw" inputMode="decimal" className={field} value={draft.budgetWorking} onChange={e => set('budgetWorking', e.target.value)} /></div>
+        <div><label className={label} htmlFor="pj-bc">Approval ceiling $</label><input id="pj-bc" inputMode="decimal" className={field} value={draft.budgetCeiling} onChange={e => set('budgetCeiling', e.target.value)} /></div>
+      </div>
+      <div><label className={label} htmlFor="pj-bnote">Budget note</label><input id="pj-bnote" className={field} value={draft.budgetNote} maxLength={190} onChange={e => set('budgetNote', e.target.value)} placeholder="Holds until the final material takeoff" /></div>
       <div><label className={label} htmlFor="pj-cnote">Cost note</label><input id="pj-cnote" className={field} value={draft.costNote} maxLength={190} onChange={e => set('costNote', e.target.value)} /></div>
       <div><label className={label} htmlFor="pj-value">Value / ROI</label><input id="pj-value" className={field} value={draft.valueNote} maxLength={255} onChange={e => set('valueNote', e.target.value)} /></div>
       <div><label className={label} htmlFor="pj-serves">Serves (comma-separated)</label><input id="pj-serves" className={field} value={draft.serves} onChange={e => set('serves', e.target.value)} placeholder="safety, health, resale" />
@@ -434,6 +524,8 @@ export function ProjectEditor({ state, uuid, area = 'home', onClose, onOpen }: {
     </Section>
 
     {project && <StepsSection state={state} project={project} />}
+    {project && <ItemsSection state={state} project={project} kind="spec" />}
+    {project && <ItemsSection state={state} project={project} kind="material" />}
     {project && <ProjectData state={state} project={project} />}
     {project && <ProjectJournal state={state} project={project} />}
     {project && <LinksSection state={state} project={project} onOpen={onOpen} />}
@@ -448,7 +540,11 @@ export function ProjectEditor({ state, uuid, area = 'home', onClose, onOpen }: {
 
 function StepsSection({ state, project }: { state: ProjectsState; project: Project }) {
   const [title, setTitle] = useState('');
+  const [open, setOpen] = useState<string | null>(null);
   const steps = project.steps;
+  const ready = new Set((project.execution?.executableSteps ?? []).map(s => s.uuid));
+  const titleOf = new Map(steps.map(s => [s.uuid, s.title]));
+  const waitingOn = (s: typeof steps[number]) => (s.dependsOn ?? []).filter(u => !['done', 'skipped'].includes(steps.find(x => x.uuid === u)?.status ?? 'done'));
   const add = async () => {
     if (!title.trim()) return;
     if (await state.run(() => projectsApi.addStep(project.uuid, { title }))) setTitle('');
@@ -461,24 +557,122 @@ function StepsSection({ state, project }: { state: ProjectsState; project: Proje
     void state.run(() => projectsApi.reorderSteps(project.uuid, order));
   };
   return <Section title={`Steps (${project.progress.steps.done}/${project.progress.steps.total})`} open>
-    <ul className="flex flex-col gap-1">{steps.map((s, i) => <li key={s.uuid} className="flex items-center gap-2 rounded border border-slate-800 px-2 py-1">
+    <ul className="flex flex-col gap-1">{steps.map((s, i) => <li key={s.uuid} className="rounded border border-slate-800 px-2 py-1">
+      <div className="flex items-center gap-2">
       <input type="checkbox" aria-label={`Done: ${s.title}`} checked={s.status === 'done'} disabled={state.busy}
         onChange={e => void state.run(() => projectsApi.updateStep(project.uuid, s.uuid, { status: e.target.checked ? 'done' : 'todo' }))} />
+      <span aria-hidden="true" title={ready.has(s.uuid) ? 'Ready to do' : s.status === 'blocked' ? 'Blocked' : waitingOn(s).length ? 'Waiting on another step' : undefined}
+        className={`h-1.5 w-1.5 shrink-0 rounded-full ${ready.has(s.uuid) ? 'bg-emerald-400' : s.status === 'blocked' ? 'bg-rose-400' : waitingOn(s).length ? 'bg-amber-400' : 'bg-transparent'}`} />
       <input defaultValue={s.title} key={`${s.uuid}-${s.title}`} aria-label="Step title" maxLength={190}
         className={`min-w-0 flex-1 bg-transparent text-sm ${s.status === 'done' ? 'text-slate-500 line-through' : 'text-slate-100'}`}
         onBlur={e => { const v = e.target.value.trim(); if (v && v !== s.title) void state.run(() => projectsApi.updateStep(project.uuid, s.uuid, { title: v })); }} />
+      {s.phase && <span className="hidden max-w-[7rem] shrink-0 truncate rounded bg-slate-800 px-1.5 py-0.5 text-[10px] text-slate-400 sm:inline" title={`Phase: ${s.phase}`}>{s.phase}</span>}
       <select aria-label="Who" value={s.who} className="rounded border border-slate-800 bg-slate-950 text-xs"
         onChange={e => void state.run(() => projectsApi.updateStep(project.uuid, s.uuid, { who: e.target.value as typeof s.who }))}>
         <option value="me">Me</option><option value="someone">Someone</option><option value="athena">Athena</option>
       </select>
       <button type="button" aria-label="Move up" className="text-xs text-slate-400" disabled={i === 0 || state.busy} onClick={() => move(i, -1)}>↑</button>
       <button type="button" aria-label="Move down" className="text-xs text-slate-400" disabled={i === steps.length - 1 || state.busy} onClick={() => move(i, 1)}>↓</button>
+      <button type="button" aria-label={`More about ${s.title}`} aria-expanded={open === s.uuid} className="text-xs text-slate-400" onClick={() => setOpen(o => (o === s.uuid ? null : s.uuid))}>⋯</button>
       <button type="button" aria-label={`Remove step ${s.title}`} className="text-xs text-slate-500 hover:text-rose-300" disabled={state.busy}
         onClick={() => void state.run(() => projectsApi.removeStep(project.uuid, s.uuid))}>✕</button>
+      </div>
+      {(waitingOn(s).length > 0 || s.status === 'blocked') && open !== s.uuid && <small className="block pl-7 text-[11px] text-slate-500">
+        {s.status === 'blocked' ? `Blocked${s.blockedOn ? `: ${s.blockedOn}` : ''}${s.reviewAt ? ` · check ${new Date(s.reviewAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}` : ''}` : `Needs: ${waitingOn(s).map(u => titleOf.get(u)).join(', ')}`}
+      </small>}
+      {open === s.uuid && <StepDetails state={state} project={project} step={s} />}
     </li>)}</ul>
     <form className="flex gap-2" onSubmit={e => { e.preventDefault(); void add(); }}>
       <input className={`${field} min-w-0 flex-1`} value={title} maxLength={190} onChange={e => setTitle(e.target.value)} placeholder="Add a step" aria-label="New step" />
       <button className="dashboard-chat-cta shrink-0" disabled={state.busy || !title.trim()}>Add</button>
+    </form>
+  </Section>;
+}
+
+const itemTone: Record<ItemStatus, string> = {
+  confirmed: 'border-emerald-600 text-emerald-200', pending: 'border-amber-600 text-amber-200', estimate: 'border-slate-600 text-slate-300',
+};
+const NEXT_STATUS: Record<ItemStatus, ItemStatus> = { pending: 'confirmed', confirmed: 'estimate', estimate: 'pending' };
+
+/**
+ * Specs (measurements and decisions, each confirmed or still to verify) or the
+ * material takeoff (quantities with an optional cost range, totalled against
+ * the budget). Tap the status chip to move it along: to verify → confirmed →
+ * estimate.
+ */
+function ItemsSection({ state, project, kind }: { state: ProjectsState; project: Project; kind: ItemKind }) {
+  const materials = kind === 'material';
+  const items = (project.items ?? []).filter(i => i.kind === kind);
+  const [d, setD] = useState({ label: '', value: '', unit: '', costLow: '', costHigh: '', status: (materials ? 'estimate' : 'pending') as ItemStatus });
+  const pending = items.filter(i => i.status === 'pending').length;
+  const add = async () => {
+    if (!d.label.trim()) return;
+    const ok = await state.run(() => projectsApi.addItem(project.uuid, {
+      kind, label: d.label, value: d.value || null, unit: d.unit || null, status: d.status,
+      ...(materials ? { costLow: num(d.costLow), costHigh: num(d.costHigh) } : {}),
+    }));
+    if (ok) setD(x => ({ ...x, label: '', value: '', unit: '', costLow: '', costHigh: '' }));
+  };
+  const patch = (i: ProjectItem, p: Partial<ProjectItem>) => void state.run(() => projectsApi.updateItem(project.uuid, i.uuid, p));
+  const priced = items.filter(i => i.costLow !== null || i.costHigh !== null);
+  const total = priced.reduce((t, i) => ({ lo: t.lo + (i.costLow ?? i.costHigh ?? 0), hi: t.hi + (i.costHigh ?? i.costLow ?? 0) }), { lo: 0, hi: 0 });
+  const { working, ceiling } = project.budget ?? { working: null, ceiling: null };
+  const verdict = !priced.length ? null
+    : ceiling !== null && total.hi > ceiling ? { tone: 'text-rose-300', text: `high end is over the ${money(ceiling)} ceiling` }
+      : working !== null && total.hi > working ? { tone: 'text-amber-200', text: `high end is over the ${money(working)} working budget` }
+        : working !== null ? { tone: 'text-emerald-200', text: `within the ${money(working)} working budget` } : null;
+  const title = materials
+    ? `Materials takeoff (${items.length})`
+    : `Specs & verification${items.length ? ` (${items.length - pending} settled${pending ? `, ${pending} to verify` : ''})` : ''}`;
+  const small = 'rounded border border-slate-800 bg-slate-950 px-1 text-xs';
+  const box = field.replace('w-full ', '');
+  return <Section title={title} open={items.length > 0}>
+    <ul className="flex flex-col gap-1">{items.map(i => <li key={i.uuid} className="flex flex-col gap-1 rounded border border-slate-800 px-2 py-1">
+      <div className="flex items-center gap-2">
+        <button type="button" disabled={state.busy} onClick={() => patch(i, { status: NEXT_STATUS[i.status] })} title="Tap to change"
+          className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-widest ${itemTone[i.status]}`}>{ITEM_STATUS_LABEL[i.status]}</button>
+        <input defaultValue={i.label} key={`${i.uuid}-l-${i.label}`} aria-label="What" maxLength={190} className="min-w-0 flex-1 bg-transparent text-sm text-slate-100"
+          onBlur={e => { const v = e.target.value.trim(); if (v && v !== i.label) patch(i, { label: v }); }} />
+        <button type="button" aria-label={`Remove ${i.label}`} className="text-xs text-slate-500 hover:text-rose-300" disabled={state.busy}
+          onClick={() => void state.run(() => projectsApi.removeItem(project.uuid, i.uuid))}>✕</button>
+      </div>
+      <div className="flex flex-wrap items-center gap-2 pl-1 text-xs text-slate-400">
+        <input defaultValue={i.value ?? ''} key={`${i.uuid}-v-${i.value}`} aria-label={materials ? 'Quantity' : 'Value'} maxLength={64} placeholder={materials ? 'qty' : 'value'}
+          className={`min-w-0 flex-1 ${small}`}
+          onBlur={e => { const v = e.target.value.trim() || null; if (v !== i.value) patch(i, { value: v }); }} />
+        <input defaultValue={i.unit ?? ''} key={`${i.uuid}-u-${i.unit}`} aria-label="Unit" maxLength={16} placeholder="unit" className={`w-16 ${small}`}
+          onBlur={e => { const v = e.target.value.trim() || null; if (v !== i.unit) patch(i, { unit: v }); }} />
+        {materials && <><span>$</span>
+        <input defaultValue={str(i.costLow)} key={`${i.uuid}-cl-${i.costLow}`} aria-label="Cost low" inputMode="decimal" placeholder="low" className={`w-16 ${small}`}
+          onBlur={e => { const v = num(e.target.value); if (v !== i.costLow) patch(i, { costLow: v }); }} />
+        <span>–</span>
+        <input defaultValue={str(i.costHigh)} key={`${i.uuid}-ch-${i.costHigh}`} aria-label="Cost high" inputMode="decimal" placeholder="high" className={`w-16 ${small}`}
+          onBlur={e => { const v = num(e.target.value); if (v !== i.costHigh) patch(i, { costHigh: v }); }} /></>}
+      </div>
+      <input defaultValue={i.note ?? ''} key={`${i.uuid}-n-${i.note}`} aria-label="Note" maxLength={255} placeholder="Add a note"
+        className="bg-transparent pl-1 text-xs text-slate-400"
+        onBlur={e => { const v = e.target.value.trim() || null; if (v !== i.note) patch(i, { note: v }); }} />
+    </li>)}</ul>
+    {materials && priced.length > 0 && <p className="text-xs text-slate-300">
+      Priced lines: <b className="text-cyan-200">{range(total.lo, total.hi, money)}</b>{priced.length < items.length ? ` (${items.length - priced.length} unpriced)` : ''}
+      {verdict && <span className={verdict.tone}> — {verdict.text}</span>}
+    </p>}
+    <form className="flex flex-col gap-2" onSubmit={e => { e.preventDefault(); void add(); }}>
+      <input className={field} value={d.label} maxLength={190} onChange={e => setD({ ...d, label: e.target.value })}
+        placeholder={materials ? 'Add a material (fence posts…)' : 'Add a spec (gate width…)'} aria-label={materials ? 'New material' : 'New spec'} />
+      <div className="flex gap-2">
+        <input className={`${box} min-w-0 flex-1`} value={d.value} maxLength={64} onChange={e => setD({ ...d, value: e.target.value })} placeholder={materials ? 'Quantity (5–7)' : 'Value (32, 13 ft × 75 in…)'} aria-label={materials ? 'Quantity' : 'Value'} />
+        <input className={`${box} w-20`} value={d.unit} maxLength={16} onChange={e => setD({ ...d, unit: e.target.value })} placeholder="unit" aria-label="Unit" />
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        {(['pending', 'confirmed', 'estimate'] as ItemStatus[]).map(s => <button key={s} type="button" className={chip(d.status === s)} onClick={() => setD({ ...d, status: s })}>{ITEM_STATUS_LABEL[s]}</button>)}
+        {materials && <>
+          <input className={`${box} w-20`} inputMode="decimal" value={d.costLow} onChange={e => setD({ ...d, costLow: e.target.value })} placeholder="$ low" aria-label="Cost low" />
+          <input className={`${box} w-20`} inputMode="decimal" value={d.costHigh} onChange={e => setD({ ...d, costHigh: e.target.value })} placeholder="$ high" aria-label="Cost high" />
+        </>}
+        <span className="flex-1" />
+        <button className="dashboard-chat-cta shrink-0" disabled={state.busy || !d.label.trim()}>Add</button>
+      </div>
     </form>
   </Section>;
 }

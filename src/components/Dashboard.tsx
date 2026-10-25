@@ -46,6 +46,8 @@ import type { Area } from '../api/projects';
 import { useProperty, PropertyOverview, PropertyWeather, PropertyNavigation, propertyHealth, propertyTabFromPath, propertyTabPath, type PropertyTab } from './Property';
 import { SectionTabs } from './PageTabs';
 import { Stat } from './SectionMetric';
+import { ProjectDashboard } from './ProjectDashboard';
+import { dashboardPath, projectUuidFromPath } from '../dashboardRoutes';
 import { WeatherPanel } from './WeatherPanel';
 import { usePropertyIssues, reportedWhen, ReportIssueDrawer, IssueDetailsDrawer, ActiveIssueBanner, IssueList, troubleshootPrompt, findProPrompt } from './PropertyIssues';
 import type { PropertyIssue } from '../api/propertyIssues';
@@ -747,15 +749,25 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
   // A registration, inspection or insurance deadline: Home shows it until the date moves (owner, 2026-10-25).
   const vehicleDeadline = <VehicleDeadlineBanner vehicles={vehicles.vehicles} onAsk={onAsk}
     onOpen={uuid => { navigate(propertyTabPath(property.property?.uuid, 'property-vehicles')); setVehicleDrawer({ kind: 'view', uuid }); }} />;
+  // A project's own page: /properties/<id>/projects/<project> or /system/projects/<project>.
+  const projectPageUuid = projectUuidFromPath(location.pathname);
   useEffect(() => {
-    if (compact || section !== 'Property' || !property.property?.uuid) return;
+    if (compact || section !== 'Property' || !property.property?.uuid || projectPageUuid) return;
     const canonical = propertyTabPath(property.property.uuid, propertyTab);
     if (location.pathname !== canonical) navigate(canonical, { replace: true });
-  }, [compact, section, property.property?.uuid, propertyTab, location.pathname, navigate]);
+  }, [compact, section, property.property?.uuid, propertyTab, location.pathname, navigate, projectPageUuid]);
   // Only while the Overview is on screen: a page load may cost a Google read.
   const thermostats = useThermostats(section === 'Property' && !compact && propertyTab === 'property-utilities');
   const [drawer, setDrawer] = useState<ProjectsDrawer>(null);
-  const openProject = (uuid: string) => setDrawer({ kind: 'project', uuid });
+  // Opening a project goes to its own page — inside Property when that's where you are, else under System → Projects.
+  // Editing it is still the drawer (the page's Edit project).
+  const openProject = (uuid: string) => {
+    setDrawer(null);
+    navigate(section === 'Property' && property.property?.uuid
+      ? `${propertyTabPath(property.property.uuid, 'property-projects')}/${encodeURIComponent(uuid)}`
+      : `${dashboardPath('Projects')}/${encodeURIComponent(uuid)}`);
+  };
+  const editProject = (uuid: string) => setDrawer({ kind: 'project', uuid });
   const newProject = (area?: Area) => setDrawer({ kind: 'project', uuid: null, area: area ?? 'home' });
   const drawers = <ProjectsDrawers state={proj} drawer={drawer} setDrawer={setDrawer} />;
   // A Health project reading the scale draws its plan on the Weight panel (in lb, the panel's unit).
@@ -1620,6 +1632,27 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
     </SectionPage>;
   }
 
+  /** One project's own page, opened from any project list (ProjectDashboard). */
+  function ProjectPage(uuid: string) {
+    const p = proj.snap.projects.find(x => x.uuid === uuid);
+    const inProperty = section === 'Property';
+    const back = inProperty
+      ? { label: `${property.property?.name || 'Property'} projects`, go: () => setPropertyTab('property-projects') }
+      : { label: 'Projects', go: () => navigate(dashboardPath('Projects')) };
+    if (!p) {
+      return <SectionPage ctx={ctx} eyebrow="PROJECT" title={proj.loading ? 'Loading…' : 'Not found'}
+        blurb={proj.loading ? '' : proj.error || 'That project is gone — it may have been deleted.'} ask="Help me with my projects.">
+        <Panel title="Projects" wide><button type="button" className="dashboard-chat-cta" onClick={back.go}>‹ {back.label}</button></Panel>
+      </SectionPage>;
+    }
+    return <SectionPage ctx={ctx} eyebrow="" title="" blurb="" tabs={inProperty ? undefined : systemTabs('Projects')}
+      ask={`Let's work on "${p.title}". What's next, what's in the way, and how can you help?`}
+      hero={<ProjectDashboard state={proj} project={p} backLabel={back.label} onBack={back.go}
+        onEdit={() => editProject(p.uuid)} onOpen={openProject} onAsk={onAsk} />}>
+      {drawers}
+    </SectionPage>;
+  }
+
   /** The house: its projects and programs, the concerns behind them, and the charter they are decided by. */
   function HomePage() {
     const home = proj.snap.projects.filter(p => p.primaryArea === 'home');
@@ -2009,6 +2042,7 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
   // The briefing is what Home and the drawer show; every other nav entry has
   // a page of its own.
   if (!compact && section !== 'Dashboard') {
+    if (projectPageUuid && (section === 'Property' || section === 'Projects')) return ProjectPage(projectPageUuid);
     if (section === 'Today') return TodayPage();
     if (section === 'Calendar') return CalendarPage();
     if (section === 'Health') return HealthPage();

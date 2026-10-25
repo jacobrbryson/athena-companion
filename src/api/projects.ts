@@ -22,10 +22,102 @@ export interface ProjectStep {
   uuid: string; ordinal: number; title: string; detail: string | null; status: StepStatus;
   who: 'me' | 'someone' | 'athena'; blockedOn: string | null; dueOn: string | null;
   effortMinutes: number | null; indoor: boolean | null; completedAt: string | null;
+  /** The plan phase it's grouped under ("Concrete and Foundations"). A label only — it never makes a step wait. */
+  phase?: string | null;
+  /** What done means for this step, one check per line. */
+  acceptanceCriteria?: string | null;
+  /** While blocked: who or what it waits on, when to look again, and what would clear it. Cleared on unblock. */
+  waitingOnActor?: string | null; reviewAt?: string | null; unblockAction?: string | null;
+  /** Steps of the same project that must be done (or skipped) first. Order alone never makes a step wait. */
+  dependsOn?: string[];
 }
+
+// --- Execution (core_api services/projects/execution.js; derived on every read, never stored) ---
+
+export type SessionStatus = 'planned' | 'in_progress' | 'completed' | 'skipped' | 'cancelled';
+export interface WorkSession {
+  uuid: string; stepUuid: string | null; plannedStart: string; plannedMinutes: number; actualMinutes: number | null;
+  status: SessionStatus; madeProgress: boolean | null;
+  /** Set only by an approved calendar action; calendarInSync is false once the session moved and the event hasn't. */
+  calendarEventId: string | null; calendarInSync: boolean | null;
+  notes: string | null; completedAt: string | null; createdAt: string;
+}
+export interface NextAction {
+  projectUuid: string; projectTitle: string; stepUuid: string; title: string; detail: string | null; phase?: string | null; acceptanceCriteria: string | null;
+  status: StepStatus; who: ProjectStep['who']; effortMinutes: number | null; indoor: boolean | null; conditions: string[]; dueOn: string | null;
+  fitsWindow: boolean | null; needsMultipleSessions: boolean; startsNew: boolean; urgentStart?: boolean; score: number;
+  /** Why it's ready, in words — the first is always about its prerequisites. */
+  reasons: string[];
+}
+export interface FollowUp {
+  key: string; projectUuid: string; projectTitle: string; stepUuid: string; stepTitle: string;
+  blockedOn: string | null; waitingOn: string | null; reviewAt: string | null;
+  /** due: the check-back date has come. triage: there is no check-back date. */
+  due: boolean; triage: boolean; overdueDays: number; action: string;
+}
+export type CompletionState = 'work_remaining' | 'outcome_unverified' | 'ready_for_confirmation' | 'verified_complete' | 'complete' | 'dropped';
+export interface Completion {
+  state: CompletionState; message: string; openSteps: number; stepsDone: number; stepsTotal: number;
+  criteria: { total: number; confirmed: number }; hasCriteria: boolean; suggestCriteria?: boolean;
+}
+export interface Closeout {
+  criteria: { text: string; confirmed: boolean }[]; openSteps: string[]; stepsDone: number; stepsSkipped: number;
+  toVerify: string[]; sessionsCompleted: number; minutesWorked: number; canClose: boolean;
+}
+export interface SessionPreparation {
+  sessionUuid: string; plannedStart: string; plannedMinutes: number;
+  work: { stepUuid: string | null; title: string; detail: string | null; acceptanceCriteria: string[] };
+  materials: { label: string; value: string | null; status: ItemStatus }[]; toVerify: string[];
+  blockers: { kind: string; text: string; action: string }[];
+  weather: { outdoor: boolean | null; needs: string[]; warning: string | null };
+}
+export interface ExecutionState {
+  completion: Completion; executableSteps: { uuid: string; title: string }[]; nextAction: NextAction | null;
+  blockedSteps: FollowUp[]; dueFollowUps: FollowUp[]; needsTriage: FollowUp[];
+  upcomingSessions: WorkSession[]; sessionsToCheckIn: WorkSession[];
+  unscheduled: { uuid: string; title: string; effortMinutes: number | null }[];
+  /** The plan by phase, in order; name null holds the unlabelled steps. Empty when no step has a phase. */
+  phases?: PlanPhase[];
+  daysSinceProgress: number | null;
+  /** When nothing is ready: why, and what would change that. */
+  noActionReason: string | null; unblock: string | null;
+  preparation?: SessionPreparation;
+}
+export interface PlanPhase { name: string | null; stepUuids: string[]; done: number; total: number; blocked: number; from: string | null; to: string | null }
+/** The phases a project's steps use, in plan order — what the phase field offers to pick from. */
+export const phaseNames = (p: Project) => [...new Set([...p.steps].sort((a, b) => a.ordinal - b.ordinal).map(s => s.phase).filter((x): x is string => !!x))];
+export interface ProjectPrefs { focusLimit: number; preferFinishing: boolean }
+export interface ExecutionSummary {
+  nextActions: NextAction[]; followUps: FollowUp[]; upcomingSessions: (WorkSession & { projectUuid: string; projectTitle: string; stepTitle: string | null })[];
+  focus: { active: number; limit: number; preferFinishing: boolean; over: boolean };
+  metrics: Record<string, unknown>;
+}
+export const COMPLETION_LABEL: Record<CompletionState, string> = {
+  work_remaining: 'Work remaining', outcome_unverified: 'Steps done — outcome unverified', ready_for_confirmation: 'Ready to close out',
+  verified_complete: 'Finished & confirmed', complete: 'Done', dropped: 'Dropped',
+};
+/** "Done when" and acceptance criteria are one per line; bullets and checkboxes are formatting. Mirrors shape.criteriaOf. */
+export const criteriaOf = (text: string | null | undefined) =>
+  String(text || '').split(/\r?\n/).map(l => l.replace(/^\s*(?:[-*•]|\d+[.)]|\[\s?[xX]?\s?\])\s*/, '').trim()).filter(Boolean).slice(0, 40);
+
+/** A spec (a measurement or decision) or a material-takeoff line, with how sure it is. */
+export type ItemKind = 'spec' | 'material';
+export type ItemStatus = 'confirmed' | 'pending' | 'estimate';
+export const ITEM_STATUS_LABEL: Record<ItemStatus, string> = { confirmed: 'Confirmed', pending: 'To verify', estimate: 'Estimate' };
+export interface ProjectItem {
+  uuid: string; kind: ItemKind; ordinal: number; label: string; value: string | null; unit: string | null;
+  status: ItemStatus; costLow: number | null; costHigh: number | null; note: string | null; confirmedAt: string | null;
+}
+export type ItemInput = Partial<Omit<ProjectItem, 'uuid' | 'ordinal' | 'confirmedAt'>>;
 
 export interface Project {
   uuid: string; title: string; goal: string | null; kind: string | null;
+  /** The person's own reference (e.g. HOME-SIDEYARD-2026-001) and the spec revision they're on. */
+  refCode: string | null; revision: string | null;
+  /** Set when they moved it to the front of the line; pinned projects rank above everything, newest first. */
+  pinnedAt: string | null;
+  budget: { working: number | null; ceiling: number | null; note: string | null };
+  items: ProjectItem[];
   status: ProjectState; effectiveStatus: ProjectState; waitingOn: string | null; priority: number;
   startsOn: string | null; endsOn: string | null; hardDeadline: string | null;
   metric: { source: string | null; start: number | null; target: number | null; unit: string | null } | null;
@@ -44,6 +136,13 @@ export interface Project {
   bindings: Binding[];
   lastProgressAt: string | null; completedAt: string | null; source: string; importKey: string | null;
   createdAt: string; updatedAt: string;
+  /** What finished looks like, one check per line, and the checks they've confirmed (by text). */
+  doneWhen?: string | null; doneWhenConfirmed?: string[]; outcomeConfirmedAt?: string | null;
+  sessions?: WorkSession[];
+  /** Open projects only; older servers send none. */
+  execution?: ExecutionState | null;
+  completion?: Completion;
+  closeout?: Closeout | null;
 }
 export type Relation = 'contributes_to' | 'depends_on';
 export interface ProjectLink { from: string; to: string; relation: Relation; note: string | null }
@@ -85,18 +184,30 @@ export interface WorkoutData {
 export interface CalendarData { upcoming: { title: string; start: string; end: string; allDay: boolean; location: string | null }[] }
 export type BoundData = Binding & { data: WeightData | WorkoutData | CalendarData | null; error?: string; errorCode?: string | null };
 
-export interface ProjectsSnapshot { projects: Project[]; links: ProjectLink[]; concerns: Concern[]; charters: Charter[] }
+export interface ProjectsSnapshot {
+  projects: Project[]; links: ProjectLink[]; concerns: Concern[]; charters: Charter[];
+  prefs?: ProjectPrefs; execution?: ExecutionSummary;
+}
 
 /** What a create/patch may send. Nested objects merge field by field on the server. */
-export type ProjectInput = Partial<Omit<Project, 'effort' | 'cost' | 'metric' | 'areas'>> & {
+export type ProjectInput = Partial<Omit<Project, 'effort' | 'cost' | 'metric' | 'areas' | 'budget' | 'items' | 'pinnedAt'>> & {
+  /** true moves it to the front (again, if already pinned); false hands it back to the ranking. */
+  pinned?: boolean;
+  budget?: Partial<Project['budget']> | null;
   effort?: Partial<Project['effort']> | null;
   cost?: Partial<Project['cost']> | null;
   metric?: Partial<NonNullable<Project['metric']>> | null;
   areas?: Area[];
   primaryArea?: Area;
   completedAt?: string | null;
+  /** Closing a project with "done when" checks is the person confirming them — required by the server. */
+  outcomeConfirmed?: boolean;
 };
 export type StepInput = Partial<Omit<ProjectStep, 'uuid' | 'ordinal' | 'completedAt'>>;
+export interface SessionInput {
+  stepUuid?: string | null; plannedStart?: string; plannedMinutes?: number; actualMinutes?: number | null;
+  status?: SessionStatus; madeProgress?: boolean | null; notes?: string | null;
+}
 export type ConcernInput = Partial<Omit<Concern, 'uuid' | 'resolvedAt'>>;
 
 const id = (uuid: string) => encodeURIComponent(uuid);
@@ -111,6 +222,18 @@ export const projectsApi = {
   updateStep: (uuid: string, step: string, patch: StepInput) => api.patch<Write>(`/api/v1/projects/${id(uuid)}/steps/${id(step)}`, patch),
   removeStep: (uuid: string, step: string) => api.del<Write>(`/api/v1/projects/${id(uuid)}/steps/${id(step)}`),
   reorderSteps: (uuid: string, order: string[]) => api.post<Write>(`/api/v1/projects/${id(uuid)}/steps/reorder`, { order }),
+  addDependency: (uuid: string, step: string, dependsOn: string) =>
+    api.post<Write>(`/api/v1/projects/${id(uuid)}/steps/${id(step)}/dependencies`, { dependsOn }),
+  removeDependency: (uuid: string, step: string, dependsOn: string) =>
+    api.del<Write>(`/api/v1/projects/${id(uuid)}/steps/${id(step)}/dependencies/${id(dependsOn)}`),
+  addSession: (uuid: string, input: SessionInput & { plannedStart: string; plannedMinutes: number }) =>
+    api.post<Write>(`/api/v1/projects/${id(uuid)}/sessions`, input),
+  updateSession: (uuid: string, session: string, patch: SessionInput) => api.patch<Write>(`/api/v1/projects/${id(uuid)}/sessions/${id(session)}`, patch),
+  removeSession: (uuid: string, session: string) => api.del<Write>(`/api/v1/projects/${id(uuid)}/sessions/${id(session)}`),
+  putPrefs: (prefs: Partial<ProjectPrefs>) => api.put<Write>('/api/v1/projects/prefs', prefs),
+  addItem: (uuid: string, item: ItemInput & { kind: ItemKind; label: string }) => api.post<Write>(`/api/v1/projects/${id(uuid)}/items`, item),
+  updateItem: (uuid: string, item: string, patch: ItemInput) => api.patch<Write>(`/api/v1/projects/${id(uuid)}/items/${id(item)}`, patch),
+  removeItem: (uuid: string, item: string) => api.del<Write>(`/api/v1/projects/${id(uuid)}/items/${id(item)}`),
   addLink: (uuid: string, relation: Relation, to: string, note?: string) => api.post<Write>(`/api/v1/projects/${id(uuid)}/links`, { relation, to, note }),
   removeLink: (uuid: string, relation: Relation, to: string) =>
     api.del<Write>(`/api/v1/projects/${id(uuid)}/links?relation=${relation}&to=${id(to)}`),

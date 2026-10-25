@@ -18,7 +18,7 @@ const PHASE_LABEL: Record<Phase, string> = { concept: 'Concept', before: 'Before
 const field = 'w-full rounded-lg border border-cyan-800 bg-slate-950 p-2 text-sm';
 
 /** One photo's picture: fetched from the API, or read from this device. */
-function Picture({ project, entry }: { project: Project; entry: ProjectEntry }) {
+export function Picture({ project, entry }: { project: Project; entry: ProjectEntry }) {
   const [url, setUrl] = useState<string | null>(null);
   const [missing, setMissing] = useState(false);
   useEffect(() => {

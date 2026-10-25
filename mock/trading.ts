@@ -102,6 +102,45 @@ export function mockTrading(method: string, p: string): unknown {
     by_setup: [], by_regime: [], equity: [], days: [], summaries: [],
     signals: { total: 6, confirmed: 0, measured: 4, confirmed_target_first: 0, confirmed_stop_first: 0, rejected_measured: 4, rejected_would_have_won: 1, note: 'Outcomes of rejected setups are hypothetical.' },
   };
+  // Notifications: a paper confirmation that was sent, and one that lapsed on re-check.
+  if (p === '/api/v1/trading/notifications/prefs' && method === 'PUT') return { prefs: mockPrefs };
+  if (p === '/api/v1/trading/notifications/test') return { ...mockNotes(now)[0], uuid: 'mock-test', event: 'TEST', title: 'ATHENA: trading test', body: 'Trading notifications reach this device. Nothing here is a signal.', ok: true, reason: null, deliveries: [{ attempt: 1, device: 'Pixel 8', platform: 'android', ok: true, reason: null, at: new Date(now).toISOString() }] };
+  if (p === '/api/v1/trading/notifications') return {
+    prefs: mockPrefs,
+    push: { available: true, transports: { fcm: true, webpush: true, sms: false }, enabled: true, devices: [{ uuid: 'd1', name: 'Pixel 8', platform: 'android', provider: 'fcm-actions' }] },
+    monitor: { configured: true, interval_s: 60, window: '15 min before the open to 10 min after the close, trading days only', last_tick_at: new Date(now - 20_000).toISOString(), note: null },
+    cooldown_max_min: 120, entry_window_min: 10, history: mockNotes(now),
+  };
+  if (p.startsWith('/api/v1/trading/setups/')) {
+    const n = mockNotes(now)[0];
+    return {
+      signal: { uuid: 'mock-sig-1', session_date: new Date().toISOString().slice(0, 10), symbol: 'INTC', strategy_version: 1, feed: 'iex', initial_status: 'WATCH', initial_at: new Date(now - 30 * M).toISOString(), status: 'WAIT', ever_confirmed: false, outcome: null, outcome_r: null, expires_at: new Date(now + 4 * M).toISOString(), expiry_policy: 'confirmed entries 10 min; all setups at the 15:00 ET entry cutoff or the close', confirmed_entry: null, confirmed_stop: null, confirmed_target: null },
+      notification: n, plan: n.payload,
+      check: {
+        actionable: false, mode: 'paper', blocking: ['Price $86.92 ran past $86.83; don\'t chase.'], paper_because: ['the IEX feed can watch but not confirm', 'the strategy isn\'t validated yet'], ledger_only: true, checked_at: new Date(now).toISOString(),
+        checks: [
+          { id: 'market_open', label: 'Market open, before the entry cutoff', ok: true, detail: 'Open.', live_only: false },
+          { id: 'fresh_data', label: 'Fresh quotes and completed candles', ok: true, detail: 'Candle 21s, quote 2s old.', live_only: false },
+          { id: 'entry_range', label: 'Price inside the entry range', ok: false, detail: 'Price $86.92 ran past $86.83; don\'t chase.', live_only: false },
+          { id: 'settled_cash', label: 'Enough settled cash', ok: true, detail: '$346.40 needed, $423.00 settled.', live_only: false },
+          { id: 'daily_risk', label: 'Inside the daily risk budget', ok: true, detail: '$1.96 planned against $4.00 available.', live_only: false },
+          { id: 'live_eligible', label: 'Validated strategy, enabled for live alerts, full-market data', ok: false, detail: 'Paper only: the market-data feed isn\'t full-market (SIP).', live_only: true },
+        ],
+      },
+      current: { status: 'WAIT', reason: 'Conditions line up, but the IEX feed can\'t confirm.' },
+      market: { phase: 'open', et_date: new Date().toISOString().slice(0, 10), et_time: '10:16 AM', session: { trading: true, early_close: false, calendar_verified: true, open_at: new Date(open).toISOString(), close_at: new Date(open + 390 * M).toISOString() } },
+    };
+  }
   if (method !== 'GET') return { ok: true, warnings: [] };
   return undefined;
+}
+
+const mockPrefs = { enabled: true, setup_forming: true, entry_confirmed: true, invalidation: true, paper: true, risk_limit: true, sound: 'default', cooldown_min: 0, live_strategies: [] as string[] };
+
+function mockNotes(now: number) {
+  const payload = { symbol: 'INTC', setup_type: 'Opening-range breakout + VWAP retest', entry: 86.6, stop: 86.15, target: 87.5, shares: 4, position_cost: 346.4, planned_risk: 1.8, risk_with_costs: 1.96, reward_risk: 2, signal_at: new Date(now - 6 * M).toISOString(), expires_at: new Date(now + 4 * M).toISOString(), signal_uuid: 'mock-sig-1' };
+  return [
+    { uuid: 'mock-n-1', event: 'ENTRY_CONFIRMED', mode: 'paper', priority: 'low', symbol: 'INTC', payload, title: 'ATHENA PAPER / EXPERIMENTAL: INTC setup lined up', body: 'Opening-range breakout + VWAP retest. Entry $86.60, stop $86.15, target $87.50. Four shares (~$346.40), $1.80 planned risk, 2:1. Not a live trade alert: the IEX feed can watch but not confirm.', deep_link: '/family/trading?n=mock-n-1&setup=mock-sig-1', state: 'sent', state_reason: null, not_before: null, expires_at: payload.expires_at, attempts: 1, created_at: new Date(now - 6 * M).toISOString(), sent_at: new Date(now - 6 * M).toISOString(), acknowledged_at: null, deliveries: [{ attempt: 1, device: 'Pixel 8', platform: 'android', ok: true, reason: null, at: new Date(now - 6 * M).toISOString() }] },
+    { uuid: 'mock-n-2', event: 'SETUP_FORMING', mode: 'paper', priority: 'low', symbol: 'AMD', payload: { symbol: 'AMD', reason: 'Broke $160.20 at 9:58 AM.' }, title: null, body: null, deep_link: null, state: 'lapsed', state_reason: 'No longer forming: Below VWAP $159.80; buyers don\'t have control.', not_before: null, expires_at: null, attempts: 1, created_at: new Date(now - 18 * M).toISOString(), sent_at: null, acknowledged_at: null, deliveries: [] },
+  ];
 }

@@ -5,7 +5,7 @@ import { api } from './client';
  * and records only — nothing here can place an order. Every price carries the
  * time it was observed; null means the source sent none, never a guess.
  */
-export type SignalStatus = 'WATCH' | 'SETUP_FORMING' | 'ENTRY_CONFIRMED' | 'WAIT' | 'AVOID' | 'EXIT_INVALIDATED';
+export type SignalStatus = 'WATCH' | 'SETUP_FORMING' | 'ENTRY_CONFIRMED' | 'WAIT' | 'AVOID' | 'EXIT_INVALIDATED' | 'EXPIRED';
 export type ConditionState = 'pass' | 'fail' | 'pending';
 
 export interface Condition { id: string; label: string; state: ConditionState; detail: string; value: number | null; threshold: number | null }
@@ -99,10 +99,43 @@ export const tradingApi = {
   replay: (uuid: string) => api.get<Replay>(`/api/v1/trading/signals/${uuid}/replay`),
   seen: (ids: number[]) => api.post<{ ok: true }>('/api/v1/trading/alerts/seen', { ids }),
   dismiss: (id: number) => api.post<{ ok: true }>(`/api/v1/trading/alerts/${id}/dismiss`),
+  notifications: () => api.get<NotificationsStatus>('/api/v1/trading/notifications'),
+  saveNotificationPrefs: (patch: Partial<Omit<NotificationPrefs, 'live_strategies'>> & { live_strategy?: boolean }) => api.put<{ prefs: NotificationPrefs }>('/api/v1/trading/notifications/prefs', patch),
+  testNotification: () => api.post<TradingNotification & { ok: boolean; reason: string | null }>('/api/v1/trading/notifications/test'),
+  ackNotification: (uuid: string, via: 'open' | 'dismiss' = 'open') => api.post<{ ok: boolean }>(`/api/v1/trading/notifications/${uuid}/ack`, { via }),
+  setup: (uuid: string, notification?: string | null) => api.get<SetupCheck>(`/api/v1/trading/setups/${uuid}${notification ? `?n=${encodeURIComponent(notification)}` : ''}`),
 };
 
+// Push notifications (core_api services/trading/notifications.js). Every
+// figure in a notification comes from a stored signal event; opening one
+// re-checks the setup against the market now.
+export type NotificationEvent = 'SETUP_FORMING' | 'ENTRY_CONFIRMED' | 'SETUP_INVALIDATED' | 'SETUP_EXPIRED' | 'RISK_LIMIT_REACHED' | 'TEST';
+export interface NotificationPrefs { enabled: boolean; setup_forming: boolean; entry_confirmed: boolean; invalidation: boolean; paper: boolean; risk_limit: boolean; sound: 'default' | 'silent'; cooldown_min: number; live_strategies: string[] }
+export interface PlanFigures { entry?: number; stop?: number; target?: number; shares?: number; position_cost?: number; planned_risk?: number; risk_with_costs?: number; reward_risk?: number | null; signal_at?: string; expires_at?: string; symbol?: string; setup_type?: string; reason?: string; signal_uuid?: string }
+export interface TradingNotification {
+  uuid: string; event: NotificationEvent; mode: 'live' | 'paper'; priority: 'high' | 'normal' | 'low'; symbol: string | null; payload: PlanFigures;
+  title: string | null; body: string | null; deep_link: string | null; state: 'pending' | 'held' | 'sending' | 'sent' | 'failed' | 'lapsed' | 'skipped'; state_reason: string | null;
+  not_before: string | null; expires_at: string | null; attempts: number; created_at: string; sent_at: string | null; acknowledged_at: string | null;
+  deliveries?: { attempt: number; device: string | null; platform: string | null; ok: boolean; reason: string | null; at: string }[];
+}
+export interface NotificationsStatus {
+  prefs: NotificationPrefs;
+  push: { available: boolean; transports: { fcm: boolean; webpush: boolean; sms: boolean }; enabled: boolean; devices: { uuid: string; name: string; platform: string; provider: string }[] } | null;
+  monitor: { configured: boolean; interval_s: number; window: string; last_tick_at: string | null; note: string | null };
+  cooldown_max_min: number; entry_window_min: number;
+  history: TradingNotification[];
+}
+export interface SetupCheck {
+  signal: SignalRow & { expires_at: string | null; expiry_policy: string | null; confirmed_entry: number | null; confirmed_stop: number | null; confirmed_target: number | null };
+  notification: TradingNotification | null;
+  plan: PlanFigures | null;
+  check: { actionable: boolean; mode: 'live' | 'paper'; checks: { id: string; label: string; ok: boolean; detail: string; live_only: boolean }[]; blocking: string[]; paper_because: string[]; ledger_only: boolean; checked_at: string };
+  current: Signal | null;
+  market: Dashboard['market'];
+}
+
 export const STATUS_LABEL: Record<SignalStatus, string> = {
-  WATCH: 'Watch', SETUP_FORMING: 'Setup forming', ENTRY_CONFIRMED: 'Entry confirmed', WAIT: 'Wait', AVOID: 'Avoid', EXIT_INVALIDATED: 'Exit / invalidated',
+  WATCH: 'Watch', SETUP_FORMING: 'Setup forming', ENTRY_CONFIRMED: 'Entry confirmed', WAIT: 'Wait', AVOID: 'Avoid', EXIT_INVALIDATED: 'Exit / invalidated', EXPIRED: 'Expired',
 };
 
 export const usd = (v: number | null | undefined, signed = false) => {

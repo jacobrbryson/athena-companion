@@ -36,6 +36,7 @@ export default function App() {
           {dashboardRoutePaths.map(path => <Route key={path} path={path} element={<Home />} />)}
           <Route path="/chat" element={<Home />} />
           <Route path="/properties/*" element={<Home />} />
+          <Route path="/system/projects/:uuid" element={<Home />} />
           <Route path="/dashboard" element={<Navigate to="/" replace />} />
           <Route path="/privacy" element={<LegalPage kind="privacy" />} />
           <Route path="/terms" element={<LegalPage kind="terms" />} />

@@ -59,8 +59,15 @@ function evidence(option: Suggestion): string[] {
     bits.push('a goal you mentioned');
     return bits;
   }
-  if (option.area) bits.push(option.area);
-  if (option.effortMinutes) bits.push(`about ${hours(option.effortMinutes)}`);
+  if (option.kind === 'followup') {
+    if (option.projectTitle) bits.push(option.projectTitle);
+    bits.push('check-back day is here');
+    return bits;
+  }
+  if (option.projectTitle) bits.push(option.projectTitle);
+  else if (option.area) bits.push(option.area);
+  if (option.effortMinutes) bits.push(`about ${hours(option.effortMinutes)}${option.multiSession ? ', first sitting' : ''}`);
+  if (option.reasons?.length) bits.push('ready');
   if (option.status === 'in_progress') bits.push('already started');
   if (option.priority === 'high') bits.push('high priority');
   if (option.indoor === true) bits.push('indoors');
@@ -75,7 +82,10 @@ function talkPrompt(option: Suggestion) {
     case 'rest': return 'My recovery is low today. Help me plan an easy day.';
     case 'work': return `Help me make progress on ${option.issueKey ? `${option.issueKey}: ` : ''}${option.title}.`;
     case 'goal': return `Help me pick a next step on ${option.title.toLowerCase()} I could do today.`;
-    default: return `Talk me through whether to work on ${option.title} today.`;
+    case 'followup': return `On ${option.projectTitle ?? 'my project'}: ${option.title} Help me follow up.`;
+    default: return option.projectTitle
+      ? `Talk me through "${option.title}" on ${option.projectTitle} today.`
+      : `Talk me through whether to work on ${option.title} today.`;
   }
 }
 
@@ -104,6 +114,8 @@ function timely(option: Suggestion): boolean {
     case 'rest':
     case 'place': return true;
     case 'work': return withinDays(option.dueDate, 0);
+    // Its check-back day has come — that is what makes it today's.
+    case 'followup': return true;
     case 'project': return option.priority === 'high' || withinDays(option.dueDate, 0);
     default: return false;
   }
@@ -214,6 +226,10 @@ function RightNowDetails({ data, loading, error, onAsk, onManage, headlineShown 
 
     {data.ruledOut.length > 0 && <p className="right-now-ruled-out">
       Not {data.ruledOut[0].title} — {data.ruledOut[0].reason}.
+    </p>}
+    {/* A stuck project is said out loud, with what would unstick it, rather than quietly missing. */}
+    {data.held?.[0] && data.ruledOut.length === 0 && <p className="right-now-ruled-out">
+      {data.held[0].title}: {data.held[0].reason}{data.held[0].unblock ? ` ${data.held[0].unblock}` : ''}
     </p>}
 
     <div className="right-now-actions">

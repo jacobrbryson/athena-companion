@@ -315,7 +315,7 @@ export const actionsApi = {
    * (complete_chore) or its Undo (undo_complete_chore). Only actions core_api
    * marks direct are accepted; the result is the executed, audited row.
    */
-  perform: (actionId: 'complete_chore' | 'undo_complete_chore', params: { chore_id: string }) =>
+  perform: (actionId: 'complete_chore' | 'undo_complete_chore' | 'put_project_session_on_calendar', params: { chore_id: string } | { session_uuid: string }) =>
     api.post<{ success: true; action: AthenaAction }>(`/api/v1/actions/direct/${actionId}`, { params }),
   revokeAuthority: (actionId: string) =>
     api.del<{ success: true; authorities: ActionAuthority[] }>(

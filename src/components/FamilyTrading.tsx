@@ -1,8 +1,10 @@
 import { Fragment, useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import {
   STATUS_LABEL, ageText, etTime, pctText, tradingApi, usd,
-  type Condition, type Dashboard, type Performance, type Position, type Replay, type SignalRow, type SymbolDetail, type WatchRow,
+  type Condition, type Dashboard, type NotificationEvent, type NotificationsStatus, type Performance, type Position, type Replay, type SetupCheck, type SignalRow, type SymbolDetail, type TradingNotification, type WatchRow,
 } from '../api/trading';
+import { initiativeApi } from '../api/companion';
+import { useWebPush } from '../athena/useWebPush';
 import { Icon } from './HealthPage';
 import { PageHeader } from './PageHeader';
 import { TradingChart, type ChartLevel } from './TradingChart';
@@ -375,6 +377,8 @@ function ReplayView({ uuid, onClose }: { uuid: string; onClose: () => void }) {
 }
 
 function History() {
+  const [notes, setNotes] = useState<TradingNotification[]>([]);
+  useEffect(() => { tradingApi.notifications().then(s => setNotes(s.history)).catch(() => {}); }, []);
   const [mode, setMode] = useState<'live' | 'paper'>('live');
   const [period, setPeriod] = useState<'day' | 'week' | 'month' | 'all'>('month');
   const [perf, setPerf] = useState<Performance | null>(null);
@@ -404,6 +408,7 @@ function History() {
         <p className="ff-note">Past results describe the past. A small sample says little; nothing here promises future results.</p>
       </>}
     </section>
+    <NotificationHistory items={notes} />
     {replay && <ReplayView uuid={replay} onClose={() => setReplay(null)} />}
     <section className="hp-panel ff-wide">
       <header><h2>Signals, last 30 days</h2><span className="ff-meta">Every evaluated setup, rejected ones too.</span></header>
@@ -415,6 +420,122 @@ function History() {
       </table></div>}
     </section>
   </>;
+}
+
+// ---------------------------------------------------------------------------
+// Notifications — push for setups (core_api services/trading/notifications.js)
+// ---------------------------------------------------------------------------
+
+const EVENT_LABEL: Record<NotificationEvent, string> = {
+  SETUP_FORMING: 'Setup forming', ENTRY_CONFIRMED: 'Entry confirmed', SETUP_INVALIDATED: 'Invalidated', SETUP_EXPIRED: 'Expired', RISK_LIMIT_REACHED: 'Risk limit', TEST: 'Test',
+};
+const STATE_LABEL: Record<TradingNotification['state'], string> = {
+  pending: 'Queued', held: 'Held', sending: 'Sending', sent: 'Sent', failed: 'Not delivered', lapsed: 'Lapsed — not sent', skipped: 'Skipped',
+};
+
+/**
+ * Opened from a notification: the setup re-checked against the market now.
+ * The notified figures are shown as history; only the verdict says whether
+ * anything is still actionable.
+ */
+function SetupCheckPanel({ uuid, notification, onClose }: { uuid: string; notification: string | null; onClose: () => void }) {
+  const [out, setOut] = useState<SetupCheck | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const check = useCallback(() => { setErr(null); tradingApi.setup(uuid, notification).then(setOut).catch(e => setErr(errText(e))); }, [uuid, notification]);
+  useEffect(() => { check(); }, [check]);
+  const plan = out?.plan;
+  const v = out?.check;
+  return <section className="hp-panel ff-wide tr-setupcheck" aria-live="polite">
+    <header><h2>{out ? `${out.signal.symbol} setup — checked now` : 'Checking the setup…'}</h2>
+      <div className="tr-actions"><button type="button" className="hp-link" onClick={check}>Check again</button><button type="button" className="hp-link" onClick={onClose}>Close</button></div></header>
+    {err && <p role="alert" className="dashboard-empty">{err}</p>}
+    {v && <p className={`tr-verdict ${v.actionable ? 'tr-verdict-ok' : 'tr-verdict-no'}`}>
+      {v.actionable
+        ? `${v.mode === 'live' ? 'Still valid' : 'Still lines up (PAPER / EXPERIMENTAL)'} as of ${etTime(v.checked_at)}. Your decision; Athena places nothing.`
+        : `Not actionable as of ${etTime(v.checked_at)}: ${v.blocking.join(' ')}`}
+    </p>}
+    {v && v.mode === 'paper' && v.paper_because.length > 0 && <p className="ff-note">Paper only: {v.paper_because.join('; ')}.</p>}
+    {v?.ledger_only && <p className="ff-note">Sizing relies on Athena's internal ledger; Webull's balance hasn't been verified today.</p>}
+    {plan && <dl className="tr-plan">
+      <dt>As notified</dt><dd>{out?.notification ? `${etTime(out.notification.created_at)}${out.notification.mode === 'paper' ? ' · paper' : ''}` : 'no notification'}</dd>
+      <dt>Entry</dt><dd>{usd(plan.entry)}</dd><dt>Stop</dt><dd>{usd(plan.stop)}</dd><dt>Target</dt><dd>{usd(plan.target)}</dd>
+      <dt>Shares</dt><dd>{plan.shares ?? '—'}</dd><dt>Capital</dt><dd>{usd(plan.position_cost)}</dd><dt>Planned risk</dt><dd>{usd(plan.planned_risk)}</dd>
+      <dt>Reward/risk</dt><dd>{plan.reward_risk ?? '—'}:1</dd><dt>Signal</dt><dd>{etTime(plan.signal_at)}</dd><dt>Entry window ends</dt><dd>{etTime(plan.expires_at)}</dd>
+    </dl>}
+    {v && v.checks.length > 0 && <ul className="tr-checks">{v.checks.map(c =>
+      <Check key={c.id} c={{ id: c.id, label: c.label, detail: c.live_only && !c.ok ? `${c.detail} (paper only, not a blocker)` : c.detail, state: c.ok ? 'pass' : c.live_only ? 'pending' : 'fail', value: null, threshold: null }} />)}</ul>}
+    {out && <p className="ff-note">Current status: {out.current ? `${STATUS_LABEL[out.current.status] || out.current.status} — ${out.current.reason}` : STATUS_LABEL[out.signal.status] || out.signal.status}. {out.signal.expiry_policy ? `Expiry policy: ${out.signal.expiry_policy}.` : ''}</p>}
+  </section>;
+}
+
+/** Delivery history: every notification Athena derived, including the ones she didn't send and why. */
+function NotificationHistory({ items }: { items: TradingNotification[] }) {
+  return <section className="hp-panel ff-wide tr-alerts">
+    <header><h2>Notification history</h2><span className="ff-meta">Lapsed and skipped ones are kept with the reason.</span></header>
+    {!items.length ? <p className="dashboard-empty">No trading notifications yet.</p> : <ul>{items.map(n => <li key={n.uuid}>
+      <span className="tr-dim">{etTime(n.created_at)}</span>
+      <span><strong>{n.title || `${EVENT_LABEL[n.event]}${n.symbol ? ` · ${n.symbol}` : ''}`}</strong>
+        {n.body && <small>{n.body}</small>}
+        <small>{STATE_LABEL[n.state]}{n.mode === 'paper' ? ' · paper' : ''}{n.sent_at ? ` ${etTime(n.sent_at)}` : ''}{n.state_reason ? ` — ${n.state_reason}` : ''}{n.acknowledged_at ? ` · opened ${etTime(n.acknowledged_at)}` : ''}</small>
+        {!!n.deliveries?.length && <small>{n.deliveries.map(d => `${d.device || 'device'}: ${d.ok ? 'accepted' : d.reason || 'refused'}`).join(' · ')}</small>}
+      </span>
+      <span className={`tr-status tr-n-${n.state}`}>{EVENT_LABEL[n.event]}</span>
+    </li>)}</ul>}
+  </section>;
+}
+
+function NotificationSettings({ dash }: { dash: Dashboard }) {
+  const [st, setSt] = useState<NotificationsStatus | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [cooldown, setCooldown] = useState('');
+  const browser = useWebPush();
+  const load = useCallback(() => tradingApi.notifications().then(s => { setSt(s); setCooldown(String(s.prefs.cooldown_min)); }).catch(e => setMsg(errText(e))), []);
+  useEffect(() => { load(); }, [load, browser.state]);
+  async function save(patch: Parameters<typeof tradingApi.saveNotificationPrefs>[0]) {
+    try { await tradingApi.saveNotificationPrefs(patch); setMsg(null); load(); } catch (x) { setMsg(errText(x)); }
+  }
+  async function test() {
+    setMsg('Sending…');
+    try {
+      const r = await tradingApi.testNotification();
+      setMsg(r.ok ? `Sent to ${r.deliveries?.filter(d => d.ok).map(d => d.device).join(', ') || 'your devices'}.` : `Not delivered: ${r.reason}`);
+      load();
+    } catch (x) { setMsg(errText(x)); }
+  }
+  if (!st) return <section className="hp-panel ff-wide"><header><h2>Notifications</h2></header><p className="dashboard-empty">{msg || 'Loading…'}</p></section>;
+  const p = st.prefs;
+  const validated = dash.strategy?.status === 'validated';
+  const live = p.live_strategies.includes(dash.strategy?.key || 'orb_vwap');
+  const sw = (key: 'enabled' | 'setup_forming' | 'entry_confirmed' | 'invalidation' | 'paper' | 'risk_limit', label: string, disabled = false) =>
+    <label className="tr-toggle"><input type="checkbox" checked={p[key]} disabled={disabled} onChange={e => save({ [key]: e.target.checked })} /> {label}</label>;
+  return <section className="hp-panel ff-wide">
+    <header><h2>Notifications</h2><span className="ff-meta">Pushed to your phone and browsers, even with Athena closed.</span></header>
+    {sw('enabled', 'Enable trading push notifications')}
+    {sw('setup_forming', 'Setup-forming alerts (market hours only)', !p.enabled)}
+    {sw('entry_confirmed', 'Confirmed-setup alerts', !p.enabled)}
+    {sw('invalidation', 'Invalidation and expiry alerts', !p.enabled)}
+    {sw('paper', 'Paper-trading alerts (labelled PAPER / EXPERIMENTAL)', !p.enabled)}
+    {sw('risk_limit', 'Daily risk-limit alerts', !p.enabled)}
+    <label className="tr-toggle"><input type="checkbox" checked={live} disabled={!p.enabled || (!validated && !live)} onChange={e => save({ live_strategy: e.target.checked })} />
+      Live alerts for this strategy {validated ? '' : '(needs a validated strategy version; until then every alert is paper)'}</label>
+    <div className="tr-form">
+      <Field label="Sound"><select value={p.sound} disabled={!p.enabled} onChange={e => save({ sound: e.target.value as 'default' | 'silent' })}><option value="default">Device default</option><option value="silent">Silent (browsers)</option></select></Field>
+      <Field label={`Cooldown, minutes (0–${st.cooldown_max_min})`}><input value={cooldown} disabled={!p.enabled} inputMode="numeric" onChange={e => setCooldown(e.target.value)} onBlur={() => Number(cooldown) !== p.cooldown_min && save({ cooldown_min: Number(cooldown) })} /></Field>
+      <button type="button" className="hp-link" onClick={test}>Send a test notification</button>
+      {msg && <p role="status" className="tr-msg">{msg}</p>}
+    </div>
+    <p className="ff-note">The cooldown spaces out forming and paper alerts by holding them, then re-checking; confirmed live setups, invalidations and risk limits are never held by it. Quiet hours (Settings → Notifications) hold everything until they end. One alert per setup; a confirmed entry is good for {st.entry_window_min} minutes.</p>
+    <h3>Devices</h3>
+    {!st.push?.available && <p className="dashboard-empty">Push isn't configured on this server.</p>}
+    {st.push && !st.push.enabled && <p className="ff-note">Push notifications are off for your account. <button type="button" className="hp-link" onClick={() => initiativeApi.setPref({ push_enabled: true }).then(load).catch(x => setMsg(errText(x)))}>Allow push notifications</button></p>}
+    <ul className="tr-devices">{(st.push?.devices || []).map(d => <li key={d.uuid}>{d.name} <small>{d.platform} · {d.provider}</small></li>)}
+      {!st.push?.devices.length && <li className="tr-dim">No phone or browser is subscribed yet.</li>}</ul>
+    <p className="hp-sub">This browser: {{ unsupported: 'notifications aren\'t supported here', unconfigured: 'browser push isn\'t configured on the server', denied: 'notifications are blocked — allow them in the browser\'s site settings', off: 'not subscribed', on: 'subscribed', working: 'checking…' }[browser.state]}
+      {browser.state === 'off' && <> <button type="button" className="hp-link" onClick={browser.enable}>Subscribe this browser</button></>}
+      {browser.state === 'on' && <> <button type="button" className="hp-link" onClick={browser.disable}>Unsubscribe</button></>}</p>
+    {browser.error && <p role="alert" className="tr-msg">{browser.error}</p>}
+    <p className="ff-note">{st.monitor.configured ? `Watched server-side every ${st.monitor.interval_s}s, ${st.monitor.window}.${st.monitor.last_tick_at ? ` Last check ${etTime(st.monitor.last_tick_at)}.` : ''}` : st.monitor.note}</p>
+  </section>;
 }
 
 // ---------------------------------------------------------------------------
@@ -473,6 +594,7 @@ function Settings({ dash, onChange }: { dash: Dashboard; onChange: () => void })
       <label className="tr-toggle"><input type="checkbox" checked={st.alerts_enabled} onChange={e => toggle('alerts_enabled', e.target.checked)} /> Show trading alerts</label>
       <p className="ff-note">{st.broker === 'webull' ? 'Webull' : st.broker} {st.account_type} account. Long-only stocks: no margin, options, shorting or overnight holds.</p>
     </section>
+    <NotificationSettings dash={dash} />
     <section className="hp-panel">
       <header><h2>Cash</h2></header>
       <dl className="tr-plan">
@@ -511,6 +633,34 @@ export function FamilyTrading({ onAsk, tabs }: { onAsk: (text: string) => void; 
   const [err, setErr] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [prefill, setPrefill] = useState<Record<string, string>>({});
+  // Opened from a push: /family/trading?setup=<signal>&n=<notification>.
+  const [opened, setOpened] = useState<{ setup: string; n: string | null } | null>(() => {
+    const q = new URLSearchParams(window.location.search);
+    const setup = q.get('setup');
+    return setup ? { setup, n: q.get('n') } : null;
+  });
+  useEffect(() => {
+    if (opened && window.location.search) window.history.replaceState(window.history.state, '', window.location.pathname);
+  }, [opened]);
+  useEffect(() => {
+    // A tap while this tab is already open: the service worker hands it over.
+    const onMessage = (e: MessageEvent) => {
+      const d = e.data?.data;
+      if (e.data?.type !== 'athena-notification-click' || d?.kind !== 'trading' || typeof d.url !== 'string') return;
+      const q = new URL(d.url, window.location.origin).searchParams;
+      if (q.get('setup')) { setOpened({ setup: q.get('setup') as string, n: q.get('n') }); setView('desk'); }
+      else if (q.get('n')) tradingApi.ackNotification(q.get('n') as string).catch(() => {});
+    };
+    navigator.serviceWorker?.addEventListener('message', onMessage);
+    return () => navigator.serviceWorker?.removeEventListener('message', onMessage);
+  }, []);
+  useEffect(() => {
+    const n = new URLSearchParams(window.location.search).get('n');
+    if (n && !opened) {
+      tradingApi.ackNotification(n).catch(() => {});
+      window.history.replaceState(window.history.state, '', window.location.pathname);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const load = useCallback((fresh = false) => tradingApi.dashboard(fresh).then(d => { setDash(d); setErr(null); }).catch(e => setErr(errText(e))), []);
   useEffect(() => {
     load();
@@ -547,6 +697,7 @@ export function FamilyTrading({ onAsk, tabs }: { onAsk: (text: string) => void; 
       {view === 'desk' && <>
         {!dash.data.configured && <section className="hp-panel ff-wide section-unavailable"><p className="dashboard-empty">{dash.note}</p>
           <p className="source-detail">The owner creates an Alpaca account (a paper account is enough for data) and stores its keys as the ALPACA_API_KEY_ID and ALPACA_API_SECRET_KEY secrets. The free plan watches with IEX data; confirming entries needs the full-market SIP feed (Algo Trader Plus).</p></section>}
+        {opened && <SetupCheckPanel uuid={opened.setup} notification={opened.n} onClose={() => setOpened(null)} />}
         <Alerts dash={dash} onChange={() => load(true)} />
         <Overview dash={dash} />
         <Watchlist dash={dash} selected={selected} onSelect={setSelected} onChange={() => load(true)} />
