@@ -75,12 +75,12 @@ export interface DueItem { label: string; tone: DueTone; when: string; /** The d
 
 const DAY = 86_400_000;
 const localDay = () => new Date().toLocaleDateString('en-CA');
-const daysUntil = (day: string) => Math.round((Date.parse(`${day}T12:00:00`) - Date.parse(`${localDay()}T12:00:00`)) / DAY);
+export const daysUntil = (day: string) => Math.round((Date.parse(`${day}T12:00:00`) - Date.parse(`${localDay()}T12:00:00`)) / DAY);
 /** Within this many days, or miles, a date or a service counts as coming up. */
 export const SOON_DAYS = 30;
 export const SOON_MILES = 500;
 
-function inWords(days: number, day: string) {
+export function inWords(days: number, day: string) {
   if (days < 0) return days === -1 ? 'overdue by a day' : `overdue by ${-days} days`;
   if (days === 0) return 'due today';
   if (days === 1) return 'due tomorrow';

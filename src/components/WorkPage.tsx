@@ -48,6 +48,7 @@ interface Props {
   onMemory: () => void;
   /** Scroll to one of the detail panels below by its id. */
   onSection: (id: string) => void;
+  onOpenIssue: (url: string) => void;
 }
 
 const DAY = 86400000;
@@ -236,12 +237,12 @@ export function WorkOverview(props: Props) {
           {!shownIssues.length ? <p className="hp-empty">{issues.length ? 'Nothing in this list.' : 'No open issues assigned to you.'}</p>
             : <ul className="wp-issues">{shownIssues.slice(0, 5).map(i => {
               const owner = owns.ofIssue(i);
-              return <li key={`${i.site}-${i.key}`}><a href={i.url} target="_blank" rel="noopener noreferrer">
+              return <li key={`${i.site}-${i.key}`}><button type="button" className="wi-open" onClick={() => props.onOpenIssue(i.url)}>
                 <i className="wp-dot" style={{ background: toneOf(owner) }} />
                 <span className="wp-key">{i.key}</span>
                 <div><strong>{i.title}</strong><small>{[nameOf(owner), i.project].filter(Boolean).join(' · ')}</small></div>
                 <em className={`wp-chip ${PHASE_TONE[phaseOf(i)]}`}>{i.status}</em>
-              </a></li>;
+              </button></li>;
             })}</ul>}
           {issues.length > 0 && <button type="button" className="cp-outline fp-wide" onClick={() => onSection('work-jira')}>View all {issues.length} issue{issues.length === 1 ? '' : 's'} <Icon name="arrowRight" /></button>}
         </>}

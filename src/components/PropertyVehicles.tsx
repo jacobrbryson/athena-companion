@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
-import { carOf, deadlines, dueItems, URGENT_DAYS, vehiclesApi, yearAfter, type DueItem, type RecallStatus, type ServiceInput, type SmartcarCar, type SmartcarList, type Vehicle, type VehicleInput } from '../api/propertyVehicles';
+import type { CalendarEvent } from '../api/dashboard';
+import { carOf, deadlines, dueItems, URGENT_DAYS, vehiclesApi, yearAfter, type Deadline, type DueItem, type RecallStatus, type ServiceInput, type SmartcarCar, type SmartcarList, type Vehicle, type VehicleInput } from '../api/propertyVehicles';
+import { taxDeadlines, type Tax } from '../api/propertyTaxes';
 import { Drawer } from './Drawer';
 import { DrawerButton } from './ActionControls';
 import { readImage } from './Property';
@@ -86,14 +88,14 @@ function VehicleCard({ v, onOpen }: { v: Vehicle; onOpen: () => void }) {
 }
 
 /** Every vehicle at the property; the Vehicles tab. */
-export function VehicleList({ state, propertyName, hasProperty, onOpen, onAdd }: { state: VehiclesState; propertyName: string; hasProperty: boolean; onOpen: (uuid: string) => void; onAdd: () => void }) {
+export function VehicleList({ state, propertyName, hasProperty, onOpen, onAdd, onScan }: { state: VehiclesState; propertyName: string; hasProperty: boolean; onOpen: (uuid: string) => void; onAdd: () => void; onScan?: () => void }) {
   return <div className="pv-list">
     {state.error && <p role="alert">{state.error} <button onClick={state.retry}>Retry</button></p>}
     {state.loading ? <p className="pi-muted">Loading vehicles…</p>
       : !hasProperty ? <p className="pi-muted">Add your property first — vehicles live at a property. Use <strong>Add property</strong> on the Overview tab.</p>
       : !state.vehicles.length ? <p className="pi-muted">No vehicles yet. Add the cars kept at {propertyName || 'this property'} and I’ll keep track of registration, inspection, insurance and service.</p>
       : <ul>{state.vehicles.map(v => <VehicleCard key={v.uuid} v={v} onOpen={() => onOpen(v.uuid)} />)}</ul>}
-    {hasProperty && <div className="pi-list-foot"><DrawerButton primary onClick={onAdd}><span aria-hidden="true">＋</span>Add vehicle</DrawerButton></div>}
+    {hasProperty && <div className="pi-list-foot"><DrawerButton primary onClick={onAdd}><span aria-hidden="true">＋</span>Add vehicle</DrawerButton>{onScan && <DrawerButton onClick={onScan}>Scan a bill</DrawerButton>}</div>}
   </div>;
 }
 
@@ -313,49 +315,95 @@ function DueRow({ state, vehicle, item }: { state: VehiclesState; vehicle: Vehic
   </li>;
 }
 
+const INSPECTION_WORDS = /inspect|emission/;
+const REGISTRATION_WORDS = /registration|renew|\bdmv\b|\btags?\b/;
+
+/**
+ * The calendar event that has this deadline in hand: still to come, on or
+ * before the due day (any time once overdue), naming the car — or, with only
+ * one car in play, naming nothing else. An inspection also covers the
+ * registration, since the one is needed to renew the other.
+ */
+export function appointmentFor(d: Deadline, all: Deadline[], events: CalendarEvent[]) {
+  if (d.kind === 'insuranceDue') return undefined;
+  const words = d.kind === 'inspectionDue' ? INSPECTION_WORDS : new RegExp(`${INSPECTION_WORDS.source}|${REGISTRATION_WORDS.source}`);
+  const mine = [d.vehicle.name, d.vehicle.make, d.vehicle.model].filter((w): w is string => !!w && w.length > 1).map(w => w.toLowerCase());
+  const theirs = all.filter(o => o.vehicle.uuid !== d.vehicle.uuid).flatMap(o => [o.vehicle.name, o.vehicle.make, o.vehicle.model]).filter((w): w is string => !!w && w.length > 1).map(w => w.toLowerCase());
+  const onlyCar = all.every(o => o.vehicle.uuid === d.vehicle.uuid);
+  const now = Date.now();
+  return events.find(e => {
+    if (Date.parse(e.end) <= now) return false;
+    if (d.days >= 0 && new Date(e.start).toLocaleDateString('en-CA') > d.day) return false;
+    const text = `${e.title} ${e.location || ''}`.toLowerCase();
+    if (!words.test(text)) return false;
+    if (mine.some(w => text.includes(w))) return true;
+    return onlyCar && !theirs.some(w => text.includes(w));
+  });
+}
+
 const names = (list: string[]) => (list.length <= 1 ? list.join('') : `${list.slice(0, -1).join(', ')} and ${list[list.length - 1]}`);
 
 /**
  * Across the top of Home while a registration, inspection or insurance date
  * is overdue or close (deadlines(): within two weeks, red inside a week). It
  * has no "Got it": it goes when the date does — renewed or edited — because
- * the owner wants Home impossible to miss on this (2026-10-25).
+ * the owner wants Home impossible to miss on this (2026-10-25). The one
+ * exception (owner, 2026-10-26): a deadline with an appointment on the
+ * calendar is handled, and stays quiet until that appointment is over.
  */
-export function VehicleDeadlineBanner({ vehicles, onOpen, onAsk }: { vehicles: Vehicle[]; onOpen: (uuid: string) => void; onAsk: (prompt: string) => void }) {
-  const list = deadlines(vehicles);
-  if (!list.length) return null;
+export function VehicleDeadlineBanner({ vehicles, taxes = [], events = [], onOpen, onOpenTaxes, onAsk }: { vehicles: Vehicle[]; taxes?: Tax[]; events?: CalendarEvent[]; onOpen: (uuid: string) => void; onOpenTaxes?: () => void; onAsk: (prompt: string) => void }) {
+  const all = deadlines(vehicles);
+  const list = all.filter(d => !appointmentFor(d, all, events));
+  // Unpaid tax installments close to due, from a scanned bill. A vehicle tax billed with the registration
+  // (same day) rides on that registration line instead of saying it twice.
+  const taxList = taxDeadlines(taxes, new Map(vehicles.filter(v => v.registrationDue).map(v => [v.uuid, v.registrationDue!])));
+  if (!list.length && !taxList.length) return null;
   const first = list[0];
-  const urgent = first.days <= URGENT_DAYS;
+  const firstTax = taxList[0];
+  const taxFirst = !first || (!!firstTax && firstTax.days < first.days);
+  const lead = taxFirst ? firstTax : first;
+  const urgent = lead.days <= URGENT_DAYS;
   // Everything on the same car that is as pressing goes in one headline.
-  const together = list.filter(d => d.vehicle.uuid === first.vehicle.uuid && (d === first || d.days <= Math.max(first.days, URGENT_DAYS)));
+  const together = taxFirst ? [] : list.filter(d => d.vehicle.uuid === first.vehicle.uuid && (d === first || d.days <= Math.max(first.days, URGENT_DAYS)));
   const what = names(together.map(d => d.label.toLowerCase()));
-  const headline = first.days < 0
-    ? `${first.vehicle.name} ${what} ${together.length > 1 ? 'are' : 'is'} overdue`
-    : `${first.vehicle.name} ${what} due ${first.days === 0 ? 'today' : first.days === 1 ? 'tomorrow' : `in ${first.days} days`}`;
-  const ask = `My ${first.vehicle.name}'s ${what} ${first.days < 0 ? (together.length > 1 ? 'are overdue' : 'is overdue') : `${together.length > 1 ? 'are' : 'is'} due ${first.when}`}${first.vehicle.registrationState ? ` (registered in ${first.vehicle.registrationState})` : ''}. Walk me through getting it done this week: what to bring, where to go, and what it costs.`;
+  const headline = taxFirst
+    ? `${firstTax.label} ${firstTax.days < 0 ? 'is overdue' : `due ${firstTax.days === 0 ? 'today' : firstTax.days === 1 ? 'tomorrow' : `in ${firstTax.days} days`}`}`
+    : first.days < 0
+      ? `${first.vehicle.name} ${what} ${together.length > 1 ? 'are' : 'is'} overdue`
+      : `${first.vehicle.name} ${what} due ${first.days === 0 ? 'today' : first.days === 1 ? 'tomorrow' : `in ${first.days} days`}`;
+  const ask = taxFirst
+    ? `My ${firstTax.label} ${firstTax.days < 0 ? 'is overdue' : `is due ${firstTax.when}`}. Walk me through paying it this week: where to pay, the ways to pay, and what it costs.`
+    : `My ${first.vehicle.name}'s ${what} ${first.days < 0 ? (together.length > 1 ? 'are overdue' : 'is overdue') : `${together.length > 1 ? 'are' : 'is'} due ${first.when}`}${first.vehicle.registrationState ? ` (registered in ${first.vehicle.registrationState})` : ''}. Walk me through getting it done this week: what to bring, where to go, and what it costs.`;
+  const rows = [
+    ...list.map(d => ({ key: `${d.vehicle.uuid}:${d.kind}`, name: `${d.vehicle.name} · ${d.label}`, day: d.day, days: d.days, when: d.when })),
+    ...taxList.map(t => ({ key: `tax:${t.installment.uuid}`, name: t.label.charAt(0).toUpperCase() + t.label.slice(1), day: t.day, days: t.days, when: t.when })),
+  ].sort((a, b) => a.days - b.days);
   return <section role="alert" aria-live="polite"
-    className={`overflow-hidden rounded-xl border-2 shadow-2xl ${urgent ? 'border-red-400 bg-red-700 text-white shadow-red-900/60' : 'border-amber-300 bg-amber-400 text-black'}`}>
+    className={`mb-[15px] overflow-hidden rounded-xl border-2 shadow-2xl ${urgent ? 'border-red-400 bg-red-700 text-white shadow-red-900/60' : 'border-amber-300 bg-amber-400 text-black'}`}>
     <div className="flex items-start gap-3 px-4 pt-4">
       <span className="relative mt-1 flex h-4 w-4 shrink-0" aria-hidden>
         {urgent && <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-white opacity-75" />}
         <span className={`relative inline-flex h-4 w-4 rounded-full ${urgent ? 'bg-white' : 'bg-black/70'}`} />
       </span>
       <div className="min-w-0 flex-1">
-        <p className="font-mono text-[11px] uppercase tracking-[0.2em] opacity-80">{urgent ? 'Vehicle deadline' : 'Vehicle deadline coming up'}</p>
+        <p className="font-mono text-[11px] uppercase tracking-[0.2em] opacity-80">{taxFirst ? (urgent ? 'Tax deadline' : 'Tax deadline coming up') : urgent ? 'Vehicle deadline' : 'Vehicle deadline coming up'}</p>
         <h2 className="mt-1 text-2xl font-bold leading-tight sm:text-3xl">{headline}</h2>
       </div>
     </div>
     <ul className={`mx-4 mt-3 divide-y rounded-lg ${urgent ? 'divide-white/15 bg-black/20' : 'divide-black/10 bg-white/40'}`}>
-      {list.map(d => <li key={`${d.vehicle.uuid}:${d.kind}`} className="flex flex-wrap items-baseline gap-x-3 px-3 py-2 text-sm">
-        <strong className="min-w-0 flex-1 font-semibold">{d.vehicle.name} · {d.label}</strong>
+      {rows.map(d => <li key={d.key} className="flex flex-wrap items-baseline gap-x-3 px-3 py-2 text-sm">
+        <strong className="min-w-0 flex-1 font-semibold">{d.name}</strong>
         <span className="shrink-0">{new Date(`${d.day}T12:00:00`).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}</span>
         <span className="shrink-0 font-semibold">{d.when}</span>
       </li>)}
     </ul>
     <div className="flex flex-wrap gap-2 px-4 pb-4 pt-3">
-      <button type="button" onClick={() => onOpen(first.vehicle.uuid)} className={`rounded-lg px-4 py-2 text-sm font-bold ${urgent ? 'bg-white text-red-700' : 'bg-black text-amber-300'}`}>
+      {first && <button type="button" onClick={() => onOpen(first.vehicle.uuid)} className={`rounded-lg px-4 py-2 text-sm font-bold ${urgent && !taxFirst ? 'bg-white text-red-700' : urgent ? 'border border-white/60 font-semibold' : taxFirst ? 'border border-black/40 font-semibold' : 'bg-black text-amber-300'}`}>
         Open {first.vehicle.name}
-      </button>
+      </button>}
+      {firstTax && onOpenTaxes && <button type="button" onClick={onOpenTaxes} className={`rounded-lg px-4 py-2 text-sm font-bold ${taxFirst ? (urgent ? 'bg-white text-red-700' : 'bg-black text-amber-300') : `border font-semibold ${urgent ? 'border-white/60' : 'border-black/40'}`}`}>
+        Open taxes
+      </button>}
       <button type="button" onClick={() => onAsk(ask)} className={`rounded-lg border px-4 py-2 text-sm font-semibold ${urgent ? 'border-white/60' : 'border-black/40'}`}>
         Help me get it done
       </button>

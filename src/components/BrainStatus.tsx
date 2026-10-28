@@ -20,7 +20,12 @@ const TIER_STYLE: Record<string, { label: string; dot: string; text: string }> =
 export function useBrainStatus(intervalMs = 60_000) {
   const [status, setStatus] = useState<LlmStatus | null>(null);
   const alive = useRef(true);
-  useEffect(() => () => { alive.current = false; }, []);
+  // Re-arm on mount: StrictMode runs the cleanup before remounting in dev, which
+  // would otherwise leave this false for good and drop every status result.
+  useEffect(() => {
+    alive.current = true;
+    return () => { alive.current = false; };
+  }, []);
   const tick = useCallback(() => {
     brainApi
       .status()

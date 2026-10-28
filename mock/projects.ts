@@ -16,6 +16,19 @@ const uid = (p: string) => `${p}-${Date.now().toString(36)}-${seq++}`;
 let issues: Any[] = [];
 // Vehicles at the property (core_api controllers/propertyVehicles.js); the photo held apart, like the real column.
 let vehicles: Any[] = [];
+// Tax records from approved bill scans (core_api controllers/propertyTaxes.js).
+let taxes: Any[] = [];
+// Dev-only: mock_property_tax=true starts with a property tax bill, one payment due in 6 days and one in 6 months.
+if (localStorage.getItem('mock_property_tax') === 'true') {
+  const day = (n: number) => new Date(Date.now() + n * 86_400_000).toISOString().slice(0, 10);
+  taxes = [{ uuid: 'tax-mock-home', kind: 'property', propertyUuid: null, vehicleUuid: null, vehicleName: null, jurisdiction: 'Wake County', parcel: '0123456', account: null, taxYear: new Date().getFullYear(), amount: 4200, address: '123 Oak Street', notes: null, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), installments: [{ uuid: 'inst-1', label: '1st half', dueOn: day(6), amount: 2100, paidOn: null }, { uuid: 'inst-2', label: '2nd half', dueOn: day(180), amount: 2100, paidOn: null }] }];
+}
+export const mockVehicles = () => vehicles;
+/** What an approved record_vehicle_bill does to the mock data: the date moves, and any vehicle tax is recorded. */
+export function mockApplyBill(params: Any) {
+  vehicles = vehicles.map(v => v.uuid === params.vehicle_uuid ? { ...v, registrationDue: params.registration_due } : v);
+  if (params.tax) taxes = [{ uuid: uid('tax'), kind: 'vehicle', propertyUuid: property?.uuid || null, vehicleUuid: params.vehicle_uuid, vehicleName: vehicles.find(v => v.uuid === params.vehicle_uuid)?.name || null, jurisdiction: params.tax.jurisdiction || 'Vehicle tax', parcel: null, account: null, taxYear: params.tax.tax_year, amount: params.tax.amount, address: null, notes: null, createdAt: now(), updatedAt: now(), installments: [{ uuid: uid('inst'), label: params.paid ? 'Paid' : 'Registration & tax', dueOn: params.tax.due_on, amount: params.tax.amount, paidOn: params.paid ? params.paid_on : null }] }, ...taxes];
+}
 // Every new mock vehicle gets these, so the recalls section has something to show.
 const MOCK_RECALLS = [
   { campaign: '20V123000', component: 'ELECTRICAL SYSTEM', summary: 'A wiring harness in the engine bay may chafe and short circuit.', consequence: 'A short circuit increases the risk of a fire, even while parked.', remedy: 'Dealers will inspect and reroute the harness, free of charge.', reportedOn: '2020-03-02', parkIt: false, parkOutside: true, status: 'open', firstSeenAt: new Date().toISOString() },
@@ -232,6 +245,13 @@ export function mockProjectsRoute(method: string, p: string, query: URLSearchPar
   if (p === '/api/v1/projects/property') {
     if (method === 'PUT') property = { ...body, uuid: property?.uuid || uid('property') };
     return { properties: property ? [property] : [] };
+  }
+  if (p === '/api/v1/projects/property/taxes') return { taxes };
+  if (p.startsWith('/api/v1/projects/property/taxes/')) {
+    const [, , , , , , uuid, , inst] = p.split('/');
+    if (method === 'DELETE') taxes = taxes.filter(t => t.uuid !== uuid);
+    else taxes = taxes.map(t => t.uuid !== uuid ? t : { ...t, installments: t.installments.map((i: Any) => i.uuid === inst ? { ...i, paidOn: body.paidOn } : i) });
+    return { taxes };
   }
   // Cars through Smartcar: one linked car, location off until turned on.
   if (p.startsWith('/api/v1/projects/property/vehicles/smartcar')) {

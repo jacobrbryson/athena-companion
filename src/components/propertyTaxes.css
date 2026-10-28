@@ -1,0 +1,29 @@
+/* Taxes on the Property page (PropertyTaxes.tsx) and the Scan a bill drawer (BillScan.tsx). Reuses the pi-* and pv-* styles. */
+.pt-list>ul{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:10px}
+.pt-card{display:flex;flex-direction:column;gap:10px;min-width:0;padding:12px;border:1px solid #1c3b4a;border-radius:10px;background:#071822}
+.pt-head .pv-card-text small{white-space:normal}
+.pt-card .pt-installments{display:flex;flex-direction:column;gap:6px;grid-template-columns:none}
+.pt-installments li{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;font-size:13px}
+.pt-installments li>span:first-child{flex:1 1 140px;min-width:0}
+.pt-foot{display:flex;justify-content:flex-end}
+@media(max-width:700px){.pt-list>ul{grid-template-columns:1fr}}
+
+.bs-body{display:flex;flex-direction:column;gap:12px;min-width:0}
+.bs-note{font-size:14px;font-weight:600;color:#eef8fd}
+.bs-result,.bs-review{display:flex;flex-direction:column;gap:12px;min-width:0}
+.bs-read{border:1px solid #1c3b4a;border-radius:8px;padding:8px 10px;font-size:13px}
+.bs-read summary{cursor:pointer;color:#7fd6f2}
+.bs-read dl{display:grid;gap:4px;margin-top:8px}
+.bs-read dl>div{display:flex;justify-content:space-between;gap:12px}
+.bs-read dt{color:#95b1c0}.bs-read dd{text-align:right;overflow-wrap:anywhere}
+.bs-choices{display:flex;flex-direction:column;gap:8px;border:1px solid #23485a;border-radius:8px;padding:10px}
+.bs-choices legend{padding:0 6px;font-size:13px;font-weight:600}
+.bs-choice{display:flex;align-items:flex-start;gap:8px;font-size:13px}
+.bs-choice small{opacity:.7}
+.bs-check input{border-color:#facc15!important}
+.bs-check.bs-installment input{border-color:#facc15!important}
+.bs-why{display:block;margin-top:4px;color:#facc15;font-size:12px}
+.bs-installments{display:flex;flex-direction:column;gap:8px}
+.bs-installments h3{font-size:13px;font-weight:600;color:#f0f9ff}
+.bs-installment input[type=date]{color-scheme:dark}
+.bs-privacy{font-size:11px;opacity:.55}

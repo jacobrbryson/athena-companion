@@ -1,0 +1,157 @@
+.work-items {
+  padding: 1.5rem;
+  border: 1px solid #38505d;
+  border-radius: 1rem;
+  background: #101b25;
+  color: #dbe7ef;
+}
+.work-items > header {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+.work-items p,
+.wi p {
+  line-height: 1.6;
+  margin: 0.65rem 0;
+}
+.wi {
+  font-size: 0.9rem;
+  color: #dbe7ef;
+}
+.wi nav {
+  display: flex;
+  gap: 0.35rem;
+  margin-bottom: 1rem;
+}
+.wi nav button,
+.wi-runs button {
+  padding: 0.6rem 0.8rem;
+  border: 1px solid #38505d;
+  border-radius: 0.5rem;
+}
+.wi nav button[aria-pressed="true"] {
+  background: #254936;
+}
+.wi article,
+.wi-approval {
+  padding: 1rem 0;
+  border-bottom: 1px solid #38505d;
+}
+.wi-approval {
+  border: 1px solid #41b486;
+  border-radius: 0.75rem;
+  padding: 1rem;
+}
+.wi-recipes {
+  list-style: none;
+  margin: 0.5rem 0;
+  padding: 0;
+  display: grid;
+  gap: 0.4rem;
+}
+.wi-recipes li {
+  display: grid;
+  gap: 0.15rem;
+  font-size: 0.8rem;
+}
+.wi-recipes span {
+  opacity: 0.7;
+}
+.wi-recipes code {
+  overflow-wrap: anywhere;
+}
+.wi pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 0.8rem;
+  background: #111b22;
+  padding: 0.7rem;
+  border-radius: 0.5rem;
+  max-height: 32rem;
+  overflow: auto;
+}
+.wi h3 {
+  font-weight: 600;
+  margin: 1.2rem 0 0.5rem;
+}
+.wi ul {
+  list-style: disc;
+  padding-left: 1.2rem;
+}
+.wi ol {
+  list-style: decimal;
+  padding-left: 1.2rem;
+}
+.wi a {
+  color: #67dca9;
+  text-decoration: underline;
+}
+.wi input,
+.wi textarea,
+.wi select,
+.wi-actions select {
+  width: 100%;
+  padding: 0.65rem;
+  background: #14222c;
+  border: 1px solid #496170;
+  border-radius: 0.4rem;
+  color: #e6eff5;
+}
+.wi label {
+  display: block;
+  margin: 1rem 0 0.5rem;
+}
+.wi textarea {
+  font: 12px/1.5 monospace;
+}
+.wi [role="alert"] {
+  color: #ffb2a8;
+}
+.wi-status {
+  padding: 0.6rem;
+  background: #203846;
+  border-radius: 0.4rem;
+}
+.wi-runs {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+.wi-runs button {
+  display: flex;
+  flex-direction: column;
+  align-items: start;
+  width: 100%;
+  text-align: left;
+}
+.wi-runs span,
+.wi-runs small {
+  color: #a1b9c6;
+  margin-top: 0.3rem;
+}
+.wi-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.wi-actions select {
+  flex-basis: 100%;
+}
+.wi video {
+  width: 100%;
+  border-radius: 0.5rem;
+}
+.wi-setup .app-drawer-button {
+  margin: 0.4rem 0.25rem 0.4rem 0;
+}
+.wp-issues .wi-open {
+  display: flex;
+  width: 100%;
+  text-align: left;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.7rem 0;
+}

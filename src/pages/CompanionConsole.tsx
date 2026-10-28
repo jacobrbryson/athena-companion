@@ -23,6 +23,7 @@ import { useNudges } from '../athena/useNudges';
 import { ActionProposal, ActionProposalFolded } from '../components/ActionProposal';
 import { useActions } from '../athena/useActions';
 import { useDreamQuestions } from '../athena/useDreamQuestions';
+import { useInbox } from '../athena/useInbox';
 import { NotificationsPanel } from '../components/NotificationsPanel';
 import { KnowsPanel } from '../components/KnowsPanel';
 import { LocalServerPanel } from '../components/LocalServerPanel';
@@ -98,6 +99,8 @@ export function CompanionConsole() {
   const [arriving, setArriving] = useState(!!arrival);
   // Questions from her dreaming: the other thing the bell is for.
   const dreamQuestions = useDreamQuestions(!!profile);
+  // Every push she sends, kept until acknowledged (a tap on the phone loses it).
+  const inbox = useInbox(!!profile);
   // Things she raised without being asked. Rendered into the transcript
   // rather than as a card: she started a conversation, so it should look like
   // one.
@@ -146,6 +149,25 @@ export function CompanionConsole() {
   );
   // Land straight on the result rather than making the person find the panel.
   const [panel, setPanel] = useState<Panel>(integrationCallback ? 'integrations' : null);
+  // Opening the app from a notification (Android or web) cannot say which one
+  // was tapped, so on opening or coming back, anything new and unacknowledged
+  // is shown in full: the tray text is cut short and the tap has just cleared it.
+  const inboxArmed = useRef(true);
+  useEffect(() => {
+    const arm = () => { if (document.visibilityState === 'visible') inboxArmed.current = true; };
+    document.addEventListener('visibilitychange', arm);
+    return () => document.removeEventListener('visibilitychange', arm);
+  }, []);
+  useEffect(() => {
+    if (!inboxArmed.current || !inbox.reads || arriving) return;
+    inboxArmed.current = false;
+    let seen = 0;
+    try { seen = Number(localStorage.getItem('athena_inbox_seen')) || 0; } catch { /* private window */ }
+    const fresh = inbox.waiting.filter(n => Date.parse(n.createdAt) > seen);
+    if (!fresh.length) return;
+    try { localStorage.setItem('athena_inbox_seen', String(Math.max(...fresh.map(n => Date.parse(n.createdAt))))); } catch { /* private window */ }
+    setPanel('notifications');
+  }, [inbox.reads, inbox.waiting, arriving]);
   // A dashboard Connect that hit a health-consent gate: Connected apps opens on that prompt.
   const [consentFor, setConsentFor] = useState<string | null>(null);
   const inputId = useId();
@@ -481,7 +503,7 @@ export function CompanionConsole() {
   // Proposals she cannot act on until someone answers, plus the questions her
   // dreaming left her holding. Drives the bell in the top bar and Alerts on
   // the phone. A card already answered (done/failed) is not waiting on anyone.
-  const waitingCount = actions.pending.filter(a => a.status === 'pending').length + dreamQuestions.questions.length;
+  const waitingCount = actions.pending.filter(a => a.status === 'pending').length + dreamQuestions.questions.length + inbox.waiting.length;
   function askAthena(text: string) {
     setBriefing(false);
     navigate('/chat');
@@ -1016,6 +1038,11 @@ export function CompanionConsole() {
         <NotificationsPanel
           actions={actions}
           questions={dreamQuestions.questions}
+          inbox={inbox.waiting}
+          recent={inbox.recent}
+          onAck={inbox.ack}
+          onAckAll={inbox.ackAll}
+          onOpenLink={(url: string) => { setPanel(null); navigate(url); }}
           onAnswer={() => { setPanel(null); askAthena('You had a question for me from your dreaming — go ahead and ask.'); }}
           onDismiss={dreamQuestions.dismiss}
           onOpenActions={() => openPanel('actions')}

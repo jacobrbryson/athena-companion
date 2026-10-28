@@ -37,8 +37,10 @@ import { CalendarOverview } from './CalendarPage';
 import { FamilyOverview } from './FamilyPage';
 import { FamilyFinance } from './FamilyFinance';
 import { FamilyTrading } from './FamilyTrading';
+import { ResearchPage } from './ResearchPage';
 import { CommunityOverview } from './CommunityPage';
 import { WorkOverview } from './WorkPage';
+import { WorkItems } from './WorkItems';
 import { NavigationLink, DrawerButton } from './ActionControls';
 import { plannedToday } from './ProjectData';
 import { useProjects, openProjects, ProjectList, ProjectBoard, ProjectsDrawers, ConcernList, CharterView, StateChip, type ProjectsDrawer } from './Projects';
@@ -52,6 +54,8 @@ import { WeatherPanel } from './WeatherPanel';
 import { usePropertyIssues, reportedWhen, ReportIssueDrawer, IssueDetailsDrawer, ActiveIssueBanner, IssueList, troubleshootPrompt, findProPrompt } from './PropertyIssues';
 import type { PropertyIssue } from '../api/propertyIssues';
 import { useVehicles, VehicleList, VehicleDrawer, VehicleDetailsDrawer, vehiclePrompt, SmartcarPanel, VehicleDeadlineBanner } from './PropertyVehicles';
+import { useTaxes, TaxList } from './PropertyTaxes';
+import { BillScanDrawer } from './BillScan';
 import { useThermostats, ThermostatList } from './PropertyThermostats';
 import { PropertySecurity } from './PropertySecurity';
 import { SystemOverview, SystemTabs, SYSTEM_TAB_IDS, type SystemTab, type SystemTile } from './SystemPage';
@@ -64,7 +68,7 @@ const FAMILY_CARD_ROWS = 7;
 
 /** Open a console panel; `consentFor` opens Connected apps on that provider's consent prompt. */
 export type OpenPanel = (panel: 'integrations' | 'memory' | 'actions' | 'notifications' | 'knows' | 'photo' | 'devices', options?: { consentFor?: string }) => void;
-export type DashboardSection = 'Dashboard' | 'Property' | 'Today' | 'Calendar' | 'Health' | 'Family' | 'Community' | 'Mail' | 'Work' | 'Projects' | 'News' | 'Dreams' | 'System' | 'Finance' | 'Workouts' | 'FamilyFinance' | 'FamilyTrading' | 'CommunityPlaces';
+export type DashboardSection = 'Dashboard' | 'Property' | 'Today' | 'Calendar' | 'Health' | 'Family' | 'Community' | 'Mail' | 'Work' | 'Projects' | 'News' | 'Dreams' | 'System' | 'Finance' | 'Workouts' | 'FamilyFinance' | 'FamilyTrading' | 'CommunityPlaces' | 'Research';
 // Icons live in ./icons — one registry, so a drawn icon looks the same in
 // the nav, on its card and in the phone's bottom bar.
 export { DashboardIcon } from './icons';
@@ -72,10 +76,12 @@ export { DashboardIcon } from './icons';
 // 2026-10-13, when Home became the house section); it also replaces the old
 // Quick Actions entry, which now lives on as the bell in the
 // top bar (the Notifications card was removed by the owner, 2026-09-27).
+// Research (2026-10-27) holds the small read-only studies on the person's own
+// data; it sits after Work, below the owner's fixed Health/Family/Community row.
 // Today remains an internal page for now but is not a left-navigation entry.
 // Calendar, Mail, Projects, News and Dreams moved under System as its tabs
 // (owner, 2026-10-16), beside Finance; their pages are unchanged.
-export const dashboardSections: DashboardSection[] = ['Dashboard', 'Health', 'Family', 'Community', 'Property', 'Work', 'System'];
+export const dashboardSections: DashboardSection[] = ['Dashboard', 'Health', 'Family', 'Community', 'Property', 'Work', 'Research', 'System'];
 /** The nav entry a page lights up: a System tab lights System, a workout lights Health. */
 export const navSectionOf = (section: DashboardSection): DashboardSection =>
   section === 'Workouts' ? 'Health' : section === 'CommunityPlaces' ? 'Community' : section === 'FamilyFinance' || section === 'FamilyTrading' ? 'Family' : SYSTEM_TAB_IDS.includes(section) ? 'System' : section;
@@ -202,8 +208,8 @@ function weatherLine(w: WeatherAlert) {
 function Facts({ facts }: { facts: Fact[] }) {
   return <ul className="dashboard-memory-list">{facts.map(fact => <li key={fact.uuid}><span className="memory-avatar">{fact.key.slice(0, 1).toUpperCase()}</span><div><strong>{fact.key}</strong><p>{fact.value || 'Saved in memory'}</p></div></li>)}</ul>;
 }
-function Issues({ issues }: { issues: JiraIssue[] }) {
-  return <ul className="dashboard-data-list">{issues.map(issue => <li key={`${issue.site}-${issue.key}`}><ExternalLink url={issue.url}><strong>{issue.key} · {issue.title}</strong><small>{issue.project} · {issue.status}</small></ExternalLink></li>)}</ul>;
+function Issues({ issues, onOpen }: { issues: JiraIssue[]; onOpen?: (url: string) => void }) {
+  return <ul className="dashboard-data-list">{issues.map(issue => <li key={`${issue.site}-${issue.key}`}>{onOpen ? <button type="button" onClick={() => onOpen(issue.url)}><strong>{issue.key} · {issue.title}</strong><small>{issue.project} · {issue.status}</small></button> : <ExternalLink url={issue.url}><strong>{issue.key} · {issue.title}</strong><small>{issue.project} · {issue.status}</small></ExternalLink>}</li>)}</ul>;
 }
 
 // --- Section-page building blocks -----------------------------------------
@@ -719,6 +725,7 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
   const [addingWorkplace, setAddingWorkplace] = useState(false);
   // What the Workplaces panel last loaded, so the Work overview above it stays in step.
   const [workOverview, setWorkOverview] = useState<WorkplacesOverview | null>(null);
+  const [workIssueUrl, setWorkIssueUrl] = useState<string | null>(null);
   const [plansOpen, setPlansOpen] = useState(false);
   const [selectedEmail, setSelectedEmail] = useState<string | null>(null);
   // Bumped after propose/confirm/decline/dismiss so MailPage's own list refetches —
@@ -740,6 +747,9 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
   const property = useProperty();
   const propertyIssues = usePropertyIssues();
   const vehicles = useVehicles();
+  const taxes = useTaxes();
+  // "Scan a bill" (Vehicles and Taxes tabs): a photo of a registration or tax bill becomes one approval card.
+  const [scanningBill, setScanningBill] = useState(false);
   // Add, view or edit a vehicle at the property; the uuid names which.
   const [vehicleDrawer, setVehicleDrawer] = useState<{ kind: 'add' } | { kind: 'view' | 'edit'; uuid: string } | null>(null);
   // Report, view or edit a property issue; the uuid names which.
@@ -747,7 +757,9 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
   const propertyTab = propertyTabFromPath(location.pathname);
   const setPropertyTab = (tab: PropertyTab) => navigate(propertyTabPath(property.property?.uuid, tab));
   // A registration, inspection or insurance deadline: Home shows it until the date moves (owner, 2026-10-25).
-  const vehicleDeadline = <VehicleDeadlineBanner vehicles={vehicles.vehicles} onAsk={onAsk}
+  // Unpaid tax installments that are close ride in the same banner (from a scanned bill).
+  const vehicleDeadline = <VehicleDeadlineBanner vehicles={vehicles.vehicles} taxes={taxes.taxes} events={summary?.calendar.data?.events} onAsk={onAsk}
+    onOpenTaxes={() => navigate(propertyTabPath(property.property?.uuid, 'property-taxes'))}
     onOpen={uuid => { navigate(propertyTabPath(property.property?.uuid, 'property-vehicles')); setVehicleDrawer({ kind: 'view', uuid }); }} />;
   // A project's own page: /properties/<id>/projects/<project> or /system/projects/<project>.
   const projectPageUuid = projectUuidFromPath(location.pathname);
@@ -1405,6 +1417,16 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
     </SectionPage>;
   }
 
+  function ResearchSectionPage() {
+    return <SectionPage ctx={ctx}
+      eyebrow="" title="Research" blurb=""
+      ask="What are my research studies finding so far?"
+      hero={<ResearchPage onAsk={onAsk} />}
+    >
+      {drawers}
+    </SectionPage>;
+  }
+
   function FamilyTradingPage() {
     return <SectionPage ctx={ctx}
       eyebrow="" title="Trading" blurb=""
@@ -1512,8 +1534,9 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
         projects={proj.loading && !proj.snap.projects.length ? null : proj.snap.projects.filter(p => p.areas.some(a => a.area === 'work'))}
         events={events} timeZone={timeZone} now={now} workplaces={workOverview} onWorkplaces={setWorkOverview}
         onAsk={onAsk} onOpenProject={openProject} onNewProject={() => newProject('work')} onConnect={() => onPanel('integrations')}
-        onMemory={() => onPanel('memory')} onSection={toSection} />}
+        onMemory={() => onPanel('memory')} onSection={toSection} onOpenIssue={setWorkIssueUrl} />}
     >
+      <WorkItems issueUrl={workIssueUrl} onCloseIssue={() => setWorkIssueUrl(null)} />
       <h2 className="fp-details-head section-panel-wide">THE DETAIL</h2>
       <Panel id="work-workplaces" title="Workspaces" wide note={<>where you work and your role <button type="button" className="workplace-add" onClick={() => setAddingWorkplace(true)} disabled={addingWorkplace}>＋ Add</button></>}>
         <Workplaces adding={addingWorkplace} onAdding={setAddingWorkplace} onChanged={setWorkOverview} health={{ jira: summary?.jira, slack: summary?.slack, gmail: summary?.emailTriage, google_calendar: summary?.calendar }} />
@@ -1523,7 +1546,7 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
           : !issues.length ? <p className="dashboard-empty">No assigned open issues returned.</p>
             : byStatus.map(status => <div className="day-group" key={status}>
               <h3>{status} <span className="card-count">{issues.filter(i => i.status === status).length}</span></h3>
-              <Issues issues={issues.filter(i => i.status === status)} />
+              <Issues issues={issues.filter(i => i.status === status)} onOpen={setWorkIssueUrl} />
             </div>)}
       </Panel>
       <Panel id="work-slack" title="Slack" note={summary?.slack.data?.workspace}>
@@ -1709,7 +1732,10 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
         <IssueList state={propertyIssues} onOpen={uuid => setIssueDrawer({ kind: 'view', uuid })} onReport={() => setIssueDrawer({ kind: 'report' })} />
       </Panel>}
       {propertyTab === 'property-vehicles' && <Panel title="Vehicles" note={property.property?.name ? `kept at ${property.property.name}` : 'kept at this property'} wide>
-        <VehicleList state={vehicles} propertyName={property.property?.name || ''} hasProperty={!!property.property} onOpen={uuid => setVehicleDrawer({ kind: 'view', uuid })} onAdd={() => setVehicleDrawer({ kind: 'add' })} />
+        <VehicleList state={vehicles} propertyName={property.property?.name || ''} hasProperty={!!property.property} onOpen={uuid => setVehicleDrawer({ kind: 'view', uuid })} onAdd={() => setVehicleDrawer({ kind: 'add' })} onScan={() => setScanningBill(true)} />
+      </Panel>}
+      {propertyTab === 'property-taxes' && <Panel title="Taxes" note="property tax, and the tax billed with a registration" wide>
+        <TaxList state={taxes} onScan={() => setScanningBill(true)} />
       </Panel>}
       {propertyTab === 'property-vehicles' && <Panel title="Connected cars" note="read from the car through Smartcar" wide>
         <SmartcarPanel vehicles={vehicles.vehicles} onConnect={() => void reconnect('smartcar')} connecting={reconnecting === 'smartcar'} />
@@ -1753,6 +1779,8 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
       {drawers}
       {issueDrawer?.kind === 'report' && <ReportIssueDrawer state={propertyIssues} areas={property.property?.areas.map(a => a.name) || []} onClose={() => setIssueDrawer(null)} />}
       {issueDrawer?.kind === 'edit' && shownIssue && <ReportIssueDrawer state={propertyIssues} issue={shownIssue} areas={property.property?.areas.map(a => a.name) || []} onClose={() => setIssueDrawer({ kind: 'view', uuid: shownIssue.uuid })} />}
+      {scanningBill && <BillScanDrawer onClose={() => setScanningBill(false)} onChanged={() => { vehicles.retry(); taxes.retry(); }}
+        hint={propertyTab === 'property-taxes' ? 'Take a photo of a property tax bill — or its receipt. I’ll read the due dates and amounts and ask before I add anything.' : 'Take a photo of a vehicle registration renewal — or its receipt. I’ll match it to one of your vehicles and ask before I add anything.'} />}
       {vehicleDrawer?.kind === 'add' && <VehicleDrawer state={vehicles} propertyUuid={property.property?.uuid || null} onClose={() => setVehicleDrawer(null)} />}
       {vehicleDrawer?.kind === 'edit' && shownVehicle && <VehicleDrawer state={vehicles} vehicle={shownVehicle} propertyUuid={shownVehicle.propertyUuid} onClose={() => setVehicleDrawer({ kind: 'view', uuid: shownVehicle.uuid })} />}
       {vehicleDrawer?.kind === 'view' && shownVehicle && <VehicleDetailsDrawer state={vehicles} vehicle={shownVehicle} propertyName={shownVehicle.propertyUuid === property.property?.uuid ? property.property?.name || '' : ''} onClose={() => setVehicleDrawer(null)} onEdit={() => setVehicleDrawer({ kind: 'edit', uuid: shownVehicle.uuid })} onAsk={v => onAsk(vehiclePrompt(v))} />}
@@ -2054,6 +2082,7 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
     if (section === 'CommunityPlaces') return CommunityPlacesPage();
     if (section === 'Mail') return MailPage();
     if (section === 'Work') return WorkPage();
+    if (section === 'Research') return ResearchSectionPage();
     if (section === 'Projects') return ProjectsPage();
     if (section === 'Property') return HomePage();
     if (section === 'News') return NewsPage();

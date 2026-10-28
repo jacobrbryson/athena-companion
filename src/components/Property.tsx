@@ -13,6 +13,7 @@ const PROPERTY_TABS = [
   { label: 'Overview', id: 'property-overview', icon: 'Home' },
   { label: 'Issues', id: 'property-issues', icon: 'Issues' },
   { label: 'Vehicles', id: 'property-vehicles', icon: 'Vehicles' },
+  { label: 'Taxes', id: 'property-taxes', icon: 'Taxes' },
   { label: 'Utilities', id: 'property-utilities', icon: 'Utilities' },
   { label: 'Security', id: 'property-security', icon: 'Home' },
   { label: 'Projects', id: 'property-projects', icon: 'PropertyProjects' },

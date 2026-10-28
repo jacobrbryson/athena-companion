@@ -5,7 +5,6 @@ import { workoutsApi, type Workout } from '../api/workouts';
 import { PageHeader } from './PageHeader';
 import { downscale } from './photoStore';
 import { Ecg, useLiveHeartRate } from './Ecg';
-import { SleepClimatePanel } from './SleepClimatePanel';
 import './health.css';
 
 /**
@@ -366,7 +365,6 @@ export function HealthOverview({ recovery, sleep, strain, weighIns, readiness, w
             <span className={`hp-tone-dot hp-tone-${w.tone}`}><Icon name={w.tone === 'good' ? 'check' : w.tone === 'ok' ? 'minus' : w.tone === 'bad' ? 'down' : 'minus'} /></span>
           </button></li>)}</ul>
         </section>
-        <SleepClimatePanel onAsk={onAsk} />
       </div>
     </div>
 

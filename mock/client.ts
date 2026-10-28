@@ -9,7 +9,8 @@
 
 import { mockTrading } from './trading';
 import type { NewsSource } from '../src/api/dashboard';
-import { mockProjectsRoute } from './projects';
+import { mockProjectsRoute, mockVehicles, mockApplyBill } from './projects';
+import { mockWorkItems } from './workItems';
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const now = Date.now();
@@ -842,6 +843,32 @@ function proposeDeleteAction(rows: MockEmail[]): MockAction {
   return action;
 }
 
+/**
+ * Scan a bill (core_api services/billScan.js). The mock reads no image: it
+ * builds the proposal the real one would for the first saved vehicle.
+ * localStorage.mock_bill = 'check' returns the "check this" sheet instead, and
+ * 'which' asks which vehicle.
+ */
+function mockBillScan(body: Record<string, any> = {}): Record<string, any> {
+  const cars = mockVehicles();
+  const due = new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10);
+  const document = { kind: 'vehicle_registration', paid: false, payee: 'NC DMV', jurisdiction: 'North Carolina', plate: cars[0]?.plate || 'ABC1234', dueDate: due, amountDue: 214.5, taxAmount: 150.25, taxYear: new Date().getFullYear(), installments: [] as unknown[], ...(body.document || {}) } as Record<string, any>;
+  const mode = localStorage.getItem('mock_bill');
+  if (!cars.length) return { status: 'needs_input', document, note: "You don't have any vehicles saved yet. Add the vehicle under Property → Vehicles first, then show me the bill again." };
+  if (!body.document && mode === 'check') return { status: 'needs_input', document: { ...document, uncertain: [{ field: 'dueDate', label: 'the due date', value: due, reason: "I wasn't sure of the due date" }] }, note: "I read this, but I wasn't sure of everything. Check the highlighted parts — nothing is saved or added to your calendar until you've approved it." };
+  if (!body.vehicleUuid && (mode === 'which' || cars.length > 1) && mode !== 'one') return { status: 'needs_input', document, candidates: { type: 'vehicle', items: cars.map((c) => ({ uuid: c.uuid, label: c.name })) }, note: 'Which vehicle is this for?' };
+  const car = cars.find((c) => c.uuid === body.vehicleUuid) || cars[0];
+  const params = { vehicle_uuid: car.uuid, registration_due: String(document.dueDate), paid: false, amount: Number(document.amountDue), payee: document.payee, tax: { amount: Number(document.taxAmount), tax_year: Number(document.taxYear), due_on: String(document.dueDate), jurisdiction: document.jurisdiction }, calendar: true };
+  const action: MockAction = {
+    uuid: `act-bill-${Date.now()}`, action_id: 'record_vehicle_bill', label: 'Record a vehicle registration bill',
+    summary: `Record ${car.name}'s registration bill ($${params.amount} to ${params.payee}): set its registration date to ${params.registration_due}, record the $${params.tax.amount} vehicle tax billed with it and add 2 all-day calendar events`,
+    rationale: 'You showed me this bill.', params, status: 'pending', approval: null, reversible: true, result_ref: null, error: null,
+    created_at: new Date().toISOString(), expires_at: new Date(Date.now() + 15 * 60_000).toISOString(), executed_at: null,
+  };
+  proposals.push(action);
+  return { status: 'proposed', document, proposal: action, target: { type: 'vehicle', uuid: car.uuid, label: car.name } };
+}
+
 /** Which actions are usable: mirrors the server's linked + consented filter. */
 function availableActions(): string[] {
   // Matches the server, which gates on the credential's status rather than on
@@ -1072,6 +1099,8 @@ async function route(method: string, path: string, body?: any): Promise<any> {
   await wait(150);
   const url = new URL(path, 'http://mock');
   const p = url.pathname;
+  const workResult = mockWorkItems(method, url, body);
+  if (workResult !== undefined) return workResult;
 
   if (p === '/auth/companion/google') {
     signedIn = true;
@@ -1128,6 +1157,33 @@ async function route(method: string, path: string, body?: any): Promise<any> {
     device: { name: 'enterprises/mock/devices/up', title: 'Upstairs thermostat' },
     sentence: 'On nights the Upstairs thermostat averaged 66–67°F, your recovery averaged 74%, 11 points higher than your other nights (12 of 38 nights; moderate confidence — a pattern in your nights, not proof of cause).',
   };
+  // Research: one study with a finding, one still gathering, one with a pace.
+  if (p === '/api/v1/research') {
+    const sleep = { status: 'ready', nights: 38, needed: 14, metric: 'avgRecovery', confidence: 'moderate',
+      bands: [
+        { fromF: 64, toF: 65, nights: 5, avgRecovery: 71, avgPerformance: 84, avgHumidity: 40 },
+        { fromF: 66, toF: 67, nights: 12, avgRecovery: 74, avgPerformance: 88, avgHumidity: 41 },
+        { fromF: 68, toF: 69, nights: 14, avgRecovery: 63, avgPerformance: 81, avgHumidity: 43 },
+        { fromF: 70, toF: 71, nights: 7, avgRecovery: 55, avgPerformance: 76, avgHumidity: 45 },
+      ],
+      best: { fromF: 66, toF: 67, nights: 12, avgRecovery: 74, avgPerformance: 88, avgHumidity: 41, delta: 11, othersAvg: 63 },
+      device: { name: 'enterprises/mock/devices/up', title: 'Upstairs thermostat' } };
+    return { studies: [
+      { id: 'sleep-climate', title: 'Bedroom & sleep', question: 'What bedroom temperature goes with your best recovery?', sources: ['Google Nest', 'WHOOP'], status: 'ready', progress: { have: 38, needed: 14, unit: 'nights' }, confidence: 'moderate', detail: sleep,
+        sentence: 'On nights the Upstairs thermostat averaged 66–67°F, your recovery averaged 74%, 11 points higher than your other nights (12 of 38 nights; moderate confidence — a pattern in your nights, not proof of cause).' },
+      { id: 'thermostat-setpoint', title: 'Setpoint & heating time', question: 'How many fewer hours does the heat run when the thermostat is set lower?', sources: ['Google Nest'], status: 'gathering', progress: { have: 5, needed: 14, unit: 'days' }, detail: { status: 'gathering' },
+        sentence: 'I have 5 of the 14 days I need from the Hall thermostat, each with a heating setpoint and a full day of readings.' },
+      { id: 'project-pace', title: 'Project pace', question: 'How fast do your projects actually move, and when would they finish at that pace?', sources: ['Projects'], status: 'ready', progress: { have: 17, needed: 8, unit: 'steps' }, confidence: 'low',
+        detail: { status: 'ready', perWeek: 2.1,
+          weekly: [1, 2, 4, 2, 3, 1, 2, 2].map((steps, i) => ({ weekOf: new Date(Date.now() - (8 - i) * 7 * 86_400_000).toISOString().slice(0, 10), steps })),
+          sessions: { count: 4, hours: 6 },
+          projects: [
+            { uuid: 'p1', title: 'Garage shelving', open: 3, doneInWindow: 1, idleDays: 21, stalled: true, finishOn: null },
+            { uuid: 'p2', title: 'Deck stain', open: 4, doneInWindow: 8, idleDays: 2, stalled: false, finishOn: new Date(Date.now() + 28 * 86_400_000).toISOString().slice(0, 10) },
+          ] },
+        sentence: 'Over the last eight weeks you finished about 2.1 steps a week across your projects, with 4 work sessions (6 hours). At its own pace, "Deck stain" would finish in about four weeks. 1 active project has had no progress in 14+ days. A description of your recent weeks, not a promise.' },
+    ] };
+  }
   if (p.startsWith('/api/v1/dashboard/health/plan') || p.startsWith('/api/v1/dashboard/health/program') || p.startsWith('/api/v1/dashboard/health/targets') || p.startsWith('/api/v1/dashboard/health/nutrition') || p.startsWith('/api/v1/dashboard/health/favorites')) {
     const state = mockPlanState();
     const today = url.searchParams.get('today') || body?.today || planDay(new Date());
@@ -1238,6 +1294,8 @@ async function route(method: string, path: string, body?: any): Promise<any> {
     return summary;
   }
   if (p === '/api/v1/dashboard/priority') return dashboardPriority();
+  if (p === '/api/v1/dashboard/inbox') return { unacknowledged: [{ uuid: 'mock-n1', kind: 'nudge', title: 'Athena', body: 'Your 2pm is in fifteen minutes.', url: null, createdAt: ago(20), acknowledgedAt: null }], recent: [] };
+  if (p.startsWith('/api/v1/dashboard/inbox/') && method === 'POST') return { cleared: 1 };
   // Emergency banner: quiet by default; ?alert=urgent or =watch to see it.
   if (p === '/api/v1/dashboard/alert/ack' && method === 'POST') {
     const key = String((body as { key?: string } | undefined)?.key || '');
@@ -1622,6 +1680,10 @@ async function route(method: string, path: string, body?: any): Promise<any> {
     if (p.endsWith('/check')) { place!.lastCheckedAt = new Date().toISOString(); return { result: { status: 'unchanged' }, place }; }
     return { place };
   }
+  if (method === 'POST' && (p === '/api/v1/projects/property/bills/scan' || p === '/api/v1/projects/property/bills/review')) {
+    await wait(1400);
+    return mockBillScan(p.endsWith('/review') ? body : {});
+  }
   const projectAnswer = mockProjectsRoute(method, p, url.searchParams, body);
   if (projectAnswer !== undefined) return projectAnswer;
   if (p === '/api/v1/dashboard/email/scan') {
@@ -1820,6 +1882,8 @@ Sam` };
   if (p === '/api/v1/memory/journal') return journal;
   if (p === '/api/v1/memory/photos') {
     await wait(1600);
+    // Dev: mock_bill_photo=true makes Show a photo recognise a bill, as the real one does for one.
+    if (localStorage.getItem('mock_bill_photo') === 'true' && !body.skipBill) return { success: true, bill: mockBillScan() };
     const e = { uuid: `p-${Date.now()}`, kind: 'photo', scope: 'personal', title: 'A photo you shared', content: `A clear, well-lit scene.${body.caption ? `\nThey said: "${body.caption}"` : ''}\nIn it: (mock mode — no vision model).`, occurred_at: new Date().toISOString(), importance: 6, source: 'user', media_ref: body.mediaRef, metadata: null };
     events.unshift(e);
     return { event: e };
@@ -2038,6 +2102,7 @@ Sam` };
     if (!action || action.status !== 'pending') fail(409, 'That request is already decided', 'not_pending');
     await wait(700);
     Object.assign(action!, { status: 'done', approval: 'human', result_ref: 'mock-evt-1', executed_at: new Date().toISOString() });
+    if (action!.action_id === 'record_vehicle_bill') mockApplyBill(action!.params as Record<string, unknown>);
     // The real execute() also marks the triaged email(s) 'actioned'; mirrored
     // here so a filed email leaves the Mail list the same way.
     if (action!.action_id === 'file_receipt_email' || action!.action_id === 'add_email_events') {

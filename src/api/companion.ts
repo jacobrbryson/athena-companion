@@ -63,13 +63,20 @@ export const memoryApi = {
   /** Correct what a fact says. Same category and key update it in place, as the person's own word. */
   saveFact: (fact: { category: string; key: string; value: string; visibility?: string }) =>
     api.post<{ memory: Fact }>('/api/v1/memory', { ...fact, source: 'user' }),
+  /**
+   * A photo of a vehicle registration or property tax bill comes back as `bill`
+   * (an approval card or a check sheet) instead of a memory — it carries plate
+   * and account numbers, so it is not kept as a photo. `skipBill` keeps it as one.
+   */
   rememberPhoto: (body: {
     imageBase64: string;
     mimeType: string;
     caption?: string;
     mediaRef: string;
     takenAt?: string;
-  }) => api.post<{ event: MemoryEvent }>('/api/v1/memory/photos', body),
+    skipBill?: boolean;
+    today?: string;
+  }) => api.post<{ event?: MemoryEvent; bill?: import('./propertyTaxes').BillResult }>('/api/v1/memory/photos', body),
 };
 
 // ----------------------------------------------------------------- brain ---

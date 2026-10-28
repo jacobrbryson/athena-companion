@@ -1,7 +1,7 @@
 import { Drawer, Label, ago } from './Drawer';
 import { ActionProposal } from './ActionProposal';
 import type { ActionsState } from '../athena/useActions';
-import type { DreamQuestion } from '../api/dashboard';
+import type { DreamQuestion, InboxNotification } from '../api/dashboard';
 
 /**
  * Everything Athena is waiting on you for, in one place.
@@ -13,9 +13,17 @@ import type { DreamQuestion } from '../api/dashboard';
  * still goes through the same card and the same server confirm as in chat;
  * this panel adds a place to see them, not a second way to consent.
  */
-export function NotificationsPanel({ actions, questions, onAnswer, onDismiss, onOpenActions, onClose }: {
+export function NotificationsPanel({ actions, questions, inbox, recent, onAck, onAckAll, onOpenLink, onAnswer, onDismiss, onOpenActions, onClose }: {
   actions: ActionsState;
   questions: DreamQuestion[];
+  /** Pushes she sent that nobody has acknowledged yet. */
+  inbox: InboxNotification[];
+  /** The last week of acknowledged ones, so a cleared one can still be found. */
+  recent: InboxNotification[];
+  onAck: (uuid: string) => void;
+  onAckAll: () => void;
+  /** Goes to the page a notification is about. */
+  onOpenLink: (url: string) => void;
   /** Closes a question the person has already dealt with. */
   onDismiss: (uuid: string) => void;
   /** Opens chat and has her ask — the answer is a conversation, not a form. */
@@ -24,11 +32,33 @@ export function NotificationsPanel({ actions, questions, onAnswer, onDismiss, on
   onClose: () => void;
 }) {
   const proposals = actions.pending;
-  const empty = !proposals.length && !questions.length;
+  const empty = !proposals.length && !questions.length && !inbox.length;
   return (
     <Drawer eyebrow="waiting on you" title="Notifications" onClose={onClose}
       footer={<button onClick={onOpenActions} className="w-full rounded-full border border-emerald-500/30 px-4 py-2 text-xs hover:bg-emerald-500/10">Actions &amp; permissions — what she may do, and what she has done ↗</button>}>
       {empty && <p className="text-sm opacity-60">Nothing is waiting for you. When she wants to add an event, save something, or ask what a dream was about, it shows up here.</p>}
+
+      {inbox.length > 0 && (
+        <section className="mb-8">
+          <div className="flex items-center justify-between"><Label>notifications</Label>
+            {inbox.length > 1 && <button onClick={onAckAll} className="text-[11px] underline opacity-60 hover:opacity-100">Acknowledge all</button>}
+          </div>
+          <ul className="space-y-2">
+            {inbox.map(n => (
+              <li key={n.uuid} className="rounded border border-emerald-500/20 bg-white/[0.03] px-3 py-2">
+                <p className="text-sm">{n.body}</p>
+                <div className="mt-1 flex items-center justify-between gap-3">
+                  <p className="font-mono text-[10px] opacity-45">{n.title} · {ago(n.createdAt)}</p>
+                  <span className="flex gap-3">
+                    {n.url && <button onClick={() => { onAck(n.uuid); onOpenLink(n.url!); }} className="text-[11px] underline opacity-80 hover:opacity-100">Open</button>}
+                    <button onClick={() => onAck(n.uuid)} className="text-[11px] font-semibold text-emerald-300 hover:text-emerald-200">Acknowledge</button>
+                  </span>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {proposals.length > 0 && (
         <section className="mb-8">
@@ -45,7 +75,7 @@ export function NotificationsPanel({ actions, questions, onAnswer, onDismiss, on
       )}
 
       {questions.length > 0 && (
-        <section>
+        <section className="mb-8">
           <Label>questions she&rsquo;s holding</Label>
           <ul className="space-y-2">
             {questions.map(q => (
@@ -59,6 +89,15 @@ export function NotificationsPanel({ actions, questions, onAnswer, onDismiss, on
             ))}
           </ul>
           <button onClick={onAnswer} className="mt-3 h-10 w-full rounded-full bg-emerald-500/80 text-sm font-semibold text-black active:scale-95">Answer in chat</button>
+        </section>
+      )}
+
+      {recent.length > 0 && (
+        <section>
+          <Label>acknowledged this week</Label>
+          <ul className="space-y-1">
+            {recent.map(n => <li key={n.uuid} className="text-xs opacity-50">{n.body} <span className="font-mono text-[10px]">· {ago(n.createdAt)}</span></li>)}
+          </ul>
         </section>
       )}
     </Drawer>

@@ -435,6 +435,18 @@ export const dreamsApi = {
   dismissQuestion: (uuid: string) => api.post<{ dismissed: boolean }>(`/api/v1/dreams/questions/${encodeURIComponent(uuid)}/dismiss`, {}),
   image: (uuid: string) => api.blob(`/api/v1/dreams/${encodeURIComponent(uuid)}/image`),
 };
+/** A push Athena sent, kept until acknowledged. */
+export interface InboxNotification {
+  uuid: string; kind: string; title: string; body: string;
+  /** Same-site page the notification is about, if any. */
+  url: string | null;
+  createdAt: string; acknowledgedAt: string | null;
+}
+export const inboxApi = {
+  list: () => api.get<{ unacknowledged: InboxNotification[]; recent: InboxNotification[] }>('/api/v1/dashboard/inbox'),
+  ack: (uuid: string) => api.post<{ cleared: number }>(`/api/v1/dashboard/inbox/${encodeURIComponent(uuid)}/ack`, {}),
+  ackAll: () => api.post<{ cleared: number }>('/api/v1/dashboard/inbox/ack-all', {}),
+};
 export const dashboardApi = {
   summary: async () => {
     const value = await api.cachedGet<DashboardSummary>('/api/v1/dashboard');

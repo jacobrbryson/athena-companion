@@ -1,0 +1,19 @@
+/* Research page (ResearchPage.tsx): study panels on Health's .hp glass. */
+.rs-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: 14px; margin-top: 18px; }
+.rs-study { display: flex; flex-direction: column; gap: 10px; }
+.rs-study>header { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.rs-study>header h2 { font-size: 17px; font-weight: 600; }
+.rs-chip { padding: 3px 10px; border: 1px solid var(--hp-line); border-radius: 999px; color: var(--hp-sub); font-size: 12px; white-space: nowrap; }
+.rs-ready .rs-chip { border-color: #2a7fb5; color: #7fd0ff; }
+.rs-question { color: var(--hp-sub); font-size: 14px; }
+.rs-progress { display: flex; align-items: center; gap: 10px; }
+.rs-bar { flex: 1; height: 6px; border-radius: 999px; background: #0f2236; overflow: hidden; }
+.rs-bar i { display: block; height: 100%; border-radius: 999px; background: #3ec9ff; }
+.rs-progress small { color: var(--hp-dim); font-size: 12px; white-space: nowrap; }
+.rs-study footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: auto; padding-top: 4px; }
+.rs-study footer small { color: var(--hp-dim); font-size: 12px; }
+.rs-projects { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
+.rs-projects li { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border-radius: 8px; background: #0f2236; }
+.rs-projects strong { font-size: 14px; font-weight: 600; }
+.rs-projects span { color: var(--hp-sub); font-size: 12px; }
+.rs-projects .rs-stalled span { color: #ffb86b; }

@@ -10,12 +10,14 @@ export function Drawer({
   onClose,
   children,
   footer,
+  wide = false,
 }: {
   eyebrow: string;
   title: string;
   onClose: () => void;
   children: ReactNode;
   footer?: ReactNode;
+  wide?: boolean;
 }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
@@ -26,7 +28,7 @@ export function Drawer({
   return (
     <div className="fixed inset-0 z-50 flex justify-end" role="dialog" aria-modal="true" aria-label={title}>
       <button aria-label="Close" onClick={onClose} className="absolute inset-0 bg-black/60 backdrop-blur-[2px]" />
-      <section className="relative flex h-full w-full max-w-md flex-col border-l border-emerald-500/20 bg-black/95 text-emerald-50 shadow-2xl shadow-black animate-missionSlide">
+      <section className={`relative flex h-full w-full ${wide ? 'max-w-2xl' : 'max-w-md'} flex-col border-l border-emerald-500/20 bg-black/95 text-emerald-50 shadow-2xl shadow-black animate-missionSlide`}>
         <header className="flex items-start justify-between border-b border-emerald-500/15 px-4 py-3 font-mono">
           <div className="min-w-0">
             <p className="text-[10px] uppercase tracking-[0.4em] opacity-40">{eyebrow}</p>
