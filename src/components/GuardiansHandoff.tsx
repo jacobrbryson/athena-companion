@@ -47,7 +47,7 @@ export function GuardiansHandoff({ capabilities, people }: { capabilities: GmCap
     {invites.length > 0 && <>
       <h3 className="gm-h3">Missions with other families</h3>
       <ul className="gm-recipients">{invites.map(m => <li key={m.uuid}>
-        <span>{m.title}<small className="gm-recipient-channels">{m.goal} {m.status === 'accepted' ? '· Your family is in' : '· Invited'}</small></span>
+        <span>{m.title}<small className="gm-recipient-channels">{m.goal} {m.story ? `Kids see it as "${m.story.title}". ` : ''}{m.status === 'accepted' ? '· Your family is in' : '· Invited'}</small></span>
         {m.status === 'invited'
           ? <><button type="button" className="gm-btn" disabled={busy} onClick={() => void answer(() => gm.answerInvitation(m.uuid, true))}>Join</button><button type="button" className="gm-btn" disabled={busy} onClick={() => void answer(() => gm.answerInvitation(m.uuid, false))}>No thanks</button></>
           : <button type="button" className="gm-btn" disabled={busy} onClick={() => { if (window.confirm('Leave this mission? It will stop for everyone.')) void answer(() => gm.leaveMission(m.uuid)); }}>Leave</button>}

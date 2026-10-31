@@ -22,10 +22,20 @@ function DraftCard({ draft, busy, families, onRevise, onStart, onInvite }: { dra
     {draft.readiness.reasons.length > 0 && <ul className="gm-go-problems">{draft.readiness.reasons.map(r => <li key={r}>{r}</li>)}</ul>}
     <details>
       <summary>The plan</summary>
+      {draft.story && <div className="gm-quest">
+        <small>What the kids see</small>
+        <strong>{draft.story.title}</strong>
+        <p>{draft.story.premise}</p>
+      </div>}
       <ol className="gm-plan-steps">{draft.steps.map(s => <li key={s.key}>
         <small>{s.phase === 'prep' ? 'Prep' : 'Live'} · {s.actor} · {s.dueMinutes} min{s.predictMinutes ? `, she expects ${s.predictMinutes}` : ''}</small>
         <p>{s.instruction}</p>
+        {s.quest && <div className="gm-quest"><small>{s.actor} reads</small><p>{s.quest}</p></div>}
       </li>)}</ol>
+      {draft.story?.reveal && <div className="gm-quest">
+        <small>Told to the kids afterwards</small>
+        <p>{draft.story.reveal}</p>
+      </div>}
       <h4>How it's graded</h4>
       <ul className="gm-plan-list">{draft.passCriteria.map(c => <li key={c.key}>{c.text}</li>)}</ul>
       {draft.safety && <>

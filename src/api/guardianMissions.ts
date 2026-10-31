@@ -137,6 +137,8 @@ export interface GmAbility {
   capabilities: { key: string; name: string; badge: string | null; proven: boolean }[];
 }
 
+export interface GmStory { title: string; premise: string; reveal: string }
+
 export interface GmDraft {
   uuid: string;
   title: string;
@@ -144,7 +146,8 @@ export interface GmDraft {
   reason: string | null;
   purpose: 'test' | 'add' | null;
   version: number;
-  steps: { key: string; phase: 'prep' | 'live'; actor: string; instruction: string; dueMinutes: number; predictMinutes?: number | null }[];
+  steps: { key: string; phase: 'prep' | 'live'; actor: string; instruction: string; quest?: string | null; dueMinutes: number; predictMinutes?: number | null }[];
+  story: GmStory | null;
   safety: { where: string; supervision: string; offLimits: string } | null;
   passCriteria: { key: string; text: string }[];
   readiness: { label: 'ready' | 'needs_testing' | 'needs_building' | 'blocked'; reasons: string[] };
@@ -154,7 +157,7 @@ export interface GmDraft {
 export interface GmZone { uuid: string; name: string; offLimits: string; daylightOnly: boolean; maxMinutes: number; mapped: boolean; radiusM: number | null }
 export interface GmTemplate { uuid: string; name: string; capabilities: string[]; people: string[]; zones: string[]; maxMinutes: number; allowKidGo?: boolean }
 export interface GmHandoff { enabled: boolean; canCreate: boolean; switches: { templates: boolean; chatConsent: boolean; notSetUp: number | null } | null; zones: GmZone[]; templates: GmTemplate[] }
-export interface GmInvitation { uuid: string; title: string; goal: string | null; status: 'invited' | 'accepted'; missionStatus: string; phase: string | null }
+export interface GmInvitation { uuid: string; title: string; goal: string | null; story: GmStory | null; status: 'invited' | 'accepted'; missionStatus: string; phase: string | null }
 
 export interface GmWish { uuid: string; name: string; why: string; cost: string | null; status: string }
 

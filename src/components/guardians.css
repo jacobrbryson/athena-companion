@@ -168,6 +168,9 @@
 .gm-debrief { margin: 8px 0; font-size: 14px; }
 .gm-debrief small { opacity: .65; }
 .gm-plan-steps, .gm-plan-list { display: grid; gap: 6px; padding-left: 18px; font-size: 14px; }
+.gm-quest { margin: 6px 0; padding: 8px 10px; border-left: 3px solid #a56cf0; border-radius: 6px; background: #1a1636; font-size: 14px; }
+.gm-quest small { display: block; margin-bottom: 2px; color: #c7a9f7; font-size: 12px; }
+.gm-quest strong { display: block; }
 .gm-plan-ask { display: grid; gap: 4px; font-size: 14px; margin-bottom: 8px; }
 .gm-plan-ask textarea, .gm-handoff input, .gm-handoff select { width: 100%; padding: 6px 8px; border: 1px solid #284865; border-radius: 8px; background: #0b1c2e; color: inherit; }
 .gm-handoff { display: grid; gap: 8px; max-width: 480px; font-size: 14px; }

@@ -1229,6 +1229,21 @@ async function route(method: string, path: string, body?: any): Promise<any> {
     const rest = p.slice('/api/v1/guardian-missions'.length);
     if (!rest && method === 'GET') return s;
     if (rest === '/control') { s.control = { ...s.control, ...body, mode: body.mode ?? s.control.mode, quietUntil: body.mode === 'quiet_until' ? body.quietUntil : body.mode ? null : s.control.quietUntil }; return save(); }
+    if (rest === '/planning' && method === 'GET') return {
+      evaluation: { weakest: [{ key: 'perception', name: 'Perception', percent: 1, unproven: ['Scout geography'] }], weaknesses: [] },
+      drafts: [{
+        uuid: 'd-signal', title: 'Test kid scouting in the yard', goal: 'Show whether a kid can capture a usable photo set.', reason: 'Scouting has only been done by adults.', purpose: 'test', version: 1,
+        steps: [
+          { key: 'check', phase: 'prep', actor: 'ross', instruction: 'Walk the yard and confirm the back porch is clear.', dueMinutes: 60, predictMinutes: 10 },
+          { key: 'survey', phase: 'live', actor: 'thomas', instruction: 'Stand at the back porch and take four photos: north, east, south, west.', quest: 'The signal went dark near your watch post. Stand your post at the back porch and survey all four directions so I can read what you find.', dueMinutes: 30, predictMinutes: 15 },
+        ],
+        story: { title: 'The Dark Signal', premise: 'A Network signal went quiet near your watch post last night. You find. I read.', reveal: 'There was no lost signal. This quest helped me practice reading photos of a real place, and you did that. Thank you.' },
+        safety: { where: 'The back yard', supervision: 'Sam, at home', offLimits: 'The road and the neighbor\'s yard' },
+        passCriteria: [{ key: 'set', text: 'A full photo set arrived' }],
+        readiness: { label: 'ready', reasons: [] },
+      }],
+      wishes: [], maxDrafts: 3, families: [],
+    };
     let m = /^\/capabilities\/([^/]+)$/.exec(rest);
     if (m) { s.capabilities = s.capabilities.map((c: any) => (c.uuid === m![1] ? { ...c, enabled: body.enabled } : c)); return save(); }
     m = /^\/recipients\/(.+)$/.exec(rest);
