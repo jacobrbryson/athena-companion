@@ -42,13 +42,26 @@ export const SKILL_STYLE: Record<string, { color: string; glyph: string; focus: 
   realWorldTools: { color: '#9fb2ca', glyph: '⚙️', focus: 'Use Real Tools', blurb: 'A compass, a walkie-talkie, Morse code. Practice the tools until they work without thinking.' },
 };
 
-/** One crest per Guardian, the animals on the packs in the header; anyone else cycles through them. */
+/** One crest per Guardian and no animal twice. A new Guardian gets a plain shield until they're given one here. */
 const CRESTS: Record<string, [string, string]> = {
-  Skylar: ['🦊', '#a56cf0'], Thomas: ['🐻', '#3aa6ff'], Aaron: ['🦅', '#33e0a1'], Addy: ['🦉', '#f6c33a'], Emery: ['🦊', '#ff8a3a'], Penny: ['🐢', '#2fd8e0'],
+  Skylar: ['🦊', '#a56cf0'], Thomas: ['🐻', '#3aa6ff'], Aaron: ['🦅', '#33e0a1'], Addy: ['🦉', '#f6c33a'], Penny: ['🐢', '#2fd8e0'],
+  Livia: ['opossum', '#ff7eb6'], Emery: ['🦌', '#ff8a3a'], Erika: ['🐺', '#8fa8ff'], Josh: ['🦁', '#e0a33a'], Lena: ['🐼', '#c9d6e4'], Libby: ['🦋', '#5fb0ff'],
+  Lucy: ['🐬', '#3ad0c0'], Maisie: ['🦄', '#e07ae0'], Zeke: ['🦈', '#7f9cb8'], Jenny: ['🦢', '#f2e6c9'], Ross: ['🐘', '#a9b4c2'],
 };
-const CREST_CYCLE = Object.values(CRESTS);
 export function crestFor(name: string): [string, string] {
-  return CRESTS[name] || CREST_CYCLE[[...name].reduce((n, c) => n + c.charCodeAt(0), 0) % CREST_CYCLE.length];
+  return CRESTS[name] || ['🛡️', '#9fb2ca'];
+}
+
+/** There's no opossum emoji, so this one is drawn. */
+function OpossumFace() {
+  return <svg viewBox="0 0 32 32" width="34" height="34">
+    <circle cx="8" cy="8" r="6" fill="#23252b" /><circle cx="24" cy="8" r="6" fill="#23252b" />
+    <circle cx="8" cy="8" r="3" fill="#f2a7bb" /><circle cx="24" cy="8" r="3" fill="#f2a7bb" />
+    <path d="M16 30 C13 27 5 21 6 13 C7 9 25 9 26 13 C27 21 19 27 16 30 Z" fill="#f4f1ea" />
+    <path d="M16 18 C15 15 12 11 10 10 C13 9 19 9 22 10 C20 11 17 15 16 18 Z" fill="#8c8f98" />
+    <circle cx="11.5" cy="16" r="2" fill="#16171b" /><circle cx="20.5" cy="16" r="2" fill="#16171b" />
+    <ellipse cx="16" cy="28" rx="2" ry="1.5" fill="#f08aa6" />
+  </svg>;
 }
 
 export const PRACTICE: { glyph: string; title: string; text: string; skills: string[] }[] = [
@@ -142,7 +155,7 @@ function PanelHead({ title, link, onLink }: { title: string; link?: string; onLi
 
 export function Crest({ name }: { name: string }) {
   const [crest, color] = crestFor(name);
-  return <i className="gm-crest" style={{ color, borderColor: color, boxShadow: `0 0 12px ${color}55, inset 0 0 12px ${color}33` }} aria-hidden="true">{crest}</i>;
+  return <i className="gm-crest" style={{ color, borderColor: color, boxShadow: `0 0 12px ${color}55, inset 0 0 12px ${color}33` }} aria-hidden="true">{crest === 'opossum' ? <OpossumFace /> : crest}</i>;
 }
 
 export function GuardianRow({ g, onOpen }: { g: GmTeamMember; onOpen: Open }) {
