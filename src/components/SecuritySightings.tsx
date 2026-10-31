@@ -257,7 +257,7 @@ function Alerts({ data, cameras, reload }: { data: SightingsOverview; cameras: S
   async function add(e: FormEvent) {
     e.preventDefault();
     if (!rule.who) return;
-    await run(() => propertySecurityApi.createRule({ ...(rule.who === 'stranger' || rule.who === 'package' ? { label: rule.who } : { subjectId: rule.who }), deviceSerial: rule.camera || undefined, zone: rule.zone || undefined }));
+    await run(() => propertySecurityApi.createRule({ ...(rule.who === 'stranger' || rule.who === 'strange car' || rule.who === 'package' ? { label: rule.who } : { subjectId: rule.who }), deviceSerial: rule.camera || undefined, zone: rule.zone || undefined }));
     setRule({ who: '', camera: '', zone: '' });
   }
   return <>
@@ -265,12 +265,13 @@ function Alerts({ data, cameras, reload }: { data: SightingsOverview; cameras: S
     <h4 className="ps-h4">Alerts to your phone</h4>
     <p className="ps-sub">Sent like Athena’s other alerts: only if alerts are on in your settings, and held until quiet hours end.</p>
     {data.rules.length ? <ul className="ps-rules">{data.rules.map(r => <li key={r.id}>
-      <Icon name="bell" /><span>When <b>{r.subjectName || (r.label === 'stranger' ? 'a stranger' : r.label === 'package' ? 'a package' : 'someone')}</b> is {r.label === 'package' ? 'left' : 'seen'} {r.deviceSerial ? <>on <b>{camName(r.deviceSerial)}</b></> : 'on any camera'}{r.zone ? <> in <b>{r.zone}</b></> : ''}</span>
+      <Icon name="bell" /><span>When <b>{r.subjectName || (r.label === 'stranger' ? 'a stranger' : r.label === 'strange car' ? 'a strange car' : r.label === 'package' ? 'a package' : 'someone')}</b> is {r.label === 'package' ? 'left' : 'seen'} {r.deviceSerial ? <>on <b>{camName(r.deviceSerial)}</b></> : 'on any camera'}{r.zone ? <> in <b>{r.zone}</b></> : ''}</span>
+      <label className="ps-radio"><input type="checkbox" checked={r.enabled} onChange={e => { const on = e.target.checked; void run(() => propertySecurityApi.setRuleEnabled(r.id, on)); }} />{r.enabled ? 'On' : 'Off'}</label>
       <button className="ps-btn ps-btn-square" aria-label="Remove this alert" onClick={() => void run(() => propertySecurityApi.removeRule(r.id))}><Icon name="trash" /></button>
     </li>)}</ul> : <p className="ps-empty">No alerts yet.</p>}
     <form className="ps-form" onSubmit={e => void add(e)}>
       <label className="ps-field"><span>Tell me when</span><select value={rule.who} onChange={e => setRule({ ...rule, who: e.target.value })}>
-        <option value="">Choose…</option>{data.subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}<option value="stranger">A stranger</option><option value="package">A package is left</option>
+        <option value="">Choose…</option>{data.subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}<option value="stranger">A stranger</option><option value="strange car">A strange car</option><option value="package">A package is left</option>
       </select></label>
       <label className="ps-field"><span>is seen on</span><select value={rule.camera} onChange={e => setRule({ ...rule, camera: e.target.value, zone: '' })}>
         <option value="">Any camera</option>{cameras.map(c => <option key={c.serial} value={c.serial}>{c.name}</option>)}

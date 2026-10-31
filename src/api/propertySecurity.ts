@@ -54,6 +54,7 @@ export const propertySecurityApi = {
   addSubjectPhoto: (id: string, mediaId: string) => api.post<void>(`${base}/subjects/${encodeURIComponent(id)}/photos`, { mediaId }),
   removeSubjectPhoto: (id: string, mediaId: string) => api.del<void>(`${base}/subjects/${encodeURIComponent(id)}/photos/${encodeURIComponent(mediaId)}`),
   setZones: (serial: string, zones: { name: string; description?: string }[]) => api.put<void>(`${base}/zones/${encodeURIComponent(serial)}`, { zones }),
-  createRule: (body: { subjectId?: string; label?: 'stranger' | 'package'; deviceSerial?: string; zone?: string }) => api.post<{ id: string }>(`${base}/rules`, body),
+  createRule: (body: { subjectId?: string; label?: 'stranger' | 'strange car' | 'package'; deviceSerial?: string; zone?: string }) => api.post<{ id: string }>(`${base}/rules`, body),
+  setRuleEnabled: (id: string, enabled: boolean) => api.patch<void>(`${base}/rules/${encodeURIComponent(id)}`, { enabled }),
   removeRule: (id: string) => api.del<void>(`${base}/rules/${encodeURIComponent(id)}`),
 };

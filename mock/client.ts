@@ -2486,6 +2486,7 @@ Sam` };
     if (subj && method === 'DELETE' && p.includes('/photos/')) { const m = p.split('/').pop(); const x = st.subjects.find((y: any) => y.id === subj); if (x) x.photos = x.photos.filter((y: string) => y !== m); return undefined; }
     if (method === 'PUT' && p.includes('/zones/')) { const serial = p.split('/').pop(); st.zones = [...st.zones.filter((z: any) => z.deviceSerial !== serial), ...body.zones.map((z: any) => ({ deviceSerial: serial, name: z.name, description: null }))]; return undefined; }
     if (method === 'POST' && p.endsWith('/rules')) { const sub = st.subjects.find((x: any) => x.id === body.subjectId); const id = `rule-${Date.now()}`; st.rules.push({ id, subjectId: body.subjectId || null, subjectName: sub?.name || null, label: body.label || null, deviceSerial: body.deviceSerial || null, zone: body.zone || null, enabled: true }); return { id }; }
+    if (method === 'PATCH' && p.includes('/rules/')) { const rule = st.rules.find((r: any) => r.id === p.split('/').pop()); if (!rule) fail(404, "That alert isn't yours or is gone."); rule.enabled = body.enabled; return undefined; }
     if (method === 'DELETE' && p.includes('/rules/')) { const id = p.split('/').pop(); st.rules = st.rules.filter((r: any) => r.id !== id); return undefined; }
   }
 
