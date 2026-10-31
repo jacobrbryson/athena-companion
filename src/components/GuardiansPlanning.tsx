@@ -9,8 +9,9 @@ const READY_LABEL: Record<GmDraft['readiness']['label'], string> = {
   blocked: 'Blocked',
 };
 
-function DraftCard({ draft, busy, onRevise, onStart }: { draft: GmDraft; busy: boolean; onRevise: (note: string) => void; onStart: () => void }) {
+function DraftCard({ draft, busy, families, onRevise, onStart, onInvite }: { draft: GmDraft; busy: boolean; families: { id: number; name: string }[]; onRevise: (note: string) => void; onStart: () => void; onInvite: (family: number) => void }) {
   const [note, setNote] = useState('');
+  const [family, setFamily] = useState('');
   return <li className="gm-mission gm-proposed">
     <div className="gm-mission-head">
       <strong>{draft.title}</strong>
@@ -37,6 +38,12 @@ function DraftCard({ draft, busy, onRevise, onStart }: { draft: GmDraft; busy: b
       </>}
     </details>
     {draft.template && <div className="gm-row"><button type="button" className="gm-btn gm-btn-primary" disabled={busy} onClick={onStart}>Start under {draft.template.name}</button></div>}
+    {families.length > 0 && <div className="gm-row">
+      <label>Invite a family
+        <select value={family} onChange={e => setFamily(e.target.value)}><option value="">Choose</option>{families.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}</select>
+      </label>
+      <button type="button" className="gm-btn" disabled={busy || !family} onClick={() => { onInvite(Number(family)); setFamily(''); }}>Invite</button>
+    </div>}
     <form className="gm-scout" onSubmit={e => { e.preventDefault(); if (note.trim()) { onRevise(note); setNote(''); } }}>
       <label>What should change?
         <input value={note} onChange={e => setNote(e.target.value)} maxLength={1000} placeholder="Tell Athena what to change" />
@@ -108,7 +115,7 @@ export function PlanMissionDrawer({ onClose, onChanged }: { onClose: () => void;
         <section>
           <h3>Waiting for your decision</h3>
           {view.drafts.length
-            ? <ul className="gm-missions">{view.drafts.map(d => <DraftCard key={d.uuid} draft={d} busy={busy} onRevise={text => void run(() => gm.revise(d.uuid, text), 'revising')} onStart={() => void run(() => gm.startTemplated(d.uuid))} />)}</ul>
+            ? <ul className="gm-missions">{view.drafts.map(d => <DraftCard key={d.uuid} draft={d} busy={busy} onRevise={text => void run(() => gm.revise(d.uuid, text), 'revising')} families={view.families || []} onInvite={f => void run(() => gm.invite(d.uuid, f))} onStart={() => void run(() => gm.startTemplated(d.uuid))} />)}</ul>
             : <p className="gm-sub">No drafts yet.</p>}
           {view.drafts.length > 0 && <p className="gm-sub">Approve or decline these on the Missions tab.</p>}
         </section>

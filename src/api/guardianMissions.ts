@@ -152,8 +152,9 @@ export interface GmDraft {
 }
 
 export interface GmZone { uuid: string; name: string; offLimits: string; daylightOnly: boolean; maxMinutes: number; mapped: boolean; radiusM: number | null }
-export interface GmTemplate { uuid: string; name: string; capabilities: string[]; people: string[]; zones: string[]; maxMinutes: number }
-export interface GmHandoff { enabled: boolean; canCreate: boolean; zones: GmZone[]; templates: GmTemplate[] }
+export interface GmTemplate { uuid: string; name: string; capabilities: string[]; people: string[]; zones: string[]; maxMinutes: number; allowKidGo?: boolean }
+export interface GmHandoff { enabled: boolean; canCreate: boolean; switches: { templates: boolean; chatConsent: boolean; notSetUp: number | null } | null; zones: GmZone[]; templates: GmTemplate[] }
+export interface GmInvitation { uuid: string; title: string; goal: string | null; status: 'invited' | 'accepted'; missionStatus: string; phase: string | null }
 
 export interface GmWish { uuid: string; name: string; why: string; cost: string | null; status: string }
 
@@ -165,6 +166,7 @@ export interface GmPlanning {
   drafts: GmDraft[];
   wishes: GmWish[];
   maxDrafts: number;
+  families?: { id: number; name: string }[];
 }
 
 export interface GuardiansOverview {
@@ -213,7 +215,12 @@ export const guardianMissionsApi = {
   handoff: () => api.get<GmHandoff>(`${BASE}/handoff`),
   addZone: (body: { name: string; offLimits: string; lat?: number; lng?: number; radiusM?: number; maxMinutes: number }) => api.post<GmHandoff>(`${BASE}/zones`, body),
   retireZone: (uuid: string) => api.post<GmHandoff>(`${BASE}/zones/${uuid}/retire`, {}),
-  addTemplate: (body: { name: string; capabilities: string[]; people: string[]; zones: string[]; maxMinutes: number }) => api.post<GmHandoff>(`${BASE}/templates`, body),
+  invite: (uuid: string, family: number) => api.post<GmPlanning>(`${BASE}/planning/${uuid}/invite`, { family }),
+  invitations: () => api.get<{ missions: GmInvitation[] }>(`${BASE}/invitations`),
+  answerInvitation: (uuid: string, accept: boolean) => api.post<{ missions: GmInvitation[] }>(`${BASE}/invitations/${uuid}`, { accept }),
+  leaveMission: (uuid: string) => api.post<{ missions: GmInvitation[] }>(`${BASE}/invitations/${uuid}/leave`, {}),
+  setSwitch: (key: 'templates' | 'chat_consent', on: boolean) => api.put<GmHandoff>(`${BASE}/switches/${key}`, { on }),
+  addTemplate: (body: { name: string; capabilities: string[]; people: string[]; zones: string[]; maxMinutes: number; allowKidGo: boolean }) => api.post<GmHandoff>(`${BASE}/templates`, body),
   retireTemplate: (uuid: string) => api.post<GmHandoff>(`${BASE}/templates/${uuid}/retire`, {}),
   draft: (note?: string) => api.post<{ saved: string[]; dropped: { title: string; problems: string[] }[]; skipped?: string; workspace: GmPlanning }>(`${BASE}/planning/draft`, { note }),
   revise: (uuid: string, note: string) => api.post<GmPlanning>(`${BASE}/planning/${uuid}/revise`, { note }),
