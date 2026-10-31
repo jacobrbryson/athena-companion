@@ -38,6 +38,14 @@ test('coming back to the tab counts as being here', () => {
   assert.equal(isIdle(), false);
 });
 
+test('the Android app resuming counts as being here', () => {
+  // Its WebView never fires visibilitychange, only athena-native-resume.
+  mock.timers.tick(IDLE_AFTER_MS);
+  assert.equal(isIdle(), true);
+  win.dispatchEvent(new Event('athena-native-resume'));
+  assert.equal(isIdle(), false);
+});
+
 test('a hidden tab is away at once, an idle one too', () => {
   assert.equal(isAway(), false);
   doc.visibilityState = 'hidden';

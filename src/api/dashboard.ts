@@ -106,12 +106,22 @@ export interface BundleEmail { uuid: string; from: string; subject: string | nul
  */
 export interface MailBundles {
   archive: { count: number; senders: { name: string; count: number }[]; items: (BundleEmail & { category: EmailCategory })[] };
-  receipts: { count: number; items: (BundleEmail & { merchant: string | null })[] };
+  receipts: { count: number; items: (BundleEmail & { merchant: string | null; amount?: number | null; currency?: string | null; purchased_at?: string | null })[] };
   /** `start` is null when Athena found no date — those need one typed in, one at a time. */
-  events: { count: number; items: (BundleEmail & { category: EmailCategory; title: string | null; start: string | null; all_day: boolean; location: string | null })[] };
+  events: { count: number; items: (BundleEmail & { category: EmailCategory; title: string | null; start: string | null; all_day: boolean; location: string | null;
+    /** Set by the server when the date is already over, or the same event is already on one of the calendars. */
+    past?: boolean; on_calendar?: boolean })[] };
   replies: { count: number; items: (BundleEmail & { ask: string | null })[] };
   /** Senders with 3+ promos/updates waiting and a one-click unsubscribe; `email_triage_uuid` is the email whose link is used. */
   unsubscribe?: { count: number; senders: { key: string; name: string; count: number; email_triage_uuid: string }[] };
+}
+/** A receipt filed from Mail, as Family → Finance lists it. `dated` is false when `date` is only when it was filed. */
+export interface FiledReceipt { uuid: string; merchant: string | null; category: string | null; amount: number | null; currency: string; date: string | null; dated: boolean; subject: string | null }
+export interface ReceiptLedger {
+  receipts: FiledReceipt[];
+  /** Newest month first; totals are per currency, never converted. A receipt with no amount counts but adds nothing. */
+  months: { month: string; count: number; totals: { currency: string; amount: number }[] }[];
+  truncated: boolean;
 }
 /** One receipt/travel/school-announcement email Athena has sorted out of the inbox.
  *  `extracted` is the LLM's structured read of it — receipt fields, or a candidate
@@ -222,8 +232,8 @@ export interface Website {
   uptime?: SiteUptime | null;
 }
 export interface SiteUptime { ok: boolean; statusCode: number | null; ms: number | null; error: string | null; checkedAt: string; recent: { ok: boolean; ms: number | null }[] }
-/** A code investigation or fix the person approved this week, as the Work page's agents panel shows it. */
-export interface AgentRun { uuid: string; kind: 'fix' | 'investigation'; repo: string | null; summary: string | null; state: 'working' | 'no_change' | 'failed' | 'open' | 'merged' | 'closed' | 'unknown' | null; at: string }
+/** A code investigation, fix or company PR review from this week, as the agents panels show it. A review also says where it lives. */
+export interface AgentRun { uuid: string; kind: 'fix' | 'investigation' | 'review'; repo: string | null; summary: string | null; state: 'working' | 'ready' | 'no_change' | 'failed' | 'open' | 'merged' | 'closed' | 'unknown' | null; at: string; progress?: string | null; failure?: string | null; workplaceUuid?: string; number?: number }
 export type WebsiteInput = { domain: string; label?: string | null; searchSite?: string | null; gaProperty?: string | null; notes?: string | null };
 /** A connection (Jira, Gmail…) as a workplace sees it: metadata only. `provider: null` means it was removed since it was linked. */
 export interface WorkplaceConnection { credentialUuid: string; provider: string | null; label: string; account: string | null; status: string }
@@ -238,6 +248,10 @@ export interface Workplace {
 }
 /** Workplaces, and the connections not linked to any — with the one their sign-in's domain suggests. */
 export interface WorkplacesOverview { workplaces: Workplace[]; available: (WorkplaceConnection & { suggestedWorkplace: string | null })[] }
+export interface WorkspacePull { id: number; number: number; title: string; url: string; repo: string; repoFull: string; author: string | null; mine: boolean; reviewRequested: boolean; draft: boolean; comments: number; createdAt: string; updatedAt: string }
+export interface WorkspaceEpic { key: string; title: string; status: string; statusCategory: string | null; project: string | null; updated: string | null; due: string | null; url: string; done: number; total: number }
+/** `error`: not_connected (nothing linked to the workspace), unsupported, rejected (the key was refused) or unavailable. */
+export interface WorkspaceExtras { pullRequests: { items: WorkspacePull[]; login?: string; error: string | null }; epics: { items: WorkspaceEpic[]; error: string | null } }
 export type WorkplaceInput = { name: string; role?: string | null; domain?: string | null; primary?: boolean; notes?: string | null };
 /** What Google says the person can see, to pick from. `linked: false` means Websites isn't connected. */
 export interface WebsiteDiscovery {
@@ -497,6 +511,7 @@ export const dashboardApi = {
   workAgents: () => api.get<{ runs: AgentRun[] }>('/api/v1/dashboard/work/agents'),
   refreshWebsites: (uuid?: string) => api.post<{ sites: Website[] }>(uuid ? `/api/v1/dashboard/websites/${encodeURIComponent(uuid)}/refresh` : '/api/v1/dashboard/websites/refresh', {}),
   /** Workplaces on the Work page. Every write can move the primary flag or a link, so the whole overview comes back. */
+  workspaceExtras: (uuid: string) => api.get<WorkspaceExtras>(`/api/v1/dashboard/workplaces/${encodeURIComponent(uuid)}/dashboard`),
   workplaces: () => api.get<WorkplacesOverview>('/api/v1/dashboard/workplaces'),
   saveWorkplace: (input: WorkplaceInput, uuid?: string) => uuid
     ? api.patch<WorkplacesOverview>(`/api/v1/dashboard/workplaces/${encodeURIComponent(uuid)}`, input)
@@ -574,6 +589,8 @@ export const dashboardApi = {
   },
   mailDetail: (uuid: string) => api.get<TriageEmailDetail>(`/api/v1/dashboard/email/${encodeURIComponent(uuid)}`),
   /** The "Scan more" button. Bounded and synchronous — no background job. */
+  /** The receipts filed from Mail, read-only. */
+  mailReceipts: () => api.get<ReceiptLedger>('/api/v1/dashboard/email/receipts'),
   mailScan: (max?: number) =>
     api.post<{ scanned: number; newCount: number; byCategory: Record<string, number> }>(
       '/api/v1/dashboard/email/scan', max ? { max } : {}),
@@ -604,6 +621,9 @@ export const dashboardApi = {
     api.post<{ success: true; action: AthenaAction }>(`/api/v1/dashboard/email/${encodeURIComponent(uuid)}/reply/propose`, { body }),
   mailArchive: (emailTriageUuids: string[]) =>
     api.post<{ success: true; action: AthenaAction }>('/api/v1/dashboard/email/archive', { email_triage_uuids: emailTriageUuids }),
+  /** Propose moving a finished archive's emails back to the inbox. Only proposes; nothing moves until Approve. */
+  mailUndoArchive: (actionUuid: string) =>
+    api.post<{ success: true; action: AthenaAction }>('/api/v1/dashboard/email/undo-archive', { action_uuid: actionUuid }),
   mailDelete: (emailTriageUuids: string[]) =>
     api.post<{ success: true; action: AthenaAction }>('/api/v1/dashboard/email/delete', { email_triage_uuids: emailTriageUuids }),
   /** Report (or update) a family member's symptom. Athena picks this up in chat and, if initiative is on, may raise it herself. */

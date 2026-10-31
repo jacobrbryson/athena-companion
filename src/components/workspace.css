@@ -1,0 +1,85 @@
+/* Workspace command center. SectionTabs and PageHeader retain their shared behavior. */
+.wsd { container-type: inline-size; --hp-line: #134b74; --hp-panel: linear-gradient(145deg,#06213bea,#03121ff5 60%); }
+.wsd .wsd-back { margin: 0; font-size: 12px; }
+.wsd .ph { min-height: 244px; padding: 16px 0 24px; gap: 28px; }
+.wsd .ph-with-side { grid-template-columns: minmax(0,1fr) 218px; }
+.wsd .ph::before { inset: -15px -22px -20px; background: linear-gradient(90deg,#020a17b8,transparent 65%),var(--ph-backdrop) center 45% / cover no-repeat; }
+.wsd .ph h1 { display: flex; align-items: center; gap: 14px; margin-top: 6px; font-size: clamp(30px,3.4vw,50px); }
+.wsd .ph-copy > p { margin-top: 9px; color: #abc4e5; }
+.wsd-company-link { color: #a5c4e5; }
+.wsd-separator { margin: 0 18px; }
+.wsd .ph-copy > p a { color: #56d9fc; text-decoration: none; }
+.wsd-business { border: 1px solid #19649a; border-radius: 9px; background: #021528d9; box-shadow: inset 0 0 18px #0875c11c; }
+.wsd-business > div { display: flex; align-items: center; gap: 18px; padding: 7px 16px; border-bottom: 1px solid #174065; }
+.wsd-business > div > .hp-icon { color: #3aaeff; width: 24px; height: 24px; }
+.wsd-business strong,.wsd-business small { display: block; line-height: 1.15; }
+.wsd-business strong { color: #6bdcfc; font-size: 17px; }
+.wsd-business small { color: #9db8d7; font-size: 12px; }
+.wsd-business > button { display: flex; align-items: center; width: 100%; padding: 10px 12px; color: #29d8b5; font-size: 11px; }
+.wsd-business > button .hp-icon { width: 15px; margin-left: auto; }
+.wsd-business .wsd-preview { padding: 0 12px 7px; font-size: 10px; opacity: .7; }
+.wsd > .property-nav { margin-bottom: 16px; }
+.wsd-grid { grid-template-columns: 1.18fr 1fr .94fr; gap: 12px; align-items: start; }
+.wsd .wsd-card { grid-column: auto; padding: 13px 14px; border-radius: 9px; box-shadow: inset 0 1px 15px #0578ce1c,0 5px 18px #0003; }
+.wsd-card > header { margin-bottom: 12px; }
+.wsd .wsd-card > header h2 { display: block; font-size: 16px; }
+.wsd .wsd-card > header h2 > span { display: block; margin: 4px 0 0; font-size: 12px; }
+.wsd .wp-head-icon { width: 30px; height: 30px; padding: 4px; border-radius: 7px; background: #0763a235; color: #35bfff; }
+.wsd .wp-green { color: #32ddbf; background: #074b403d; }
+.wsd .wp-violet { color: #ad84ff; background: #4c278244; }
+.wsd-filters { display: flex; gap: 6px; flex-wrap: wrap; padding-bottom: 10px; border-bottom: 1px solid #16446566; margin-bottom: 2px; }
+.wsd-filters button { padding: 5px 12px; border: 1px solid #1b3d57; border-radius: 20px; color: #a6bdda; font-size: 11px; }
+.wsd-filters button[aria-pressed=true] { background: linear-gradient(#086085,#042f48); border-color: #20b8e3; color: #63e8ff; box-shadow: inset 0 0 9px #16baff38; }
+.wsd .wp-activity-list { display: grid; grid-template-columns: 1fr; gap: 0; }
+.wsd .wp-activity-list button { padding: 9px 0; background: none; border: 0; border-bottom: 1px solid #16446566; border-radius: 0; }
+.wsd .hp-badge { width: 32px; height: 34px; border-radius: 6px; }
+.wsd .wp-activity-list strong,.wsd .wp-rows strong { font-size: 13px; font-weight: 500; }
+.wsd .wp-rows strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wsd .wp-rows small,.wsd .wp-activity-list small { font-size: 11px; }
+.wsd .wp-rows .wp-when { font-size: 10px; white-space: nowrap; }
+.wsd-repo { margin-top: 12px; }
+.wsd-repo h3 { font-size: 11px; color: #79b6d3; }
+.wsd #ws-pulls { max-height: 520px; overflow-y: auto; scrollbar-width: thin; }
+.wsd #ws-email { min-height: 350px; }
+.wsd-table-wrap { overflow-x: auto; }
+.wsd-table { width: 100%; border-collapse: collapse; font-size: 11px; white-space: nowrap; }
+.wsd-table th { color: #8fa6c2; font-weight: 400; text-align: left; }
+.wsd-table th,.wsd-table td { padding: 9px 7px; border-bottom: 1px solid #16446566; }
+.wsd-services li { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid #16446566; font-size: 11px; }
+.wsd-services li > span { flex: 1; }
+.wsd-services small { color: #2adeb0; font-size: 11px; white-space: nowrap; }
+.wsd-services svg:not(.hp-icon) { width: 90px; height: 24px; fill: none; stroke: #2adeb0; stroke-width: 1.5; }
+.wsd-quick { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; }
+.wsd-quick button { display: flex; align-items: center; gap: 10px; border: 1px solid #154768; border-radius: 7px; padding: 12px 9px; background: #06223b88; color: #cbdcf2; font-size: 11px; text-align: left; }
+.wsd-quick button:hover { background: #0c3654; border-color: #37b8e5; }
+.wsd-quick .hp-icon { color: #2bbcff; width: 24px; height: 24px; }
+.wsd-view-overview { grid-template-areas: 'activity pulls email' 'deployments services quick'; }
+.wsd-view-overview #ws-activity { grid-area: activity; }
+.wsd-view-overview #ws-pulls { grid-area: pulls; }
+.wsd-view-overview #ws-email { grid-area: email; }
+.wsd-view-overview #ws-deployments { grid-area: deployments; }
+.wsd-view-overview #ws-services { grid-area: services; }
+.wsd-view-overview #ws-quick { grid-area: quick; }
+.wsd-view-overview > :is(#ws-jira,#ws-slack,#ws-sites,#ws-projects,#ws-upcoming) { display: none; }
+.wsd-view-overview > #ws-agents { grid-column: 1 / -1; }
+.wsd-grid:not(.wsd-view-overview) { grid-template-columns: minmax(0,1fr); }
+.wsd-grid:not(.wsd-view-overview) > .wsd-card { display: none; }
+.wsd-view-jira > #ws-jira,.wsd-view-github > :is(#ws-pulls,#ws-agents),.wsd-view-deployments > #ws-deployments,.wsd-view-monitoring > :is(#ws-services,#ws-sites),.wsd-view-team > :is(#ws-slack,#ws-upcoming,#ws-agents),.wsd-view-docs > #ws-projects { display: block; }
+@media (max-width: 1200px) {
+  .wsd-view-overview { grid-template-columns: repeat(2,minmax(0,1fr)); grid-template-areas: 'activity pulls' 'email services' 'deployments quick'; }
+}
+@container (max-width: 1050px) {
+  .wsd-view-overview { grid-template-columns: repeat(2,minmax(0,1fr)); grid-template-areas: 'activity pulls' 'email services' 'deployments quick'; }
+}
+@container (max-width: 620px) {
+  .wsd-view-overview { grid-template-columns: minmax(0,1fr); grid-template-areas: 'activity' 'pulls' 'email' 'deployments' 'services' 'quick'; }
+}
+@media (max-width: 760px) {
+  .wsd .ph-with-side { grid-template-columns: minmax(0,1fr); }
+  .wsd .ph { padding-top: 20px; }
+  .wsd .ph-side { max-width: none; }
+  .wsd-business { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .wsd-business > button { grid-column: 1/-1; }
+  .wsd-view-overview { grid-template-columns: minmax(0,1fr); grid-template-areas: 'activity' 'pulls' 'email' 'deployments' 'services' 'quick'; }
+  .wsd-services svg:not(.hp-icon) { width: 65px; }
+}

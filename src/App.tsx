@@ -13,6 +13,7 @@ import { LegalPage } from './pages/LegalPage';
 import { SmsConsentPage } from './pages/SmsConsentPage';
 import { OAuthCallback } from './pages/OAuthCallback';
 import { dashboardRoutePaths } from './dashboardRoutes';
+import { GuardiansConsentPrompt } from './components/GuardiansConsent';
 
 /** Home: Athena when signed in, otherwise the sign-in gate. */
 function Home() {
@@ -20,7 +21,7 @@ function Home() {
   if (status === 'loading') return <Splash />;
   if (status === 'unreachable') return <LinkLost />;
   if (status === 'locked') return <AccessLocked />;
-  if (status === 'authenticated') return <CompanionConsole />;
+  if (status === 'authenticated') return <><CompanionConsole /><GuardiansConsentPrompt /></>;
   return <SignIn />;
 }
 
@@ -36,6 +37,7 @@ export default function App() {
           {dashboardRoutePaths.map(path => <Route key={path} path={path} element={<Home />} />)}
           <Route path="/chat" element={<Home />} />
           <Route path="/properties/*" element={<Home />} />
+          <Route path="/work/:uuid" element={<Home />} />
           <Route path="/system/projects/:uuid" element={<Home />} />
           <Route path="/dashboard" element={<Navigate to="/" replace />} />
           <Route path="/privacy" element={<LegalPage kind="privacy" />} />

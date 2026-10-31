@@ -2,7 +2,7 @@ import type { DashboardSection } from './components/Dashboard';
 
 const SECTION_PATHS: Record<DashboardSection, string> = {
   Dashboard: '/', Today: '/today', Health: '/health', Workouts: '/health/workouts',
-  Family: '/family', FamilyFinance: '/family/finance', FamilyTrading: '/family/trading', Community: '/community', CommunityPlaces: '/community/points-of-interest', Property: '/properties', Work: '/work', Research: '/research',
+  Family: '/family', FamilyFinance: '/family/finance', FamilyTrading: '/family/trading', Community: '/community', CommunityPlaces: '/community/points-of-interest', Property: '/properties', Work: '/work', Research: '/research', Guardians: '/guardians',
   System: '/system', Calendar: '/system/calendar', Mail: '/system/mail',
   Projects: '/system/projects', News: '/system/news', Dreams: '/system/dreams',
   Finance: '/system/finance',
@@ -20,10 +20,17 @@ export function projectUuidFromPath(pathname: string): string | null {
   return m ? decodeURIComponent(m[1]) : null;
 }
 
+/** A workspace's own dashboard: /work/<uuid>. Null on every other path. */
+export function workspaceUuidFromPath(pathname: string): string | null {
+  const m = pathname.match(/^\/work\/([^/]+)\/?$/);
+  return m ? decodeURIComponent(m[1]) : null;
+}
+
 export function sectionFromPath(pathname: string): DashboardSection {
   const path = pathname.replace(/\/+$/, '') || '/';
   if (path === '/dashboard') return 'Dashboard';
   if (path.startsWith(`${SECTION_PATHS.Projects}/`)) return 'Projects';
+  if (path.startsWith(`${SECTION_PATHS.Work}/`)) return 'Work';
   if (path === '/properties' || path.startsWith('/properties/')) return 'Property';
   return (Object.entries(SECTION_PATHS).find(([, entry]) => entry === path)?.[0] as DashboardSection | undefined) ?? 'Dashboard';
 }

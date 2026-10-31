@@ -156,7 +156,9 @@ export function CompanionConsole() {
   useEffect(() => {
     const arm = () => { if (document.visibilityState === 'visible') inboxArmed.current = true; };
     document.addEventListener('visibilitychange', arm);
-    return () => document.removeEventListener('visibilitychange', arm);
+    // The Android app's WebView never fires visibilitychange; it sends this instead.
+    window.addEventListener('athena-native-resume', arm);
+    return () => { document.removeEventListener('visibilitychange', arm); window.removeEventListener('athena-native-resume', arm); };
   }, []);
   useEffect(() => {
     if (!inboxArmed.current || !inbox.reads || arriving) return;

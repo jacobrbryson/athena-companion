@@ -49,15 +49,17 @@ interface Props {
   /** Scroll to one of the detail panels below by its id. */
   onSection: (id: string) => void;
   onOpenIssue: (url: string) => void;
+  /** Open a workspace's own dashboard. */
+  onOpenWorkspace: (uuid: string) => void;
 }
 
 const DAY = 86400000;
 /** One colour per workspace, in the order they're listed (primary first). */
-const TONES = ['#33e0a1', '#ff9a3c', '#a77bff', '#3aa6ff', '#ff5d6c', '#f6c33a', '#5fd3e8'];
+export const TONES = ['#33e0a1', '#ff9a3c', '#a77bff', '#3aa6ff', '#ff5d6c', '#f6c33a', '#5fd3e8'];
 const PROVIDER_ICON: Record<string, string> = { jira: 'list', slack: 'chat', gmail: 'speech', google_calendar: 'calendar', github: 'code', websites: 'globe', openai: 'bot', anthropic: 'bot', google_contacts: 'people' };
-const hostOf = (s: string) => s.toLowerCase().replace(/^[a-z]+:\/\//, '').split(/[/?#\s]/)[0];
+export const hostOf = (s: string) => s.toLowerCase().replace(/^[a-z]+:\/\//, '').split(/[/?#\s]/)[0];
 
-function ago(value?: string | number | null) {
+export function ago(value?: string | number | null) {
   const at = typeof value === 'number' ? value : Date.parse(value || '');
   if (!Number.isFinite(at)) return '';
   const minutes = Math.max(0, Math.round((Date.now() - at) / 60000));
@@ -67,19 +69,42 @@ function ago(value?: string | number | null) {
   return `${d} day${d === 1 ? '' : 's'} ago`;
 }
 /** Slack timestamps are seconds with a fraction ("1760621000.1234"). */
-const slackTime = (ts: string) => Math.round(Number(ts) * 1000);
+export const slackTime = (ts: string) => Math.round(Number(ts) * 1000);
 
 /** In progress, in review, or not started — by Jira's own category first, the status name second. */
-function phaseOf(issue: JiraIssue): 'review' | 'progress' | 'todo' {
+export function phaseOf(issue: JiraIssue): 'review' | 'progress' | 'todo' {
   if (/review|qa|testing|verify/i.test(issue.status)) return 'review';
   if (issue.statusCategory === 'indeterminate' || /progress|doing|started/i.test(issue.status)) return 'progress';
   return 'todo';
 }
-const STATE_WORD: Record<NonNullable<AgentRun['state']>, string> = { working: 'Working', no_change: 'No change', failed: 'Failed', open: 'PR open', merged: 'Merged', closed: 'Closed', unknown: 'Unknown' };
-const PHASE_TONE ={ review: 'wp-chip-violet', progress: 'wp-chip-amber', todo: 'wp-chip-blue' } as const;
+export const STATE_WORD: Record<NonNullable<AgentRun['state']>, string> = { working: 'Working', ready: 'Ready to edit', no_change: 'No change', failed: 'Failed', open: 'PR open', merged: 'Merged', closed: 'Closed', unknown: 'Unknown' };
+const AGENT_NAME: Record<AgentRun['kind'], string> = { fix: 'Code fix', investigation: 'Code investigation', review: 'PR review' };
+const AGENT_TONE: Record<AgentRun['kind'], string> = { fix: 'hp-green', investigation: 'hp-indigo', review: 'hp-violet' };
+
+/** One row of an Athena's Agents panel. */
+export function AgentRow({ run: r, onOpen }: { run: AgentRun; onOpen: () => void }) {
+  const bad = r.state === 'failed' || r.state === 'closed' || (r.kind === 'review' && r.state === 'unknown');
+  const done = r.state === 'merged' || r.state === 'no_change' || r.state === 'ready';
+  return <li><button type="button" onClick={onOpen}>
+    <span className={`hp-badge hp-badge-lg ${AGENT_TONE[r.kind]}`}><Icon name="code" /></span>
+    <div><strong>{AGENT_NAME[r.kind]}</strong><small className="wp-clamp">{r.summary || 'No description'}</small><small className="wp-clamp">{r.failure || r.repo}</small></div>
+    <small className="wp-when"><i className={`wp-live ${bad ? 'wp-live-bad' : done ? 'wp-live-done' : ''}`} />{r.progress || (r.state ? STATE_WORD[r.state] : ago(r.at))}</small>
+  </button></li>;
+}
+
+/** Keeps an agents panel current while something in it is still running. */
+export function useAgentProgress(runs: AgentRun[] | null, setRuns: (r: AgentRun[]) => void) {
+  const working = !!runs?.some(r => r.state === 'working');
+  useEffect(() => {
+    if (!working) return;
+    const timer = setInterval(() => { dashboardApi.workAgents().then(r => setRuns(r.runs)).catch(() => {}); }, 10000);
+    return () => clearInterval(timer);
+  }, [working]); // eslint-disable-line react-hooks/exhaustive-deps
+}
+export const PHASE_TONE = { review: 'wp-chip-violet', progress: 'wp-chip-amber', todo: 'wp-chip-blue' } as const;
 
 type ProjectPhase = 'active' | 'hold' | 'done';
-function projectPhase(p: Project): ProjectPhase | null {
+export function projectPhase(p: Project): ProjectPhase | null {
   const s = p.effectiveStatus;
   if (s === 'done') return 'done';
   if (s === 'dropped') return null;
@@ -88,7 +113,7 @@ function projectPhase(p: Project): ProjectPhase | null {
 }
 
 /** Who owns what: the workspace each site, project and Jira site belongs to. */
-function ownership(places: Workplace[]) {
+export function ownership(places: Workplace[]) {
   const site = new Map<string, number>();
   const project = new Map<string, number>();
   const jira: { host: string; index: number }[] = [];
@@ -104,7 +129,7 @@ function ownership(places: Workplace[]) {
   return { site, project, ofIssue };
 }
 
-function Spark({ values, ok }: { values: (number | null)[]; ok: boolean }) {
+export function Spark({ values, ok }: { values: (number | null)[]; ok: boolean }) {
   const nums = values.filter((v): v is number => v != null);
   if (!nums.length) return <span className="wp-spark wp-spark-empty" />;
   const max = Math.max(...nums, 1);
@@ -118,6 +143,7 @@ export function WorkOverview(props: Props) {
   const [sites, setSites] = useState<Website[] | null>(null);
   const [sitesError, setSitesError] = useState('');
   const [runs, setRuns] = useState<AgentRun[] | null>(null);
+  useAgentProgress(runs, setRuns);
   const [issueTab, setIssueTab] = useState<'all' | 'progress' | 'review'>('all');
   const [projectTab, setProjectTab] = useState<ProjectPhase>('active');
   const [managing, setManaging] = useState<Workplace | null>(null);
@@ -156,7 +182,7 @@ export function WorkOverview(props: Props) {
   const activity = [
     ...[...issues].sort((a, b) => Date.parse(b.updated) - Date.parse(a.updated)).slice(0, 3).map(i => ({ key: `j-${i.key}`, at: Date.parse(i.updated), icon: 'list', tone: 'wp-badge-blue', title: `${i.key} updated`, sub: `Status → ${i.status}`, ask: `What's the latest on ${i.key}?` })),
     ...mentions.slice(0, 2).map(m => ({ key: `s-${m.timestamp}`, at: slackTime(m.timestamp), icon: 'chat', tone: 'wp-badge-violet', title: `Mentioned in #${m.channel}`, sub: m.text, ask: `Help me reply to the Slack mention in #${m.channel}.` })),
-    ...(runs || []).slice(0, 2).map(r => ({ key: `a-${r.uuid}`, at: Date.parse(r.at), icon: 'bot', tone: 'wp-badge-indigo', title: r.kind === 'fix' ? 'Code fix requested' : 'Investigation started', sub: r.summary || r.repo || '', ask: `What did the agents find on ${r.summary || 'that'}?` })),
+    ...(runs || []).slice(0, 2).map(r => ({ key: `a-${r.uuid}`, at: Date.parse(r.at), icon: 'bot', tone: 'wp-badge-indigo', title: r.kind === 'review' ? 'PR review started' : r.kind === 'fix' ? 'Code fix requested' : 'Investigation started', sub: r.summary || r.repo || '', ask: `What did the agents find on ${r.summary || 'that'}?` })),
     ...(sites?.length && sites.some(s => s.uptime) ? [{ key: 'sites', at: Math.max(...sites.map(s => Date.parse(s.uptime?.checkedAt || '') || 0)), icon: 'globe', tone: down ? 'wp-badge-red' : 'wp-badge-green', title: 'Site check', sub: down ? `${down} site${down === 1 ? '' : 's'} down` : 'All sites healthy', ask: 'How are my sites doing?' }] : []),
   ].filter(a => Number.isFinite(a.at)).sort((a, b) => b.at - a.at).slice(0, 5);
 
@@ -203,22 +229,24 @@ export function WorkOverview(props: Props) {
               const issueCount = issues.filter(i => owns.ofIssue(i) === index).length;
               const projectCount = workProjects.filter(p => owns.project.get(p.uuid) === index && projectPhase(p) !== 'done').length;
               const siteCount = (sites || []).filter(s => owns.site.get(s.uuid) === index).length;
-              return <li key={w.uuid} style={{ '--wp-tone': toneOf(index) } as CSSProperties}>
+              const open = () => props.onOpenWorkspace(w.uuid);
+              return <li key={w.uuid} className="wp-space-open" style={{ '--wp-tone': toneOf(index) } as CSSProperties} tabIndex={0} aria-label={`Open the ${w.name} dashboard`}
+                onClick={open} onKeyDown={e => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); open(); } }}>
                 <div className="wp-space-head">
                   <span className="wp-space-mark">{w.name.slice(0, 1).toUpperCase()}</span>
                   <div>
                     <strong>{w.name}{w.primary && <em className="wp-primary">Primary</em>}</strong>
                     {w.role && <small>{w.role}</small>}
-                    {w.domain && <a href={`https://${w.domain}`} target="_blank" rel="noopener noreferrer">{w.domain} <Icon name="arrowRight" /></a>}
+                    {w.domain && <a href={`https://${w.domain}`} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}>{w.domain} <Icon name="arrowRight" /></a>}
                   </div>
-                  <button type="button" className="wp-kebab" aria-label={`Manage ${w.name}`} onClick={() => setManaging(w)}><Icon name="dots" /></button>
+                  <button type="button" className="wp-kebab" aria-label={`Manage ${w.name}`} onClick={e => { e.stopPropagation(); setManaging(w); }}><Icon name="dots" /></button>
                 </div>
                 <div className="wp-conn">{w.connections.length || w.emails.length
                   ? <>{w.connections.map(c => <span key={c.uuid} className={c.status === 'active' ? 'wp-conn-ok' : 'wp-conn-bad'} title={c.account || c.label}><i />{c.label.replace(/^Google /, '').replace(' Cloud', '')}</span>)}
                     {w.emails.length > 0 && <span className="wp-conn-ok" title={w.emails.map(e => e.email).join(', ')}><i />Email</span>}</>
                   : <small>Nothing linked yet</small>}
                 </div>
-                <button type="button" className="wp-space-foot" onClick={() => setManaging(w)}>
+                <button type="button" className="wp-space-foot" onClick={e => { e.stopPropagation(); setManaging(w); }}>
                   <span>{issueCount} issue{issueCount === 1 ? '' : 's'}</span><span>{projectCount} project{projectCount === 1 ? '' : 's'}</span><span>{siteCount} site{siteCount === 1 ? '' : 's'}</span>
                   <Icon name="chevron" className="hp-chev" />
                 </button>
@@ -262,11 +290,7 @@ export function WorkOverview(props: Props) {
       <section className="hp-panel wp-agents">
         <header><h2><Icon name="bot" className="wp-head-icon wp-blue" /> Athena’s Agents <span>Work happening in the background</span></h2></header>
         <ul className="wp-rows">
-          {(runs || []).slice(0, 4).map(r => <li key={r.uuid}><button type="button" onClick={() => onAsk(`What did the agents find on ${r.summary || 'that'}?`)}>
-            <span className={`hp-badge hp-badge-lg ${r.kind === 'fix' ? 'hp-green' : 'hp-indigo'}`}><Icon name="code" /></span>
-            <div><strong>{r.kind === 'fix' ? 'Code fix' : 'Code investigation'}</strong><small className="wp-clamp">{r.summary || 'No description'}</small><small>{r.repo}</small></div>
-            <small className="wp-when"><i className={`wp-live ${r.state === 'failed' || r.state === 'closed' ? 'wp-live-bad' : r.state === 'merged' || r.state === 'no_change' ? 'wp-live-done' : ''}`} />{r.state ? STATE_WORD[r.state] : ago(r.at)}</small>
-          </button></li>)}
+          {(runs || []).slice(0, 4).map(r => <AgentRow key={r.uuid} run={r} onOpen={() => r.workplaceUuid ? props.onOpenWorkspace(r.workplaceUuid) : onAsk(`What did the agents find on ${r.summary || 'that'}?`)} />)}
           <li><button type="button" onClick={() => onSection('work-sites')}>
             <span className={`hp-badge hp-badge-lg ${down ? 'hp-red' : 'hp-green'}`}><Icon name="pulse" /></span>
             <div><strong>Site Monitor</strong><small>{!sites ? 'Checking…' : !sites.length ? 'No sites to watch yet' : down ? `${down} site${down === 1 ? '' : 's'} down` : 'All sites healthy'}</small><small>{sites ? `${sites.length} site${sites.length === 1 ? '' : 's'}` : ''}</small></div>
@@ -367,13 +391,28 @@ function ManageWorkspace({ workplace, places, sites, projects, onClose, onChange
   workplace: Workplace; places: Workplace[]; sites: Website[]; projects: Project[];
   onClose: () => void; onChanged: (o: WorkplacesOverview) => void; onEdit: () => void;
 }) {
-  const [busy, setBusy] = useState<string | null>(null);
-  const [error, setError] = useState('');
   useEffect(() => {
     const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', esc);
     return () => window.removeEventListener('keydown', esc);
   }, [onClose]);
+  return <div className="health-modal" role="dialog" aria-modal="true" aria-label={`Manage ${workplace.name}`}>
+    <div className="health-modal-backdrop" onClick={onClose} />
+    <div className="health-modal-card hp-modal wp-manage">
+      <header><div><small>WORKSPACE</small><h2>{workplace.name}</h2></div><button type="button" className="health-modal-close" aria-label="Close" onClick={onClose}>✕</button></header>
+      <WorkspaceAssignments workplace={workplace} places={places} sites={sites} projects={projects} onChanged={onChanged} />
+      <div className="hp-form-actions"><button type="button" className="hp-link" onClick={onEdit}>Edit name, role and connections <Icon name="arrowRight" /></button><button type="button" className="dashboard-chat-cta" onClick={onClose}>Done <span>↗</span></button></div>
+    </div>
+  </div>;
+}
+
+/** Shared site/project ownership controls for the Work modal and workspace drawer. */
+export function WorkspaceAssignments({ workplace, places, sites, projects, onChanged }: {
+  workplace: Workplace; places: Workplace[]; sites: Website[]; projects: Project[];
+  onChanged: (o: WorkplacesOverview) => void;
+}) {
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState('');
   const elsewhere = useCallback((kind: 'sites' | 'projects', id: string) => places.find(w => w.uuid !== workplace.uuid && (kind === 'sites' ? w.sites?.some(s => s.siteUuid === id) : w.projects?.some(p => p.projectUuid === id)))?.name ?? null, [places, workplace.uuid]);
   const toggle = async (kind: 'site' | 'project', id: string) => {
     const link = kind === 'site' ? workplace.sites?.find(s => s.siteUuid === id) : workplace.projects?.find(p => p.projectUuid === id);
@@ -385,10 +424,7 @@ function ManageWorkspace({ workplace, places, sites, projects, onClose, onChange
     } finally { setBusy(null); }
   };
   const ready = workplace.sites !== undefined;
-  return <div className="health-modal" role="dialog" aria-modal="true" aria-label={`Manage ${workplace.name}`}>
-    <div className="health-modal-backdrop" onClick={onClose} />
-    <div className="health-modal-card hp-modal wp-manage">
-      <header><div><small>WORKSPACE</small><h2>{workplace.name}</h2></div><button type="button" className="health-modal-close" aria-label="Close" onClick={onClose}>✕</button></header>
+  return <div className="wp-manage">
       {!ready ? <p className="hp-empty">Sites and projects can be given to a workspace once the database is updated (migration 0079).</p> : <>
         <h3>Sites</h3>
         {!sites.length ? <p className="hp-empty">No sites yet — add one under Site monitors below.</p>
@@ -406,7 +442,5 @@ function ManageWorkspace({ workplace, places, sites, projects, onClose, onChange
           })}</ul>}
       </>}
       {error && <p className="hp-error" role="status">{error}</p>}
-      <div className="hp-form-actions"><button type="button" className="hp-link" onClick={onEdit}>Edit name, role and connections <Icon name="arrowRight" /></button><button type="button" className="dashboard-chat-cta" onClick={onClose}>Done <span>↗</span></button></div>
-    </div>
   </div>;
 }

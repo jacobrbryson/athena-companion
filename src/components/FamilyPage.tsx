@@ -313,6 +313,8 @@ export function FamilyOverview({ tabs, roster, children, events, timeZone, now, 
       backdrop="/assets/family.png" backdropBeside
       take={{ lines: [take.join(' ')], ask: 'Help me think about my family this week — what should I be paying attention to?', onAsk }} />
 
+    {tabs}
+
     <section className="stat-row family-metrics" aria-label="Your family at a glance">
       <Stat label="People remembered" value={roster.length} note="from your memories" icon="Family" onClick={onDetails} />
       <Stat label="Chores today" value={chores.length ? `${choresDone}/${chores.length}` : '—'}
@@ -323,8 +325,6 @@ export function FamilyOverview({ tabs, roster, children, events, timeZone, now, 
         tone={health.tone === 'good' ? 'good' : health.tone === 'ok' ? 'ok' : health.tone === 'low' ? 'low' : health.tone === 'alert' ? 'alert' : 'idle'} onClick={onDetails} />
       <Stat label="Portfolio value" value={formatBrokerageMoney(portfolio?.totals?.net_value, portfolio?.totals?.currency || 'USD')} note={financeNote} icon="Finance" onClick={onFinance} />
     </section>
-
-    {tabs}
 
     <div className="fp-grid">
       <section className="hp-panel fp-chores">

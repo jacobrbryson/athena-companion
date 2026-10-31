@@ -11,6 +11,7 @@ import { mockTrading } from './trading';
 import type { NewsSource } from '../src/api/dashboard';
 import { mockProjectsRoute, mockVehicles, mockApplyBill } from './projects';
 import { mockWorkItems } from './workItems';
+import { mockReviewRuns, mockWorkspaceReviews } from './workspaceReviews';
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const now = Date.now();
@@ -489,7 +490,10 @@ const mailBundles = () => {
   const replies = newest(open.filter((e) => e.category === 'needs_reply'));
   return {
     archive: { count: archive.length, senders: [...tally].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([name, count]) => ({ name, count })), items: archive.map((e) => ({ ...item(e), category: e.category })) },
-    receipts: { count: receipts.length, items: receipts.map((e) => ({ ...item(e), merchant: ((e.extracted || {}) as { merchant?: string }).merchant || null })) },
+    receipts: { count: receipts.length, items: receipts.map((e) => {
+      const x = (e.extracted || {}) as { merchant?: string; amount?: number; currency?: string; purchased_at?: string };
+      return { ...item(e), merchant: x.merchant || null, amount: x.amount ?? null, currency: x.currency ?? null, purchased_at: x.purchased_at ?? null };
+    }) },
     events: (() => {
       const rows = newest(open.filter((e) => e.category === 'travel' || e.category === 'school'));
       return { count: rows.length, items: rows.map((e) => {
@@ -1099,6 +1103,8 @@ async function route(method: string, path: string, body?: any): Promise<any> {
   await wait(150);
   const url = new URL(path, 'http://mock');
   const p = url.pathname;
+  const reviewResult = mockWorkspaceReviews(method, url, body);
+  if (reviewResult !== undefined) return reviewResult;
   const workResult = mockWorkItems(method, url, body);
   if (workResult !== undefined) return workResult;
 
@@ -1157,6 +1163,99 @@ async function route(method: string, path: string, body?: any): Promise<any> {
     device: { name: 'enterprises/mock/devices/up', title: 'Upstairs thermostat' },
     sentence: 'On nights the Upstairs thermostat averaged 66–67°F, your recovery averaged 74%, 11 points higher than your other nights (12 of 38 nights; moderate confidence — a pattern in your nights, not proof of cause).',
   };
+  // Guardians (2026-10-29): one running scout mission waiting on you, proposals, capabilities, two kids.
+  if (p === '/api/v1/guardian-missions' || p.startsWith('/api/v1/guardian-missions/')) {
+    const KEY = 'mock_guardian_missions_v3';
+    const cap = (key: string, name: string, badge: string, extra: Record<string, unknown> = {}) => ({
+      uuid: `cap-${key}`, key, kind: 'system', name, description: null, channel: null, locality: 'cloud', permission: 'free', missionOnly: false, houseControl: false,
+      enabled: true, status: 'untested', badge, hardware: null, lastTestedAt: null, stale: false,
+      record: { total: 0, passed: 0, avgLatencyMs: null, stages: {}, text: 'Not tested yet' }, audience: 'parent_only', ...extra,
+    });
+    const fresh = () => ({
+      control: { mode: 'running', quietUntil: null, killSwitch: false, killSwitchAt: null, monthlyBudget: 200, stopWord: 'Kraken' },
+      attention: 'yellow',
+      active: [
+        { uuid: 'm-scout', key: 'scout-the-yard', title: 'Scout the yard', goal: 'First test of scouting.', rung: 1, priority: 'normal', status: 'running', approval: 'approved', source: 'seed', adventure: null, notes: null, startedAt: new Date().toISOString(), endedAt: null,
+          capabilities: [{ name: 'Scout geography', badge: '🧭' }, { name: 'Push notification', badge: '🔔' }, { name: 'Phone camera', badge: '📷' }],
+          steps: [{ uuid: 's-1', seq: 1, instruction: 'Stand at the back porch and take four photos, holding the phone upright: north, east, south, then west. Proof: the four photos.', place: 'the back porch', proofRequired: 'photo_set', status: 'waiting_parent', dueAt: null, sentAt: new Date().toISOString(), nudgeCount: 0, assignee: { uuid: 'a-ross', name: 'Ross', kind: 'parent' }, capability: 'Scout geography', resultNote: null, audience: 'parent_only' },
+            { uuid: 's-2', seq: 2, instruction: 'Walk to the brick back-porch steps and check there is a red planter on the left. Reply Done if it matches, or tell me what\'s different.', place: 'Back porch steps', proofRequired: 'parent_confirm', status: 'waiting_parent', dueAt: null, sentAt: null, nudgeCount: 0, assignee: { uuid: 'a-ross', name: 'Ross', kind: 'parent' }, capability: 'Scout geography', resultNote: null, audience: 'parent_only' }],
+          waitingOn: ['you'], audience: 'parent_only' },
+      ],
+      proposed: [
+        { uuid: 'm-gate', key: 'guardian-gate', title: 'Guardian Gate', goal: 'Kids show the doorbell camera something; Athena answers in Morse on the porch light or by voice.', rung: 2, priority: 'normal', status: 'proposed', approval: 'unapproved', source: 'seed', adventure: null, notes: null, startedAt: null, endedAt: null, capabilities: [{ name: 'Doorbell camera (Guardian Gate)', badge: '🚪' }, { name: 'Control porch light', badge: '💡' }, { name: 'Morse out (light)', badge: '📡' }], steps: [], waitingOn: [], audience: 'kids_too' },
+        { uuid: 'm-lamp', key: 'guardian-signal-lamp', title: 'Guardian signal lamp', goal: 'A signal lamp in each kid\'s room Athena can light during missions.', rung: 3, priority: 'high', status: 'proposed', approval: 'unapproved', source: 'seed', adventure: null, notes: null, startedAt: null, endedAt: null, capabilities: [], steps: [], waitingOn: [], audience: 'kids_too' },
+      ],
+      history: [{ uuid: 'm-fw', key: 'mission-3-first-watch', title: 'The First Watch', goal: 'Index cards from 1963 are scattered across the high ground.', rung: 1, priority: 'normal', status: 'completed', approval: 'approved', source: 'legacy', adventure: 'lake_norman_guardians', notes: null, startedAt: null, endedAt: null, capabilities: [{ name: 'Hide-and-find clue planning', badge: '🗺️' }], steps: [], waitingOn: [], audience: 'kids_too' },],
+      capabilities: [
+        cap('scout_geography', 'Scout geography', '🧭', { locality: 'hybrid', status: 'working', lastTestedAt: new Date().toISOString(), record: { total: 6, passed: 6, avgLatencyMs: 2400, stages: { upload: { total: 4, passed: 4 }, analysis: { total: 1, passed: 1 }, verification: { total: 1, passed: 1 } }, text: '6 tests, 6 passed, average delay 2.4s' } }),
+        cap('push_notification', 'Push notification', '🔔', { status: 'flaky', record: { total: 5, passed: 4, avgLatencyMs: 800, stages: {}, text: '5 tests, 4 passed, average delay 0.8s' } }),
+        cap('porch_light', 'Control porch light', '💡', { locality: 'local', missionOnly: true, houseControl: true }),
+        cap('view_cameras', 'View cameras', '👁️', { locality: 'hybrid', houseControl: true, status: 'broken', record: { total: 3, passed: 0, avgLatencyMs: null, stages: {}, text: '3 tests, 0 passed' } }),
+        cap('speak_through_camera', 'Speak through camera', '🗣️', { missionOnly: true, houseControl: true, permission: 'parent_approval', enabled: false }),
+      ],
+      skills: [cap('knows_morse', 'Knows Morse', '📡', { kind: 'skill' }), cap('plays_soccer', 'Plays soccer', '⚽', { kind: 'skill' }), cap('uses_walkies', 'Uses walkie-talkies', '📻', { kind: 'skill' })],
+      recipients: [{ uuid: 'a-ross', name: 'Ross', kind: 'parent', muted: false, mutedUntil: null }, { uuid: 'a-thomas', name: 'Thomas', kind: 'kid', muted: false, mutedUntil: null }, { uuid: 'a-skylar', name: 'Skylar', kind: 'kid', muted: true, mutedUntil: null }],
+      guardians: [
+        { uuid: 'a-thomas', name: 'Thomas', muted: false, mutedUntil: null, badges: [{ capabilityUuid: 'cap-plays_soccer', name: 'Plays soccer', badge: '⚽', level: 'reliable', source: 'parent_reported', retest: false }], progress: { reliable: 1, learning: 0 } },
+        { uuid: 'a-skylar', name: 'Skylar', muted: true, mutedUntil: null, badges: [{ capabilityUuid: 'cap-knows_morse', name: 'Knows Morse', badge: '📡', level: 'learning', source: 'parent_reported', retest: false }], progress: { reliable: 0, learning: 1 } },
+      ],
+      team: {
+        roster: ([['Thomas', true, 4, 'Builder', 80], ['Skylar', true, 1, 'Sage', 40], ['Livia', false, 6, 'Tracker', 60], ['Erika', false, 3, 'Builder', 40], ['Aaron', false, 2, 'Creator', 20], ['Emery', false, 2, 'Builder', 20], ['Addy', false, 1, 'Sage', 40], ['Penny', false, 1, 'Recruit', 0], ['Zeke', false, 1, 'Recruit', 0]] as const)
+          .map(([name, ours, level, role, levelProgress]) => ({ name, ours, checkedIn: role !== 'Recruit', finds: role === 'Tracker' ? 26 : name === 'Thomas' ? 1 : 0, trailKeys: role === 'Builder' ? 10 : 0, contributions: name === 'Thomas' || name === 'Aaron' ? 1 : 0, missionsStarted: name === 'Thomas' ? 1 : 0, badges: ours ? 1 : 0, level, role, levelProgress,
+            recent: name === 'Thomas' ? [{ kind: 'find', at: new Date(Date.now() - 720000).toISOString(), who: name, text: 'found Beam\'s Mill — ledger line' }, { kind: 'report', at: '2026-07-01T23:28:57Z', who: name, text: 'reported the family\'s map piece' }] : [] })),
+        skills: [
+          { key: 'planning', name: 'Planning', percent: 80, done: 4, total: 5, detail: '4 of 5 missions carried through' },
+          { key: 'teamwork', name: 'Teamwork', percent: 50, done: 2, total: 4, detail: '2 of 4 families reported their map piece' },
+          { key: 'problemSolving', name: 'Problem Solving', percent: 80, done: 24, total: 30, detail: '24 of 30 trail keys decoded' },
+          { key: 'observation', name: 'Observation', percent: 96, done: 27, total: 28, detail: '27 of 28 clue cards found' },
+          { key: 'communication', name: 'Communication', percent: 79, done: 11, total: 14, detail: '11 of 14 Guardians have checked in with Athena' },
+          { key: 'realWorldTools', name: 'Real World Tools', percent: 0, done: 0, total: 10, detail: '0 of 10 tool skills reliable' },
+        ],
+        clues: { mission: 'mission-3-first-watch', found: 2, total: 3, foundRefs: ['F-01', 'F-02'] },
+        activity: [
+          { kind: 'find', at: new Date(Date.now() - 720000).toISOString(), who: 'Thomas', text: 'found Beam\'s Mill — ledger line' },
+          { kind: 'key', at: new Date(Date.now() - 2040000).toISOString(), who: 'Skylar', text: 'decoded a trail key' },
+          { kind: 'report', at: new Date(Date.now() - 3600000).toISOString(), who: 'Aaron', text: 'reported the family\'s map piece' },
+          { kind: 'find', at: new Date(Date.now() - 7200000).toISOString(), who: 'Addy', text: 'found Nell\'s journal — June 1963' },
+          { kind: 'key', at: '2026-07-27T18:00:00Z', who: 'Emery', text: 'decoded a trail key' },
+        ],
+      },
+      clues: ['Beam\'s Mill — ledger line', 'Nell\'s journal — June 1963', 'Photograph — seven on the mill wall'].map((title, i) => ({ uuid: `c-${i}`, seq: i + 1, ref: `F-0${i + 1}`, title, act: 1, kind: null, status: 'unplaced', mission: 'The First Watch' })),
+      locations: [{ uuid: 'l-1', name: 'Back porch steps', lat: 35.5441, lng: -80.9371, description: 'Brick steps with a red planter to the left.', hiding_potential: 'Behind the red planter\n• under the bottom step (E, 2/5)', difficulty: 2, last_verified_at: null, created_at: new Date().toISOString() }],
+      log: [{ verb: 'step_send', outcome: 'ok', detail: null, at: new Date().toISOString(), who: 'Ross', mission: 'Scout the yard' }, { verb: 'step_send', outcome: 'held', detail: { reason: 'Skylar is muted' }, at: new Date().toISOString(), who: 'Skylar', mission: 'Scout the yard' }],
+    });
+    let s = JSON.parse(localStorage.getItem(KEY) || 'null') || fresh();
+    const save = () => { localStorage.setItem(KEY, JSON.stringify(s)); return s; };
+    const rest = p.slice('/api/v1/guardian-missions'.length);
+    if (!rest && method === 'GET') return s;
+    if (rest === '/control') { s.control = { ...s.control, ...body, mode: body.mode ?? s.control.mode, quietUntil: body.mode === 'quiet_until' ? body.quietUntil : body.mode ? null : s.control.quietUntil }; return save(); }
+    let m = /^\/capabilities\/([^/]+)$/.exec(rest);
+    if (m) { s.capabilities = s.capabilities.map((c: any) => (c.uuid === m![1] ? { ...c, enabled: body.enabled } : c)); return save(); }
+    m = /^\/recipients\/(.+)$/.exec(rest);
+    if (m) { s.recipients = s.recipients.map((r: any) => (r.uuid === m![1] ? { ...r, muted: body.muted } : r)); return save(); }
+    m = /^\/missions\/(.+)\/(approve|decline|stop|pause)$/.exec(rest);
+    if (m) {
+      const [, uuid, verb] = m;
+      if (verb === 'approve') { const x = s.proposed.find((q: any) => q.uuid === uuid); s.proposed = s.proposed.filter((q: any) => q.uuid !== uuid); if (x) s.active.push({ ...x, status: 'running', approval: 'approved' }); }
+      if (verb === 'decline') s.proposed = s.proposed.filter((q: any) => q.uuid !== uuid);
+      if (verb === 'stop') s.active = s.active.filter((q: any) => q.uuid !== uuid);
+      if (verb === 'pause') s.active = s.active.map((q: any) => (q.uuid === uuid ? { ...q, status: body.paused ? 'paused' : 'running' } : q));
+      s.attention = s.proposed.length ? 'yellow' : 'green';
+      return save();
+    }
+    if (rest === '/stop-everything') { s.active = s.active.filter((q: any) => q.source === 'legacy'); return save(); }
+    if (rest === '/scout') return { overview: s, send: { verdict: 'allow', reason: null } };
+    m = /^\/steps\/(.+)\/(verify|send)$/.exec(rest);
+    if (m) {
+      s.active = s.active.map((q: any) => ({ ...q, steps: q.steps.map((st: any) => (st.uuid === m![1] ? (m![2] === 'verify' ? { ...st, status: 'done', resultNote: body.matches ? 'Matches' : `Doesn't match: ${body.note || ''}` } : { ...st, sentAt: new Date().toISOString() }) : st)) }));
+      save();
+      return m[2] === 'send' ? { overview: s, decision: { verdict: 'allow', reason: null } } : s;
+    }
+    if (rest === '/cameras') return { state: 'ready', cameras: [{ serial: 'T8171A', name: 'Backyard SoloCam', model: 'T8171', control: { ptz: true, presets: true, talkback: true }, freshSnapshot: true }, { serial: 'T8213B', name: 'Front doorbell', model: 'T8213', control: { ptz: false, presets: false, talkback: true }, freshSnapshot: true }] };
+    m = /^\/capabilities\/(.+)\/test$/.exec(rest);
+    if (m) return { overview: s, result: { ok: m[1] !== 'cap-view_cameras', error: m[1] === 'cap-view_cameras' ? 'bridge_unavailable' : null, latencyMs: 420 } };
+    if (rest === '/reset') { s = fresh(); return save(); }
+  }
   // Research: one study with a finding, one still gathering, one with a pace.
   if (p === '/api/v1/research') {
     const sleep = { status: 'ready', nights: 38, needed: 14, metric: 'avgRecovery', confidence: 'moderate',
@@ -1294,7 +1393,7 @@ async function route(method: string, path: string, body?: any): Promise<any> {
     return summary;
   }
   if (p === '/api/v1/dashboard/priority') return dashboardPriority();
-  if (p === '/api/v1/dashboard/inbox') return { unacknowledged: [{ uuid: 'mock-n1', kind: 'nudge', title: 'Athena', body: 'Your 2pm is in fifteen minutes.', url: null, createdAt: ago(20), acknowledgedAt: null }], recent: [] };
+  if (p === '/api/v1/dashboard/inbox') return { unacknowledged: [{ uuid: 'mock-n1', kind: 'nudge', title: 'Athena', body: 'Your 2pm is in fifteen minutes.', url: null, createdAt: new Date(Date.now() - 20 * 60_000).toISOString(), acknowledgedAt: null }], recent: [] };
   if (p.startsWith('/api/v1/dashboard/inbox/') && method === 'POST') return { cleared: 1 };
   // Emergency banner: quiet by default; ?alert=urgent or =watch to see it.
   if (p === '/api/v1/dashboard/alert/ack' && method === 'POST') {
@@ -1466,6 +1565,21 @@ async function route(method: string, path: string, body?: any): Promise<any> {
         available: conns.filter(c => !linked.has(c.credentialUuid)).map(c => ({ ...c, suggestedWorkplace: c.account.includes('@vivacitytech.com') ? 'w1' : null })),
       };
     };
+    if (method === 'GET' && seg[6] === 'dashboard') {
+      const ago = (h: number) => new Date(Date.now() - h * 3600000).toISOString();
+      const pr = (id: number, repo: string, title: string, h: number, extra: Record<string, unknown> = {}) => ({ id, number: id, title, url: `https://github.com/vivacity/${repo}/pull/${id}`, repo, repoFull: `vivacity/${repo}`, author: 'rbryson', mine: true, reviewRequested: false, draft: false, comments: 0, createdAt: ago(h + 20), updatedAt: ago(h), ...extra });
+      return {
+        pullRequests: { login: 'rbryson', error: null, items: [
+          pr(31, 'Dream_frontned', 'Fix profile avatar crop', 3), pr(12, 'API-Gateway', 'Rate limit header', 1, { mine: false, author: 'sam', reviewRequested: true, comments: 4 }),
+          pr(88, 'Dream-Backend', 'Add retries to export job', 5, { comments: 2 }), pr(7, 'helpful_db_scripts', 'Backfill script for orders', 30, { draft: true }),
+          pr(89, 'Dream-Backend', 'Bump dependencies', 26),
+        ] },
+        epics: { error: null, items: [
+          { key: 'DREAM-12', title: 'Onboarding revamp', status: 'In Progress', statusCategory: 'indeterminate', project: 'Dream', updated: ago(4), due: null, url: 'https://vivacitytech.atlassian.net/browse/DREAM-12', done: 7, total: 11 },
+          { key: 'DREAM-4', title: 'Billing migration', status: 'To Do', statusCategory: 'new', project: 'Dream', updated: ago(70), due: null, url: 'https://vivacitytech.atlassian.net/browse/DREAM-4', done: 0, total: 5 },
+        ] },
+      };
+    }
     if (method === 'GET') return keep();
     if (seg[6] === 'links') {
       if (method === 'DELETE') { links = links.filter(l => l.uuid !== decodeURIComponent(seg[7] || '')); return keep(); }
@@ -1489,6 +1603,7 @@ async function route(method: string, path: string, body?: any): Promise<any> {
     return { sites: MOCK_SITES.map((s, i) => ({ ...s, uptime: { ok: true, statusCode: 200, ms: [189, 221][i] ?? 200, error: null, checkedAt: new Date(Date.now() - 5 * 60_000).toISOString(), recent: ms([150, 180][i] ?? 160) } })) };
   }
   if (p === '/api/v1/dashboard/work/agents') return { runs: [
+    ...mockReviewRuns(),
     { uuid: 'r1', kind: 'investigation', repo: 'jrbryson/athena-core-api', summary: 'Weather card shows yesterday’s high after midnight', state: null, at: new Date(Date.now() - 12 * 60_000).toISOString() },
     { uuid: 'r2', kind: 'fix', repo: 'jrbryson/athena-companion', summary: 'Keep the map legend from wrapping on phones', state: 'open', at: new Date(Date.now() - 2 * 3600_000).toISOString() },
   ] };
@@ -1686,6 +1801,30 @@ async function route(method: string, path: string, body?: any): Promise<any> {
   }
   const projectAnswer = mockProjectsRoute(method, p, url.searchParams, body);
   if (projectAnswer !== undefined) return projectAnswer;
+  if (p === '/api/v1/dashboard/email/receipts') {
+    const today = new Date().toISOString().slice(0, 10);
+    const ago = (d: number) => new Date(Date.now() - d * 86400000).toISOString().slice(0, 10);
+    const filed = mockEmails.filter((e) => e.status === 'actioned' && e.category === 'receipt').map((e) => {
+      const x = (e.extracted || {}) as { merchant?: string; category?: string; amount?: number; currency?: string; purchased_at?: string };
+      return { uuid: `rcpt-${e.uuid}`, merchant: x.merchant || e.from_name || null, category: x.category || null, amount: x.amount ?? null, currency: x.currency || 'USD', date: x.purchased_at || today, dated: !!x.purchased_at, subject: e.subject };
+    });
+    const earlier = [
+      { uuid: 'rcpt-1', merchant: 'USAA', category: 'insurance', amount: 459.63, currency: 'USD', date: today, dated: true, subject: 'Your USAA payment was received' },
+      { uuid: 'rcpt-2', merchant: 'Duke Energy', category: 'energy', amount: 142.55, currency: 'USD', date: ago(6), dated: true, subject: 'Your October bill is ready' },
+      { uuid: 'rcpt-3', merchant: 'Kroger', category: 'groceries', amount: 84.32, currency: 'USD', date: ago(9), dated: true, subject: 'Your Kroger order #48213' },
+      { uuid: 'rcpt-4', merchant: 'Walmart', category: 'groceries', amount: null, currency: 'USD', date: ago(40), dated: false, subject: 'Thanks for your order' },
+    ];
+    const receipts = [...filed, ...earlier].sort((a, b) => String(b.date).localeCompare(String(a.date)));
+    const byMonth = new Map<string, { month: string; count: number; totals: Map<string, number> }>();
+    for (const r of receipts) {
+      const month = String(r.date).slice(0, 7);
+      const m = byMonth.get(month) || { month, count: 0, totals: new Map() };
+      m.count++;
+      if (r.amount !== null) m.totals.set(r.currency, Math.round(((m.totals.get(r.currency) || 0) + r.amount) * 100) / 100);
+      byMonth.set(month, m);
+    }
+    return { receipts, truncated: false, months: [...byMonth.values()].map((m) => ({ month: m.month, count: m.count, totals: [...m.totals].map(([currency, amount]) => ({ currency, amount })) })) };
+  }
   if (p === '/api/v1/dashboard/email/scan') {
     // Simulates "Scan more" turning up a bit more of the backlog, once.
     const reserve: MockEmail[] = [
@@ -1764,6 +1903,21 @@ Sam` };
       uuid: `act-email-archive-${Date.now()}`, action_id: 'archive_emails', label: 'Archive emails',
       summary: `Archive ${rows.length === 1 ? 'this email' : `${rows.length} emails`} out of your inbox (still in All Mail and search)`,
       rationale: null, params: { email_triage_uuids: rows.map((r) => r.uuid) }, status: 'pending', approval: null,
+      reversible: true, result_ref: null, error: null,
+      created_at: new Date().toISOString(), expires_at: new Date(Date.now() + 15 * 60_000).toISOString(), executed_at: null,
+    };
+    proposals.push(action);
+    return { success: true, action };
+  }
+  if (p === '/api/v1/dashboard/email/undo-archive') {
+    const original = proposals.find((a) => a.uuid === body?.action_uuid);
+    if (!original || original.action_id !== 'archive_emails' || original.status !== 'done') fail(404, "That archive can't be undone");
+    const ids = ((original!.params?.email_triage_uuids as string[]) || []).filter((id) => mockEmails.find((e) => e.uuid === id)?.status === 'archived');
+    if (!ids.length) fail(404, 'None of those emails are archived any more');
+    const action: MockAction = {
+      uuid: `act-email-unarchive-${Date.now()}`, action_id: 'unarchive_emails', label: 'Move emails back to the inbox',
+      summary: `Move ${ids.length === 1 ? 'this email' : `${ids.length} emails`} back to your inbox`,
+      rationale: null, params: { email_triage_uuids: ids, undoes: original!.uuid }, status: 'pending', approval: null,
       reversible: true, result_ref: null, error: null,
       created_at: new Date().toISOString(), expires_at: new Date(Date.now() + 15 * 60_000).toISOString(), executed_at: null,
     };
@@ -2123,6 +2277,9 @@ Sam` };
     } else if (action!.action_id === 'archive_emails') {
       const ids = (action!.params?.email_triage_uuids as string[]) || [];
       mockEmails = mockEmails.map((e) => (ids.includes(e.uuid) ? { ...e, status: 'archived' } : e));
+    } else if (action!.action_id === 'unarchive_emails') {
+      const ids = (action!.params?.email_triage_uuids as string[]) || [];
+      mockEmails = mockEmails.map((e) => (ids.includes(e.uuid) && e.status === 'archived' ? { ...e, status: 'new' } : e));
     }
     return { success: true, action };
   }

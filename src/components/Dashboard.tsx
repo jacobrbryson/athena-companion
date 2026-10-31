@@ -24,6 +24,8 @@ import { WorkBanner } from './WorkBanner';
 import { isInProgress, isReadyToStart, untilLabel, workStatus } from './workStatus';
 import { EmailPanel, CATEGORY_LABEL } from './EmailPanel';
 import { MailBundles } from './MailBundles';
+import { MailActivity } from './MailActivity';
+import { MailHero } from './MailHero';
 import { DreamCard, DreamsPage, DreamImage, STATUS_LINE, nightLabel } from './Dreams';
 import { DashboardIcon } from './icons';
 import { PointsOfInterest, Neighbors, LocalEvents, PlaceReminders, ContactAvatar, eventWhen, isPastEvent } from './Community';
@@ -38,8 +40,10 @@ import { FamilyOverview } from './FamilyPage';
 import { FamilyFinance } from './FamilyFinance';
 import { FamilyTrading } from './FamilyTrading';
 import { ResearchPage } from './ResearchPage';
+import { GuardiansPage } from './GuardiansPage';
 import { CommunityOverview } from './CommunityPage';
 import { WorkOverview } from './WorkPage';
+import { WorkspacePage } from './WorkspacePage';
 import { WorkItems } from './WorkItems';
 import { NavigationLink, DrawerButton } from './ActionControls';
 import { plannedToday } from './ProjectData';
@@ -49,7 +53,8 @@ import { useProperty, PropertyOverview, PropertyWeather, PropertyNavigation, pro
 import { SectionTabs } from './PageTabs';
 import { Stat } from './SectionMetric';
 import { ProjectDashboard } from './ProjectDashboard';
-import { dashboardPath, projectUuidFromPath } from '../dashboardRoutes';
+import { PropertyProjects } from './PropertyProjects';
+import { dashboardPath, projectUuidFromPath, workspaceUuidFromPath } from '../dashboardRoutes';
 import { WeatherPanel } from './WeatherPanel';
 import { usePropertyIssues, reportedWhen, ReportIssueDrawer, IssueDetailsDrawer, ActiveIssueBanner, IssueList, troubleshootPrompt, findProPrompt } from './PropertyIssues';
 import type { PropertyIssue } from '../api/propertyIssues';
@@ -68,7 +73,7 @@ const FAMILY_CARD_ROWS = 7;
 
 /** Open a console panel; `consentFor` opens Connected apps on that provider's consent prompt. */
 export type OpenPanel = (panel: 'integrations' | 'memory' | 'actions' | 'notifications' | 'knows' | 'photo' | 'devices', options?: { consentFor?: string }) => void;
-export type DashboardSection = 'Dashboard' | 'Property' | 'Today' | 'Calendar' | 'Health' | 'Family' | 'Community' | 'Mail' | 'Work' | 'Projects' | 'News' | 'Dreams' | 'System' | 'Finance' | 'Workouts' | 'FamilyFinance' | 'FamilyTrading' | 'CommunityPlaces' | 'Research';
+export type DashboardSection = 'Dashboard' | 'Property' | 'Today' | 'Calendar' | 'Health' | 'Family' | 'Community' | 'Mail' | 'Work' | 'Projects' | 'News' | 'Dreams' | 'System' | 'Finance' | 'Workouts' | 'FamilyFinance' | 'FamilyTrading' | 'CommunityPlaces' | 'Research' | 'Guardians';
 // Icons live in ./icons — one registry, so a drawn icon looks the same in
 // the nav, on its card and in the phone's bottom bar.
 export { DashboardIcon } from './icons';
@@ -81,7 +86,7 @@ export { DashboardIcon } from './icons';
 // Today remains an internal page for now but is not a left-navigation entry.
 // Calendar, Mail, Projects, News and Dreams moved under System as its tabs
 // (owner, 2026-10-16), beside Finance; their pages are unchanged.
-export const dashboardSections: DashboardSection[] = ['Dashboard', 'Health', 'Family', 'Community', 'Property', 'Work', 'Research', 'System'];
+export const dashboardSections: DashboardSection[] = ['Dashboard', 'Health', 'Family', 'Community', 'Guardians', 'Property', 'Work', 'Research', 'System'];
 /** The nav entry a page lights up: a System tab lights System, a workout lights Health. */
 export const navSectionOf = (section: DashboardSection): DashboardSection =>
   section === 'Workouts' ? 'Health' : section === 'CommunityPlaces' ? 'Community' : section === 'FamilyFinance' || section === 'FamilyTrading' ? 'Family' : SYSTEM_TAB_IDS.includes(section) ? 'System' : section;
@@ -283,20 +288,23 @@ export interface SectionContext {
  * whole subtree each time, and the news-sources panel would lose what was
  * being typed into it.
  */
-export function SectionPage({ eyebrow, title, blurb, stats, children, ask, ctx, headerAside, hero, tabs, backdrop }: {
+export function SectionPage({ eyebrow, title, blurb, stats, children, ask, ctx, headerAside, hero, tabs, tabsPlacement = 'before-header', backdrop }: {
   eyebrow: string; title: string; blurb: string; stats?: ReactNode; children: ReactNode; ask: string; ctx: SectionContext; headerAside?: ReactNode;
   /** A banner the head dissolves out of (PageHeader's backdrop) — Property's house. */
   backdrop?: string;
   /** The tab strip of the section this page belongs to (System's), above everything else on it. */
   tabs?: ReactNode;
+  /** Property keeps its navigation below the header and above the metrics. */
+  tabsPlacement?: 'before-header' | 'after-header';
   /** A page that draws its own head (Health) passes it here — built on PageHeader too — and it replaces the title, blurb and stat row. */
   hero?: ReactNode;
 }) {
   return <main className="dashboard-content dashboard-section">
     <div id={headerAside ? 'property-overview' : undefined}>
     <div className="dashboard-toolbar"><time dateTime={new Date().toISOString()}>{new Date().toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}</time><button onClick={() => ctx.onAsk('')} className="ask-athena">ϟ <span>Ask Athena…</span> ↗</button></div>
-    {tabs && <div className="section-page-tabs">{tabs}</div>}
+    {tabs && tabsPlacement === 'before-header' && <div className="section-page-tabs">{tabs}</div>}
     {hero ?? <PageHeader eyebrow={eyebrow} title={title} blurb={blurb} aside={headerAside} backdrop={backdrop} />}
+    {tabs && tabsPlacement === 'after-header' && <div className="section-page-tabs">{tabs}</div>}
     {ctx.error && <p className="dashboard-notice" role="status">Connected data is unavailable. {ctx.error}</p>}
     {!hero && stats && <div className="stat-row">{stats}</div>}
     </div>
@@ -763,6 +771,7 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
     onOpen={uuid => { navigate(propertyTabPath(property.property?.uuid, 'property-vehicles')); setVehicleDrawer({ kind: 'view', uuid }); }} />;
   // A project's own page: /properties/<id>/projects/<project> or /system/projects/<project>.
   const projectPageUuid = projectUuidFromPath(location.pathname);
+  const workspacePageUuid = workspaceUuidFromPath(location.pathname);
   useEffect(() => {
     if (compact || section !== 'Property' || !property.property?.uuid || projectPageUuid) return;
     const canonical = propertyTabPath(property.property.uuid, propertyTab);
@@ -1417,6 +1426,17 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
     </SectionPage>;
   }
 
+  // Guardians (2026-10-29): Athena's capabilities and the missions that test them. Parent view.
+  function GuardiansSectionPage() {
+    return <SectionPage ctx={ctx}
+      eyebrow="" title="Guardians" blurb=""
+      ask="What Guardians missions are running, and who are you waiting on?"
+      hero={<GuardiansPage onAsk={onAsk} />}
+    >
+      {drawers}
+    </SectionPage>;
+  }
+
   function ResearchSectionPage() {
     return <SectionPage ctx={ctx}
       eyebrow="" title="Research" blurb=""
@@ -1534,7 +1554,7 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
         projects={proj.loading && !proj.snap.projects.length ? null : proj.snap.projects.filter(p => p.areas.some(a => a.area === 'work'))}
         events={events} timeZone={timeZone} now={now} workplaces={workOverview} onWorkplaces={setWorkOverview}
         onAsk={onAsk} onOpenProject={openProject} onNewProject={() => newProject('work')} onConnect={() => onPanel('integrations')}
-        onMemory={() => onPanel('memory')} onSection={toSection} onOpenIssue={setWorkIssueUrl} />}
+        onMemory={() => onPanel('memory')} onSection={toSection} onOpenIssue={setWorkIssueUrl} onOpenWorkspace={uuid => navigate(`${dashboardPath('Work')}/${encodeURIComponent(uuid)}`)} />}
     >
       <WorkItems issueUrl={workIssueUrl} onCloseIssue={() => setWorkIssueUrl(null)} />
       <h2 className="fp-details-head section-panel-wide">THE DETAIL</h2>
@@ -1567,51 +1587,34 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
     </SectionPage>;
   }
 
+  function WorkspaceDashboardPage(uuid: string) {
+    return <SectionPage ctx={ctx} eyebrow="" title="Workspace" blurb="" ask="Help me see what needs my attention in this workspace."
+      hero={<WorkspacePage workspaceUuid={uuid} issues={issues} jiraNote={ready(summary?.jira) ? null : unavailable('jira', 'Jira')}
+        slack={ready(summary?.slack) ? summary?.slack.data ?? null : null} slackNote={ready(summary?.slack) ? null : unavailable('slack', 'Slack')}
+        events={events} timeZone={timeZone} now={now} workplaces={workOverview} onWorkplaces={setWorkOverview}
+        onAsk={onAsk} onConnect={() => onPanel('integrations')} onOpenIssue={url => window.open(url, '_blank', 'noopener,noreferrer')} onBack={go('Work')} />}
+    >{null}</SectionPage>;
+  }
+
   function MailPage() {
-    const grouped = new Map<string, TriageEmail[]>();
-    const ungrouped: TriageEmail[] = [];
-    for (const email of mailItems) {
-      if (email.category === 'receipt' && email.group_key) {
-        const list = grouped.get(email.group_key) || [];
-        list.push(email);
-        grouped.set(email.group_key, list);
-      } else {
-        ungrouped.push(email);
-      }
-    }
-    const groupEntries = [...grouped.entries()];
     const bundles = summary?.emailTriage.data?.bundles;
+    const mailReady = ready(summary?.emailTriage);
+    const suggestions = bundles
+      ? bundles.archive.count + bundles.receipts.count + bundles.events.items.filter(i => i.start && !i.on_calendar && !i.past).length + (bundles.unsubscribe?.count ?? 0)
+      : 0;
     return <>
     <SectionPage ctx={ctx} tabs={systemTabs('Mail')}
       eyebrow="SORTING YOUR INBOX" title="Mail"
-      blurb="What Athena proposes for your inbox, and everything she has sorted. Nothing in Gmail changes until you approve it."
+      blurb="What Athena proposes for your inbox. Nothing in Gmail changes until you approve it."
       ask="Help me get through my mail triage list."
-      stats={<>
-        <Stat label="Open" value={summary?.emailTriage.data?.newCount ?? '—'} note={summary?.emailTriage.data?.pendingCount ? `${summary.emailTriage.data.pendingCount} still sorting` : 'sorted and waiting'} />
-        <Stat label="To archive" value={bundles?.archive.count ?? '—'} note="promos and updates" />
-        <Stat label="Receipts" value={bundles?.receipts.count ?? '—'} note="ready to file and log" />
-        <Stat label="Needs you" value={bundles?.replies.count ?? '—'} note="someone is asking" tone={bundles?.replies.count ? 'ok' : undefined} />
-      </>}
+      hero={<MailHero suggestions={suggestions} pending={summary?.emailTriage.data?.pendingCount ?? 0} syncedAt={summary?.emailTriage.checkedAt}
+        onScan={mailReady ? () => void scanMoreMail() : undefined} scanning={mailScanning} note={mailScanNote} error={mailError} />}
     >
-      {bundles && ready(summary?.emailTriage) && <Panel title="Athena proposes" note="one approval per bundle" wide>
+      {!mailReady && <Panel title="Mail" wide>{unavailable('emailTriage', 'Gmail')}</Panel>}
+      {bundles && mailReady && <div className="section-panel-wide mail-stage">
         <MailBundles bundles={bundles} onOpenEmail={setSelectedEmail} onChanged={mailChanged} />
-      </Panel>}
-      <Panel title="Your inbox" note={mailLoading ? 'Loading…' : `${mailItems.length} to review`} wide>
-        {!ready(summary?.emailTriage) ? unavailable('emailTriage', 'Gmail') : <>
-          <button className="dashboard-chat-cta" onClick={() => void scanMoreMail()} disabled={mailScanning}>{mailScanning ? 'Scanning…' : 'Scan more'} <span>↗</span></button>
-          {mailScanNote && <p className="source-note">{mailScanNote}</p>}
-          {mailError && <p className="dashboard-notice" role="status">{mailError}</p>}
-          {!mailLoading && !mailItems.length && <p className="dashboard-empty">Nothing new to sort. Scan more pulls the next batch from your inbox.</p>}
-          {groupEntries.map(([key, group]) => <div className="day-group" key={key}>
-            <h3>{group[0].from_name || group[0].from_address || 'Similar emails'} <span className="card-count">{group.length}</span></h3>
-            <ul className="dashboard-data-list">{group.map(emailPreviewLine)}</ul>
-          </div>)}
-          {ungrouped.length > 0 && <div className="day-group">
-            {groupEntries.length > 0 && <h3>Other emails <span className="card-count">{ungrouped.length}</span></h3>}
-            <ul className="dashboard-data-list">{ungrouped.map(emailPreviewLine)}</ul>
-          </div>}
-        </>}
-      </Panel>
+      </div>}
+      {bundles && mailReady && <MailActivity refreshKey={summary?.emailTriage.data?.newCount} onChanged={mailChanged} />}
     </SectionPage>
     {selectedEmail && <EmailPanel uuid={selectedEmail} onClose={() => setSelectedEmail(null)} onChanged={mailChanged} />}
     </>;
@@ -1705,9 +1708,10 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
     return <SectionPage ctx={ctx}
       eyebrow="HOUSE & LAND" title={property.property?.name || 'Our Property'} backdrop="/assets/e9e9086f-a18a-43d4-8b99-789f10dcc7cf.png"
       headerAside={<PropertyWeather address={property.property?.address || ''} />}
+      tabs={<PropertyNavigation active={propertyTab} onChange={setPropertyTab} />} tabsPlacement="after-header"
       blurb={property.property?.description || 'The house and the land around it: what needs doing, what’s worrying you, and the rules you decide by.'}
       ask="Look at my home projects, concerns and open property issues. What should I do next, and how can you help?"
-      stats={<>
+      stats={propertyTab === 'property-projects' ? undefined : <>
         <Stat label="Property health" icon="Home" value={propertyIssues.loading ? '—' : propertyIssues.error ? 'Unavailable' : health.label} note={propertyIssues.loading || propertyIssues.error ? 'from active issues' : health.note} tone={propertyIssues.loading || propertyIssues.error ? undefined : health.tone} />
         <Stat label="Active issues" icon="Issues" value={propertyIssues.loading ? '—' : propertyIssues.error ? 'Unavailable' : openIssues.length} note={seriousIssues ? `${seriousIssues} high or emergency` : openIssues.length ? 'none serious' : 'nothing reported'} tone={seriousIssues ? 'alert' : openIssues.length ? 'ok' : 'good'} />
         <Stat label="Open projects" icon="ProjectList" value={proj.loading && !home.length ? '—' : open.filter(p => p.kind !== 'program').length} note={`${open.filter(p => p.effectiveStatus === 'active').length} active`} />
@@ -1715,7 +1719,6 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
         <Stat label="Done this month" icon="Completed" value={doneRecently} note="last 30 days" tone={doneRecently ? 'good' : 'idle'} />
       </>}
     >
-      <PropertyNavigation active={propertyTab} onChange={setPropertyTab} />
       <div className="property-tab-content" role="tabpanel" id="property-tab-panel" aria-labelledby={`tab-${propertyTab}`} tabIndex={0}>
       {(propertyTab === 'property-overview' || propertyTab === 'property-issues') && <ActiveIssueBanner issues={issueList} onOpen={uuid => setIssueDrawer({ kind: 'view', uuid })} onTroubleshoot={troubleshoot} onFindPro={findPro} onShowAll={() => setPropertyTab('property-issues')} />}
       {(propertyTab === 'property-overview' || propertyTab === 'property-map') && <PropertyOverview state={property} snap={proj.snap} issues={issueList} projectsLoading={proj.loading || !!proj.error} mapOnly={propertyTab === 'property-map'}
@@ -1748,7 +1751,7 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
           <DrawerButton primary onClick={() => newProject('home')}><span aria-hidden="true">＋</span>New project</DrawerButton>
         </div>
       </Panel>}
-      {propertyTab === 'property-projects' && <Panel title="Projects" note="all property projects" wide><ProjectBoard state={proj} onOpen={openProject} onNew={newProject} area="home" /></Panel>}
+      {propertyTab === 'property-projects' && <PropertyProjects state={proj} onOpen={openProject} onNew={() => newProject('home')} onMap={() => setPropertyTab('property-map')} onSeason={() => setPropertyTab('property-season')} />}
       {propertyTab === 'property-overview' && <Panel title="Recent activity" note="project updates and issues" id="property-activity" scroll>
         <div className="property-activity">{activity.map(a => <button key={a.key} onClick={a.open}><span>{a.label}</span><time>{new Date(a.at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</time></button>)}{!activity.length && <p>No property activity yet.</p>}</div>
       </Panel>}
@@ -2081,8 +2084,9 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
     if (section === 'Community') return CommunityPage();
     if (section === 'CommunityPlaces') return CommunityPlacesPage();
     if (section === 'Mail') return MailPage();
-    if (section === 'Work') return WorkPage();
+    if (section === 'Work') return workspacePageUuid ? WorkspaceDashboardPage(workspacePageUuid) : WorkPage();
     if (section === 'Research') return ResearchSectionPage();
+    if (section === 'Guardians') return GuardiansSectionPage();
     if (section === 'Projects') return ProjectsPage();
     if (section === 'Property') return HomePage();
     if (section === 'News') return NewsPage();

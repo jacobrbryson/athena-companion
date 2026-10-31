@@ -18,6 +18,7 @@ import {
   type WorkSetup,
 } from "../api/workItems";
 import "./workItems.css";
+import { CompanyCredentials } from "./CompanyCredentials";
 
 /** ADF is provider data, never HTML. Only safe structural nodes are rendered. */
 export function JiraDocument({ node }: { node?: Adf | null }): ReactNode {
@@ -654,10 +655,6 @@ function EnvironmentSetup({
   const [workplace, setWorkplace] = useState(setup?.workplaces[0]?.uuid || "");
   const [name, setName] = useState("Dream local");
   const [config, setConfig] = useState(JSON.stringify(preset(), null, 2));
-  const [provider, setProvider] = useState("github");
-  const [key, setKey] = useState("");
-  const [username, setUsername] = useState("");
-  const isLogin = provider === "work_login";
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [code, setCode] = useState("");
@@ -716,76 +713,7 @@ function EnvironmentSetup({
             ))}
           </select>
         </label>
-        <h3>Company credentials</h3>
-        <p>
-          Keys are encrypted on the server. Ticket work uses the selected
-          company key; orchestration and Athena’s voice use core funding.
-        </p>
-        <select
-          aria-label="Credential provider"
-          value={provider}
-          onChange={(e) => setProvider(e.target.value)}
-        >
-          <option value="github">GitHub read token</option>
-          <option value="openai">OpenAI API key</option>
-          <option value="anthropic">Anthropic API key</option>
-          <option value="work_login">Demo test login (minimal role)</option>
-        </select>
-        {isLogin && (
-          <label>
-            Test login username
-            <input
-              autoComplete="off"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-            />
-          </label>
-        )}
-        <label>
-          {isLogin ? "Test login password" : "API key"}
-          <input
-            type="password"
-            autoComplete="new-password"
-            value={key}
-            onChange={(e) => setKey(e.target.value)}
-          />
-        </label>
-        <DrawerButton
-          disabled={busy || !key || !workplace || (isLogin && !username)}
-          onClick={() => {
-            const value = key;
-            setKey("");
-            void act(async () => {
-              await workApi.saveKey(
-                workplace,
-                provider,
-                value,
-                isLogin ? username : undefined,
-              );
-              await refresh();
-            });
-          }}
-        >
-          Save encrypted key
-        </DrawerButton>
-        {setup?.credentials
-          .filter((k) => k.external_account_id === `workplace:${workplace}`)
-          .map((k) => (
-            <p key={k.uuid}>
-              {k.display_name} · {k.status}{" "}
-              <button
-                disabled={busy}
-                onClick={() =>
-                  void act(async () => {
-                    await workApi.revokeKey(workplace, k.provider, k.uuid);
-                    await refresh();
-                  })
-                }
-              >
-                Revoke
-              </button>
-            </p>
-          ))}
+        <CompanyCredentials key={workplace} workplaceUuid={workplace} credentials={setup?.credentials || []} onChanged={refresh} />
         <h3>Pair this computer</h3>
         <p>
           Run the local work-runner package with the core API URL and this

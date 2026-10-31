@@ -1,0 +1,194 @@
+.ws-review-drawer {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  color: #d8e9f2;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.ws-review-drawer section,
+.ws-review-drawer .company-credentials {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.ws-review-drawer section + section {
+  padding-top: 16px;
+  border-top: 1px solid #234453;
+}
+.ws-review-drawer h3 {
+  font-size: 15px;
+  font-weight: 600;
+  color: #eaf5ff;
+}
+.ws-review-drawer p,
+.ws-review-drawer small {
+  color: #9fb9ca;
+}
+.ws-review-drawer label {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  color: #d8e9f2;
+}
+.ws-review-drawer textarea,
+.ws-review-drawer input,
+.ws-review-drawer select {
+  width: 100%;
+  min-width: 0;
+  padding: 11px 12px;
+  border: 1px solid #2b5a70;
+  border-radius: 7px;
+  color: #eaf5ff;
+  background: #071b28;
+  font: inherit;
+}
+.ws-review-drawer textarea {
+  resize: vertical;
+  min-height: 180px;
+  line-height: 1.6;
+}
+.ws-review-drawer :is(textarea, input, select):focus-visible {
+  outline: 2px solid #67ddff;
+  outline-offset: 2px;
+}
+.ws-review-drawer :is(textarea, input, select, button):disabled {
+  opacity: 0.55;
+}
+.ws-review-drawer a {
+  color: #67ddff;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.ws-review-drawer [role="alert"] {
+  color: #f5c78d;
+}
+.ws-review-drawer [role="status"] {
+  color: #79dec1;
+}
+.ws-review-actions {
+  display: flex;
+  gap: 9px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.ws-review-alert {
+  padding: 12px;
+  border: 1px solid #7e6537;
+  border-radius: 8px;
+  background: #35260e44;
+}
+.ws-review-comment {
+  padding: 12px 0;
+  border-bottom: 1px solid #234453;
+  overflow-wrap: anywhere;
+}
+.ws-review-comment summary {
+  cursor: pointer;
+}
+.ws-review-comment summary > * {
+  margin-right: 10px;
+}
+.ws-review-comment summary :is(span, time) {
+  color: #9fb9ca;
+  font-size: 12px;
+}
+.ws-review-comment summary:focus-visible {
+  outline: 2px solid #67ddff;
+  outline-offset: 4px;
+  border-radius: 3px;
+}
+.ws-review-comment-body {
+  margin-top: 12px;
+}
+.ws-review-drawer pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 360px;
+  overflow: auto;
+  padding: 12px;
+  border: 1px solid #234453;
+  border-radius: 7px;
+  font-size: 12px;
+}
+.ws-review-drawer code {
+  color: #8ed7ee;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.wsd-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.wsd .wsd-repo h3 button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+.wsd .ph h1 {
+  flex-wrap: wrap;
+}
+.wsd-edit {
+  flex-shrink: 0;
+  align-self: center;
+  letter-spacing: normal;
+  text-shadow: none;
+}
+.wsd-edit .hp-icon {
+  width: 16px;
+  height: 16px;
+}
+.ws-workspace-settings .community-check,
+.ws-workspace-settings .wp-manage label {
+  flex-direction: row;
+  align-items: center;
+}
+.ws-workspace-settings input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  flex-shrink: 0;
+}
+.ws-workspace-settings .community-actions {
+  display: flex;
+  align-items: end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.ws-workspace-settings .community-actions > label {
+  flex: 1;
+  min-width: 180px;
+}
+.ws-workspace-settings .community-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.ws-workspace-settings .dashboard-form { max-width: none; width: 100%; }
+.ws-workspace-settings textarea {
+  min-height: 90px;
+}
+.ws-workspace-links li {
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid #234453;
+  overflow-wrap: anywhere;
+}
+.wsd .wsd-repo h3 button:hover {
+  color: #67ddff;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.wsd .wsd-repo h3 button:focus-visible {
+  outline: 2px solid #67ddff;
+  outline-offset: 4px;
+}

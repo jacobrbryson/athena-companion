@@ -2,6 +2,7 @@ import { type ReactNode } from 'react';
 import { formatBrokerageMoney, type BrokerageAccount, type BrokerageOrder } from '../api/finance';
 import { Icon } from './HealthPage';
 import { PageHeader } from './PageHeader';
+import { FamilyReceipts } from './FamilyReceipts';
 import { useBrokerage } from './useBrokerage';
 import './familyFinance.css';
 
@@ -103,6 +104,7 @@ export function FamilyFinance({ onAsk, tabs }: { onAsk: (text: string) => void; 
         </li>)}</ul>}
         <p className="ff-note">Read-only. Athena can't buy, sell or cancel anything here.</p>
       </section>
+      <FamilyReceipts />
       {ready?.accounts.map(a => <AccountPanels key={a.id} account={a} />)}
     </div>
   </div>;

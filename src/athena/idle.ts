@@ -71,6 +71,8 @@ function start() {
   );
   document.addEventListener('visibilitychange', onVisibility);
   window.addEventListener('pageshow', markActive);
+  // The Android app's resume: its WebView never fires visibilitychange.
+  window.addEventListener('athena-native-resume', markActive);
   arm();
 }
 

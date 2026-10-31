@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { ActionProposal } from './ActionProposal';
 import { dashboardApi, type MailBundles as Bundles } from '../api/dashboard';
 import { actionsApi, type AthenaAction } from '../api/companion';
@@ -24,6 +24,48 @@ function when(start: string, allDay: boolean) {
   return allDay ? `all day ${date}` : `${date}, ${d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}`;
 }
 
+const icon = (d: string) => <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d={d} /></svg>;
+const EMPTY: Record<Kind, string> = {
+  archive: 'No promos or updates to archive right now.',
+  receipts: 'No receipts waiting to be filed.',
+  events: 'No emails with a date to add.',
+  unsubscribe: 'No senders are piling up.',
+};
+
+/** A sender's initial on a tile whose color comes from the name, so the same sender always looks the same. */
+function Avatar({ name }: { name: string }) {
+  let h = 0;
+  for (const c of name) h = (h * 31 + c.charCodeAt(0)) % 360;
+  return <span className="mail-avatar" aria-hidden="true" style={{ background: `hsl(${h} 45% 22%)`, color: `hsl(${h} 90% 80%)`, borderColor: `hsl(${h} 50% 40%)` }}>
+    {(name.trim()[0] || '?').toUpperCase()}
+  </span>;
+}
+
+/** "8:14 AM" today, "Yesterday", else "Oct 24" — what fits beside a sender's name. */
+export function shortDate(iso: string | null | undefined) {
+  if (!iso) return '';
+  const d = new Date(/^\d{4}-\d{2}-\d{2}$/.test(iso) ? `${iso}T12:00:00` : iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const day = new Date(); day.setHours(0, 0, 0, 0);
+  const diff = Math.round((day.getTime() - new Date(d).setHours(0, 0, 0, 0)) / 86400000);
+  if (diff === 0 && /T/.test(iso)) return d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  if (diff === 0) return 'Today';
+  if (diff === 1) return 'Yesterday';
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+const moneyOf = (value: number, currency?: string | null) => {
+  try { return new Intl.NumberFormat(undefined, { style: 'currency', currency: currency || 'USD' }).format(value); }
+  catch { return `${value.toFixed(2)}`; }
+};
+
+export const ICONS: Record<Kind, JSX.Element> = {
+  archive: icon('M3 7h18v4H3zM5 11v8h14v-8M10 15h4'),
+  receipts: icon('M6 3h12v18l-3-2-3 2-3-2-3 2zM9 8h6M9 12h6'),
+  events: icon('M5 5h14v15H5zM5 10h14M9 3v4M15 3v4'),
+  unsubscribe: icon('M12 3a9 9 0 100 18 9 9 0 000-18zM6 6l12 12'),
+};
+
 export function MailBundles({ bundles, compact, onOpenEmail, onChanged, onReviewEvents }: {
   bundles: Bundles; compact?: boolean;
   onOpenEmail: (uuid: string) => void; onChanged: () => void; onReviewEvents?: () => void;
@@ -36,7 +78,7 @@ export function MailBundles({ bundles, compact, onOpenEmail, onChanged, onReview
 
   // Undated events can't go in a bundle — there is nothing to put on the calendar.
   const senderList = bundles.unsubscribe?.senders ?? [];
-  const usable = (kind: Kind): { uuid: string }[] => kind === 'events' ? bundles.events.items.filter(i => i.start)
+  const usable = (kind: Kind): { uuid: string }[] => kind === 'events' ? bundles.events.items.filter(i => i.start && !i.on_calendar && !i.past)
     : kind === 'unsubscribe' ? senderList.map(s => ({ uuid: s.email_triage_uuid }))
       : bundles[kind].items;
   const chosen = (kind: Kind) => usable(kind).filter(i => !excluded.has(i.uuid)).map(i => i.uuid);
@@ -77,8 +119,9 @@ export function MailBundles({ bundles, compact, onOpenEmail, onChanged, onReview
   const senders = archive.senders.map(s => `${s.name}${s.count > 1 ? ` ×${s.count}` : ''}`).join(' · ');
   const merchants = [...new Set(receipts.items.map(r => r.merchant || r.from))].slice(0, 3).join(', ');
   const more = (count: number, shown: number) => count > shown ? ` · first ${shown} of ${count}` : '';
-  const dated = events.items.filter(i => i.start);
-  const undated = events.count - dated.length;
+  // Dated events worth adding; ones already over or already on a calendar are left out.
+  const dated = events.items.filter(i => i.start && !i.on_calendar && !i.past);
+  const undated = events.count - events.items.filter(i => i.start).length;
   const eventNote = [dated.slice(0, 2).map(i => `${i.title} · ${when(i.start!, i.all_day)}`).join('; '),
     undated > 0 ? `${undated} need${undated === 1 ? 's' : ''} a date — open ${undated === 1 ? 'it' : 'each'}` : ''].filter(Boolean).join(' · ');
 
@@ -112,6 +155,60 @@ export function MailBundles({ bundles, compact, onOpenEmail, onChanged, onReview
     </li>)}</ul>;
   };
 
+  const setAll = (kind: Kind, on: boolean) => setExcluded(prev => {
+    const next = new Set(prev);
+    for (const i of usable(kind)) { if (on) next.delete(i.uuid); else next.add(i.uuid); }
+    return next;
+  });
+
+  // The full Mail page shows each bundle as its own card with its list open,
+  // the risk badge up top and the exact button label at the bottom.
+  const card = (kind: Kind, title: string, blurb: string, button: (n: number) => string) => {
+    const all = usable(kind);
+    const n = chosen(kind).length;
+    const reversible = kind !== 'unsubscribe';
+    return <section className={`mail-card mail-card-${kind}`} key={kind}>
+      <header>
+        <span className="mail-card-icon" aria-hidden="true">{ICONS[kind]}</span>
+        <h3>{title}</h3>
+        <span className={reversible ? 'mail-badge' : 'mail-badge mail-badge-danger'}>{reversible ? 'Reversible' : 'Not reversible'}</span>
+      </header>
+      <p className="mail-card-blurb">{blurb}</p>
+      <div className="mail-card-select">
+        <span>{n} selected of {all.length}</span>
+        <label><input type="checkbox" checked={n === all.length && n > 0} onChange={e => setAll(kind, e.target.checked)} /> Select all</label>
+      </div>
+      {all.length ? cardRows(kind) : <p className="mail-card-empty">{EMPTY[kind]}</p>}
+      {!reversible && <p className="mail-card-warn"><strong>This can't be undone</strong>You'd have to re-subscribe on each sender's site.</p>}
+      <button className="mail-card-go" disabled={busy || !n} onClick={() => void propose(kind)}>{busy ? '…' : button(n)}</button>
+    </section>;
+  };
+  const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
+  // One row of a card: tick, sender avatar, name with a date on the right, then detail lines.
+  const mailRow = (uuid: string, name: string, aside: ReactNode, lines: ReactNode) => <li key={uuid}>
+    <label className="mail-row">
+      <input type="checkbox" checked={!excluded.has(uuid)} onChange={() => toggle(uuid)} />
+      <Avatar name={name} />
+      <span className="mail-row-body">
+        <span className="mail-row-top"><strong>{name}</strong><small>{aside}</small></span>
+        {lines}
+      </span>
+    </label>
+  </li>;
+  const cardRows = (kind: Kind) => <ul className="mail-rows">{
+    kind === 'archive' ? archive.items.map(i => mailRow(i.uuid, i.from, shortDate(i.received_at), <small>{i.subject || '(no subject)'}</small>))
+      : kind === 'receipts' ? receipts.items.map(i => mailRow(i.uuid, i.merchant || i.from, shortDate(i.received_at), <>
+        {i.amount != null && <b className="mail-row-amount">{moneyOf(i.amount, i.currency)}</b>}
+        <small>{i.purchased_at ? `Purchased ${shortDate(i.purchased_at)}` : i.subject || '(no subject)'}</small>
+      </>))
+        : kind === 'events' ? dated.map(i => mailRow(i.uuid, i.title || i.subject || 'Event', '', <>
+          <small>{when(i.start!, i.all_day)}</small>
+          <small>From: {i.from}</small>
+        </>))
+          : senderList.map(s => mailRow(s.email_triage_uuid, s.name, '', <small>{s.count} {s.count === 1 ? 'email' : 'emails'} waiting</small>))
+  }</ul>;
+
   const bundle = (kind: Kind, verb: string, title: string, note: string) => {
     const n = chosen(kind).length;
     return <div className="mail-bundle" key={kind}>
@@ -125,6 +222,22 @@ export function MailBundles({ bundles, compact, onOpenEmail, onChanged, onReview
       {expanded === kind && checklist(kind)}
     </div>;
   };
+
+  // The Mail page always shows all four bundles, so the layout never jumps
+  // around: one with nothing in it says so and its button stays off.
+  if (!compact) return <div className="mail-bundles flex flex-col gap-3">
+    {error && <p className="dashboard-notice" role="status">{error}</p>}
+    <div className="mail-card-grid">
+      {card('archive', 'Archive promos and updates',
+        'Move these emails out of your inbox to keep it focused. Nothing is deleted.', n => `Archive ${plural(n, 'email', 'emails')}`)}
+      {card('receipts', 'File receipts',
+        'Save these receipts to Athena for easy reference and expense tracking.', n => `File ${plural(n, 'receipt', 'receipts')}`)}
+      {card('events', 'Add events to your calendar',
+        "Turn these emails into calendar events so you don't miss anything.", n => `Add ${plural(n, 'event', 'events')}`)}
+      {card('unsubscribe', 'Unsubscribe from senders',
+        'Stop future emails from these senders. Existing emails will be archived (not deleted).', n => `Unsubscribe from ${plural(n, 'sender', 'senders')}`)}
+    </div>
+  </div>;
 
   return <div className="mail-bundles flex flex-col gap-3">
     {error && <p className="dashboard-notice" role="status">{error}</p>}

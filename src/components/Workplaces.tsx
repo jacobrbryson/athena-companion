@@ -51,7 +51,7 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   return <label className="community-field"><span>{label}</span>{children}</label>;
 }
 
-function WorkplaceForm({ initial, busy, onSave, onCancel }: {
+export function WorkplaceForm({ initial, busy, onSave, onCancel }: {
   initial: WorkplaceInput; busy: boolean; onSave: (input: WorkplaceInput) => void; onCancel: () => void;
 }) {
   const [form, setForm] = useState<WorkplaceInput>(initial);
@@ -71,7 +71,7 @@ function WorkplaceForm({ initial, busy, onSave, onCancel }: {
 }
 
 /** Add an email address, or link one of the connections no workplace owns yet. */
-function LinkForm({ place, available, busy, onLink, onCancel }: {
+export function LinkForm({ place, available, busy, onLink, onCancel }: {
   place: Workplace; available: WorkplacesOverview['available']; busy: boolean;
   onLink: (link: { credential: string } | { email: string }) => void; onCancel: () => void;
 }) {

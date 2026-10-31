@@ -28,9 +28,17 @@ export function useInbox(enabled: boolean) {
     refresh();
     window.addEventListener(DASHBOARD_REFRESH_EVENT, refresh);
     // The push just tapped is the one to show: refetch when the tab returns.
+    // The Android WebView never fires visibilitychange on resume, so it also
+    // listens for the app's own resume event — otherwise a push acknowledged
+    // from the notification button stays listed here as still waiting.
     const onVisible = () => { if (document.visibilityState === 'visible') refresh(); };
     document.addEventListener('visibilitychange', onVisible);
-    return () => { window.removeEventListener(DASHBOARD_REFRESH_EVENT, refresh); document.removeEventListener('visibilitychange', onVisible); };
+    window.addEventListener('athena-native-resume', refresh);
+    return () => {
+      window.removeEventListener(DASHBOARD_REFRESH_EVENT, refresh);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('athena-native-resume', refresh);
+    };
   }, [enabled, refresh]);
   usePresentPoll(refresh, POLL_MS, enabled);
   const ack = useCallback((uuid: string) => {
