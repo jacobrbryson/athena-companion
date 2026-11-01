@@ -1,4 +1,8 @@
 /** Tab-local server state. Private data never enters localStorage/IndexedDB. */
+export class ReadInvalidatedError extends Error {
+  constructor() { super('Data changed while loading. Please retry.'); }
+}
+
 export class ReadCache {
   private generation = 0;
   private values = new Map<string, { value: unknown; expires: number }>();
@@ -20,7 +24,7 @@ export class ReadCache {
     const work = load().then(value => {
       // A logout, mutation or push occurred while this request was running.
       // Reject its result as well as refusing to repopulate the cache.
-      if (generation !== this.generation) throw new Error('Data changed while loading. Please retry.');
+      if (generation !== this.generation) throw new ReadInvalidatedError();
       for (const [id, item] of this.values) if (item.expires <= Date.now()) this.values.delete(id);
       while (this.values.size >= 64) this.values.delete(this.values.keys().next().value!);
       this.values.set(key, { value: structuredClone(value), expires: Date.now() + ttlMs });

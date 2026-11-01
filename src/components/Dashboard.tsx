@@ -728,7 +728,13 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
   const location = useLocation();
   const navigate = useNavigate();
   const data = useDashboardData();
-  const summary = data.summary.data;
+  const failedSource = { status: 'error' as const, data: null, detail: data.summary.error, checkedAt: '' };
+  // A failed summary is unavailable, not an endlessly pending source.
+  const summary: DashboardSummary | null = data.summary.data || (data.summary.error ? {
+    calendar: failedSource, recovery: failedSource, sleep: failedSource, strain: failedSource,
+    familyChores: failedSource, jira: failedSource, slack: failedSource, emailTriage: failedSource,
+    familyHealth: failedSource, body: failedSource, groceries: failedSource,
+  } : null);
   const [sourcesOpen, setSourcesOpen] = useState(false);
   const [addingWorkplace, setAddingWorkplace] = useState(false);
   // What the Workplaces panel last loaded, so the Work overview above it stays in step.
@@ -2021,6 +2027,7 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
       {banner && <div className="dh-property-banner" style={{ backgroundImage: `url("${banner}")` }} role="img" aria-label={property.property?.name || 'The property'} />}
       {propertyIssues.loading ? <p className="dashboard-empty">Loading…</p>
         : propertyIssues.error ? <EmptyCta text="Issues couldn’t load." action="Retry" onClick={propertyIssues.retry} />
+          : proj.error ? <EmptyCta text="Property projects and concerns couldn’t load." action="Retry" onClick={proj.reload} />
           : <ul className="dh-status-list">
             {openIssues.slice(0, 2).map(i => <li key={i.uuid} className={`dh-status-${i.severity === 'high' || i.severity === 'emergency' ? 'alert' : 'warn'}`}>
               <button type="button" onClick={go('Property')}><i>!</i><span><strong>{i.description}</strong><small>{i.location} · reported {reportedWhen(i.createdAt)}</small></span></button>

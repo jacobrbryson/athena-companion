@@ -3,6 +3,7 @@ import { dashboardApi, type DashboardSummary, type NewsResult, type DashboardPri
 import { memoryApi, actionsApi, type Fact, type AthenaAction } from '../api/companion';
 import { DASHBOARD_REFRESH_EVENT } from '../athena/useChat';
 import { invalidateReads } from '../api/readCache';
+import { retryRead } from '../api/retryRead';
 
 interface Result<T> { data: T | null; loading: boolean; error: string | null }
 const initial = { data: null, loading: true, error: null };
@@ -54,8 +55,8 @@ export function useDashboardData() {
         // Keep cards steady during routine polling. Push invalidation clears
         // them immediately below; a failed read also removes the old contents.
         setter(previous => ({ ...previous, loading: previous.data === null, error: null }));
-        try { const data = await fetcher(); if (canPublish()) setter({ data, loading: false, error: null }); }
-        catch (e) { if (canPublish()) setter({ data: null, loading: false, error: (e as Error).message || 'Unavailable' }); }
+        try { const data = await retryRead(fetcher, canPublish); if (canPublish()) setter({ data, loading: false, error: null }); }
+        catch (e) { if (canPublish()) setter({ data: null, loading: false, error: (e as Error).name === 'TimeoutError' ? 'The connection is taking too long. Please retry.' : (e as Error).message || 'Unavailable' }); }
       }
       await Promise.allSettled([load(dashboardApi.summary, setSummary), load(memoryApi.facts, setFacts), load(actionsApi.pending, setActions), load(dashboardApi.news, setNews), load(dashboardApi.alert, setNearby), load(dashboardApi.community, setCommunity), load(dashboardApi.familyPeople, setFamilyPeople), load(dashboardApi.communityCalendar, setCommunityCalendar)]);
       lastRefresh.current = Date.now();

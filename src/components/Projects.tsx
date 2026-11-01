@@ -4,6 +4,7 @@ import { DrawerButton } from './ActionControls';
 import { ProjectJournal } from './ProjectJournal';
 import { ProjectData } from './ProjectData';
 import { ProjectExecution, StepDetails } from './ProjectExecution';
+import { retryRead } from '../api/retryRead';
 import {
   projectsApi, AREAS, AREA_LABEL, STATES, STATE_LABEL, PRIORITY_LABEL, CONDITIONS, ITEM_STATUS_LABEL, COMPLETION_LABEL, criteriaOf,
   type Area, type Concern, type ItemKind, type ItemStatus, type Project, type ProjectInput, type ProjectItem, type ProjectsSnapshot, type ProjectState, type Relation,
@@ -45,7 +46,7 @@ export function useProjects(enabled = true): ProjectsState {
     if (!enabled) return;
     let alive = true;
     setLoading(true);
-    projectsApi.all()
+    retryRead(projectsApi.all, () => alive)
       .then(s => { if (alive) { setSnap(s); setError(''); } })
       .catch(e => { if (alive) setError((e as Error).message); })
       .finally(() => { if (alive) setLoading(false); });

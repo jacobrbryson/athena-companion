@@ -213,6 +213,7 @@ export const guardianMissionsApi = {
   setSkill: (guardianUuid: string, capability: string, level: SkillLevel) => api.put<GuardiansOverview>(`${BASE}/guardians/${guardianUuid}/skills`, { capability, level }),
   approve: (uuid: string) => api.post<GuardiansOverview>(`${BASE}/missions/${uuid}/approve`, {}),
   setCode: (stepUuid: string, code: string) => api.post<GuardiansOverview>(`${BASE}/steps/${stepUuid}/secret`, { code }),
+  look: (stepUuid: string) => api.post<GuardiansOverview>(`${BASE}/steps/${stepUuid}/look`, {}),
   finish: (uuid: string) => api.post<GuardiansOverview>(`${BASE}/missions/${uuid}/finish`, {}),
   planning: () => api.get<GmPlanning>(`${BASE}/planning`),
   startTemplated: (uuid: string) => api.post<GmPlanning>(`${BASE}/planning/${uuid}/start`, {}),

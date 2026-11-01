@@ -424,6 +424,9 @@ function MissionCard({ mission: m, busy, act, adults }: { mission: GmMission; bu
           const code = window.prompt('The secret code for this step. Athena never sees it.');
           if (code) act(`c-${s.uuid}`, () => gm.setCode(s.uuid, code), 'Code saved.');
         }}>Set the secret code</button>}
+        {['waiting_parent', 'waiting_kids'].includes(s.status) && s.proofRequired === 'camera_check' && m.phase === 'live' && <div className="gm-row">
+          <button type="button" className="gm-btn gm-btn-primary" disabled={!!busy} onClick={() => act(`l-${s.uuid}`, () => gm.look(s.uuid), 'Athena looked.')}>They're there</button>
+        </div>}
         {s.status === 'waiting_kids' && s.sentAt && !s.dueAt && <p className="gm-waiting">{s.assignee?.name || 'They'} hasn't opened this yet. It didn't reach a phone, so tell them to open the Guardians app. Their deadline starts when they do.</p>}
         {adultCheck(s) && <div className="gm-row">
           <button type="button" className="gm-btn gm-btn-primary" disabled={!!busy} onClick={() => act(`v-${s.uuid}`, () => gm.verify(s.uuid, true), 'Thanks: recorded.')}>{s.locationCheck ? 'It matches' : 'It\'s done'}</button>

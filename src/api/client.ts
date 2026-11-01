@@ -101,7 +101,7 @@ async function send(path: string, init: RequestInit): Promise<Response> {
 function rawFetch(path: string, init: RequestInit = {}): Promise<Response> {
   return fetch(proxyUrl(path), {
     credentials: 'include',
-    signal: path.startsWith('/auth/') || path === '/api/v1/access' || path === '/api/v1/profile'
+    signal: !init.method || init.method === 'GET' || path.startsWith('/auth/') || path === '/api/v1/integrations/callback'
       ? AbortSignal.timeout(30000) : undefined,
     ...init,
     headers: {
