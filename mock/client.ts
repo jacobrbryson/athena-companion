@@ -1178,12 +1178,14 @@ async function route(method: string, path: string, body?: any): Promise<any> {
         { uuid: 'm-scout', key: 'scout-the-yard', title: 'Scout the yard', goal: 'First test of scouting.', rung: 1, priority: 'normal', status: 'running', approval: 'approved', source: 'seed', adventure: null, notes: null, startedAt: new Date().toISOString(), endedAt: null,
           capabilities: [{ name: 'Scout geography', badge: '🧭' }, { name: 'Push notification', badge: '🔔' }, { name: 'Phone camera', badge: '📷' }],
           steps: [{ uuid: 's-1', seq: 1, instruction: 'Stand at the back porch and take four photos, holding the phone upright: north, east, south, then west. Proof: the four photos.', place: 'the back porch', proofRequired: 'photo_set', status: 'waiting_parent', dueAt: null, sentAt: new Date().toISOString(), nudgeCount: 0, assignee: { uuid: 'a-ross', name: 'Ross', kind: 'parent' }, capability: 'Scout geography', resultNote: null, audience: 'parent_only' },
-            { uuid: 's-2', seq: 2, instruction: 'Walk to the brick back-porch steps and check there is a red planter on the left. Reply Done if it matches, or tell me what\'s different.', place: 'Back porch steps', proofRequired: 'parent_confirm', status: 'waiting_parent', dueAt: null, sentAt: null, nudgeCount: 0, assignee: { uuid: 'a-ross', name: 'Ross', kind: 'parent' }, capability: 'Scout geography', resultNote: null, audience: 'parent_only' }],
+            { uuid: 's-k', seq: 2, instruction: 'Find the card and have an adult check it.', place: null, proofRequired: 'parent_confirm', status: 'waiting_kids', dueAt: null, sentAt: new Date().toISOString(), nudgeCount: 0, assignee: { uuid: 'a-thomas', name: 'Thomas', kind: 'kid' }, capability: 'Clue planning', resultNote: null, audience: 'kids_too' },
+            { uuid: 's-2', seq: 2, instruction: 'Walk to the brick back-porch steps and check there is a red planter on the left. Reply Done if it matches, or tell me what\'s different.', place: 'Back porch steps', proofRequired: 'parent_confirm', locationCheck: true, status: 'waiting_parent', dueAt: null, sentAt: null, nudgeCount: 0, assignee: { uuid: 'a-ross', name: 'Ross', kind: 'parent' }, capability: 'Scout geography', resultNote: null, audience: 'parent_only' }],
           waitingOn: ['you'], audience: 'parent_only' },
       ],
       proposed: [
         { uuid: 'm-gate', key: 'guardian-gate', title: 'Guardian Gate', goal: 'Kids show the doorbell camera something; Athena answers in Morse on the porch light or by voice.', rung: 2, priority: 'normal', status: 'proposed', approval: 'unapproved', source: 'seed', adventure: null, notes: null, startedAt: null, endedAt: null, capabilities: [{ name: 'Doorbell camera (Guardian Gate)', badge: '🚪' }, { name: 'Control porch light', badge: '💡' }, { name: 'Morse out (light)', badge: '📡' }], steps: [], waitingOn: [], audience: 'kids_too' },
         { uuid: 'm-lamp', key: 'guardian-signal-lamp', title: 'Guardian signal lamp', goal: 'A signal lamp in each kid\'s room Athena can light during missions.', rung: 3, priority: 'high', status: 'proposed', approval: 'unapproved', source: 'seed', adventure: null, notes: null, startedAt: null, endedAt: null, capabilities: [], steps: [], waitingOn: [], audience: 'kids_too' },
+        ...[['Test Clue Planning Strategy', 1, 'athena'], ['Test Doorbell Camera Perception', 1, 'athena'], ['Test Web Search Investigation', 1, 'athena'], ['Black light + compass hunt', 1, 'seed'], ['Creature census', 1, 'seed'], ['Hidden card hunt', 1, 'seed'], ['Scout the yard', 1, 'seed'], ['Who is talking?', 1, 'seed'], ['Blackout drill (local only)', 2, 'seed'], ['Lost puppy doll hunt', 2, 'seed'], ['Weather machine build', 2, 'seed'], ['Morse by lamp', 3, 'seed'], ['RC car with camera', 3, 'seed'], ['Vendor calls', 4, 'seed'], ['Puppy hunt: drone rung', 4, 'seed']].map(([title, rung, source], n) => ({ uuid: `m-x${n}`, key: `x-${n}`, title, goal: `${title}: a longer description of what this plan would do, so the row has to clip it to one line.`, rung, priority: 'normal', status: 'proposed', phase: null, approval: 'unapproved', source, adventure: null, notes: null, startedAt: null, endedAt: null, capabilities: [{ name: 'Push notification', badge: '🔔' }], steps: [], waitingOn: [], audience: 'parent_only' })),
       ],
       history: [{ uuid: 'm-fw', key: 'mission-3-first-watch', title: 'The First Watch', goal: 'Index cards from 1963 are scattered across the high ground.', rung: 1, priority: 'normal', status: 'completed', approval: 'approved', source: 'legacy', adventure: 'lake_norman_guardians', notes: null, startedAt: null, endedAt: null, capabilities: [{ name: 'Hide-and-find clue planning', badge: '🗺️' }], steps: [], waitingOn: [], audience: 'kids_too' },],
       capabilities: [
@@ -1229,8 +1231,9 @@ async function route(method: string, path: string, body?: any): Promise<any> {
     const rest = p.slice('/api/v1/guardian-missions'.length);
     if (!rest && method === 'GET') return s;
     if (rest === '/control') { s.control = { ...s.control, ...body, mode: body.mode ?? s.control.mode, quietUntil: body.mode === 'quiet_until' ? body.quietUntil : body.mode ? null : s.control.quietUntil }; return save(); }
-    if (rest === '/planning' && method === 'GET') return {
-      evaluation: { weakest: [{ key: 'perception', name: 'Perception', percent: 1, unproven: ['Scout geography'] }], weaknesses: [] },
+    if (rest === '/planning' || rest.startsWith('/planning/')) {
+      const workspace = {
+      evaluation: { weakest: [{ key: 'perception', name: 'Perception', percent: 1, unproven: ['Receive photo proof', 'Scout geography', 'View cameras', 'Doorbell camera (Guardian Gate)', 'Morse in (camera)'] }, { key: 'investigation', name: 'Investigation', percent: 1, unproven: ['Search the web', 'Recall what she knows', 'Run a small study', 'Scout geography'] }, { key: 'strategy', name: 'Strategy', percent: 1, unproven: ['Hide-and-find clue planning', 'Plan a project', 'Escalating hints'] }], weaknesses: [] },
       drafts: [{
         uuid: 'd-signal', title: 'Test kid scouting in the yard', goal: 'Show whether a kid can capture a usable photo set.', reason: 'Scouting has only been done by adults.', purpose: 'test', version: 1,
         steps: [
@@ -1243,7 +1246,12 @@ async function route(method: string, path: string, body?: any): Promise<any> {
         readiness: { label: 'ready', reasons: [] },
       }],
       wishes: [], maxDrafts: 3, families: [],
-    };
+      };
+      if (method === 'GET') return workspace;
+      // Long enough to see what the page does while she thinks.
+      await wait(4000);
+      return rest === '/planning/draft' ? { saved: [], dropped: [], workspace } : workspace;
+    }
     let m = /^\/capabilities\/([^/]+)$/.exec(rest);
     if (m) { s.capabilities = s.capabilities.map((c: any) => (c.uuid === m![1] ? { ...c, enabled: body.enabled } : c)); return save(); }
     m = /^\/recipients\/(.+)$/.exec(rest);

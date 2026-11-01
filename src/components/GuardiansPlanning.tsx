@@ -9,14 +9,29 @@ const READY_LABEL: Record<GmDraft['readiness']['label'], string> = {
   blocked: 'Blocked',
 };
 
-function DraftCard({ draft, busy, families, onRevise, onStart, onInvite }: { draft: GmDraft; busy: boolean; families: { id: number; name: string }[]; onRevise: (note: string) => void; onStart: () => void; onInvite: (family: number) => void }) {
+/** What's running right now, so the person sees it where they acted and not just greyed-out buttons. */
+type Work = { kind: 'drafting' } | { kind: 'revising' | 'starting' | 'inviting'; uuid: string } | { kind: 'saving' };
+
+const WORK_LABEL: Record<Work['kind'], string> = {
+  drafting: 'Athena is drafting plans. This can take a minute.',
+  revising: 'Athena is revising this plan. This can take a minute.',
+  starting: 'Starting this mission…',
+  inviting: 'Sending the invitation…',
+  saving: 'Saving…',
+};
+
+const Working = ({ label }: { label: string }) => <p className="gm-working" role="status"><i aria-hidden="true" />{label}</p>;
+
+function DraftCard({ draft, busy, work, families, onRevise, onStart, onInvite }: { draft: GmDraft; busy: boolean; work: Work | null; families: { id: number; name: string }[]; onRevise: (note: string) => Promise<boolean>; onStart: () => void; onInvite: (family: number) => void }) {
   const [note, setNote] = useState('');
   const [family, setFamily] = useState('');
-  return <li className="gm-mission gm-proposed">
+  const mine = work && 'uuid' in work && work.uuid === draft.uuid ? work : null;
+  return <li className={`gm-mission gm-proposed${mine ? ' gm-mission-working' : ''}`} aria-busy={!!mine}>
     <div className="gm-mission-head">
       <strong>{draft.title}</strong>
       <span className="gm-chip">{READY_LABEL[draft.readiness.label]}</span>
     </div>
+    {mine && <Working label={WORK_LABEL[mine.kind]} />}
     {draft.goal && <p className="gm-sub">{draft.goal}</p>}
     {draft.reason && <p>{draft.reason}</p>}
     {draft.readiness.reasons.length > 0 && <ul className="gm-go-problems">{draft.readiness.reasons.map(r => <li key={r}>{r}</li>)}</ul>}
@@ -47,18 +62,18 @@ function DraftCard({ draft, busy, families, onRevise, onStart, onInvite }: { dra
         </ul>
       </>}
     </details>
-    {draft.template && <div className="gm-row"><button type="button" className="gm-btn gm-btn-primary" disabled={busy} onClick={onStart}>Start under {draft.template.name}</button></div>}
+    {draft.template && <div className="gm-row"><button type="button" className="gm-btn gm-btn-primary" disabled={busy} onClick={onStart}>{mine?.kind === 'starting' ? 'Starting…' : `Start under ${draft.template.name}`}</button></div>}
     {families.length > 0 && <div className="gm-row">
       <label>Invite a family
         <select value={family} onChange={e => setFamily(e.target.value)}><option value="">Choose</option>{families.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}</select>
       </label>
-      <button type="button" className="gm-btn" disabled={busy || !family} onClick={() => { onInvite(Number(family)); setFamily(''); }}>Invite</button>
+      <button type="button" className="gm-btn" disabled={busy || !family} onClick={() => { onInvite(Number(family)); setFamily(''); }}>{mine?.kind === 'inviting' ? 'Inviting…' : 'Invite'}</button>
     </div>}
-    <form className="gm-scout" onSubmit={e => { e.preventDefault(); if (note.trim()) { onRevise(note); setNote(''); } }}>
+    <form className="gm-scout" onSubmit={e => { e.preventDefault(); if (note.trim()) void onRevise(note).then(ok => { if (ok) setNote(''); }); }}>
       <label>What should change?
-        <input value={note} onChange={e => setNote(e.target.value)} maxLength={1000} placeholder="Tell Athena what to change" />
+        <input value={note} onChange={e => setNote(e.target.value)} maxLength={1000} placeholder="Tell Athena what to change" disabled={busy} />
       </label>
-      <button type="submit" className="gm-btn" disabled={busy || !note.trim()}>Revise</button>
+      <button type="submit" className="gm-btn" disabled={busy || !note.trim()}>{mine?.kind === 'revising' ? 'Revising…' : 'Revise'}</button>
     </form>
   </li>;
 }
@@ -67,45 +82,52 @@ function DraftCard({ draft, busy, families, onRevise, onStart, onInvite }: { dra
 export function PlanMissionDrawer({ onClose, onChanged }: { onClose: () => void; onChanged: () => void }) {
   const [view, setView] = useState<GmPlanning | null>(null);
   const [note, setNote] = useState('');
-  const [busy, setBusy] = useState(false);
+  const [work, setWork] = useState<Work | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const busy = !!work;
 
   useEffect(() => {
-    gm.planning().then(setView).catch(() => setMessage("Planning isn't available right now."));
+    gm.planning().then(setView).catch(() => { setLoadFailed(true); setMessage("Planning isn't available right now."); });
   }, []);
 
-  const run = async (work: () => Promise<GmPlanning>, then?: string) => {
-    setBusy(true);
-    setMessage(then ? 'Athena is thinking. This can take a minute.' : null);
+  const run = async (doing: Work, task: () => Promise<GmPlanning>) => {
+    setWork(doing);
+    setMessage(null);
     try {
-      setView(await work());
-      setMessage(null);
+      setView(await task());
       onChanged();
+      return true;
     } catch (err) {
       setMessage(err instanceof Error ? err.message : 'That did not work.');
+      return false;
     } finally {
-      setBusy(false);
+      setWork(null);
     }
   };
 
-  const draft = () => run(async () => {
+  const draft = () => run({ kind: 'drafting' }, async () => {
     const out = await gm.draft(note.trim() || undefined);
     setNote('');
     const dropped = out.dropped.map(d => `${d.title}: ${d.problems[0]}`).join(' ');
     if (out.skipped || dropped) window.setTimeout(() => setMessage(out.skipped || `Athena's plan didn't pass its checks. ${dropped}`), 0);
     return out.workspace;
-  }, 'drafting');
+  });
 
   const room = view ? view.drafts.length < view.maxDrafts : false;
 
   return <Drawer eyebrow="Guardians" title="Plan a mission" onClose={onClose}>
     <div className="gm-dr">
+      {work && <div className="gm-work-bar"><Working label={WORK_LABEL[work.kind]} /></div>}
+      {!view && !loadFailed && <Working label="Loading her plans…" />}
       {message && <p className="gm-sub" role="status">{message}</p>}
       {view && <>
         <section>
           <h3>Where she's weakest</h3>
-          <ul className="gm-activity">{view.evaluation.weakest.map(a => <li key={a.key}>
-            <span><b>{a.name}: {a.percent}%</b>{a.unproven.length > 0 && <small>Not proven: {a.unproven.join(', ')}</small>}</span>
+          <ul className="gm-weakest">{view.evaluation.weakest.map(a => <li key={a.key}>
+            <div className="gm-weakest-head"><b>{a.name}</b><span>{a.percent}%</span></div>
+            <div className="gm-weakest-bar" aria-hidden="true"><i style={{ width: `${Math.max(a.percent, 1)}%` }} /></div>
+            {a.unproven.length > 0 && <small>Not proven yet: {a.unproven.join(', ')}</small>}
           </li>)}</ul>
         </section>
         <section>
@@ -119,13 +141,16 @@ export function PlanMissionDrawer({ onClose, onChanged }: { onClose: () => void;
           <label className="gm-plan-ask">Anything she should aim for? (optional)
             <textarea value={note} onChange={e => setNote(e.target.value)} maxLength={1000} rows={2} />
           </label>
-          <button type="button" className="gm-btn gm-btn-primary" disabled={busy || !room} onClick={() => void draft()}>Draft plans</button>
+          <button type="button" className="gm-btn gm-btn-primary" disabled={busy || !room} onClick={() => void draft()}>{work?.kind === 'drafting' ? 'Drafting…' : 'Draft plans'}</button>
           {!room && <p className="gm-sub">{view.maxDrafts} plans are waiting. Decide on those first.</p>}
         </section>
         <section>
           <h3>Waiting for your decision</h3>
-          {view.drafts.length
-            ? <ul className="gm-missions">{view.drafts.map(d => <DraftCard key={d.uuid} draft={d} busy={busy} onRevise={text => void run(() => gm.revise(d.uuid, text), 'revising')} families={view.families || []} onInvite={f => void run(() => gm.invite(d.uuid, f))} onStart={() => void run(() => gm.startTemplated(d.uuid))} />)}</ul>
+          {view.drafts.length || work?.kind === 'drafting'
+            ? <ul className="gm-missions">
+              {work?.kind === 'drafting' && <li className="gm-mission gm-mission-working gm-draft-coming" aria-hidden="true"><b /><b /><b /></li>}
+              {view.drafts.map(d => <DraftCard key={d.uuid} draft={d} busy={busy} work={work} onRevise={text => run({ kind: 'revising', uuid: d.uuid }, () => gm.revise(d.uuid, text))} families={view.families || []} onInvite={f => void run({ kind: 'inviting', uuid: d.uuid }, () => gm.invite(d.uuid, f))} onStart={() => void run({ kind: 'starting', uuid: d.uuid }, () => gm.startTemplated(d.uuid))} />)}
+            </ul>
             : <p className="gm-sub">No drafts yet.</p>}
           {view.drafts.length > 0 && <p className="gm-sub">Approve or decline these on the Missions tab.</p>}
         </section>
@@ -135,8 +160,8 @@ export function PlanMissionDrawer({ onClose, onChanged }: { onClose: () => void;
             ? <ul className="gm-plan-list">{view.wishes.map(w => <li key={w.uuid}>
               <b>{w.name}</b>{w.cost ? ` (${w.cost})` : ''}: {w.why}
               <div className="gm-row">
-                <button type="button" className="gm-btn" disabled={busy} onClick={() => void run(() => gm.decideWish(w.uuid, 'built'))}>It's built</button>
-                <button type="button" className="gm-btn" disabled={busy} onClick={() => void run(() => gm.decideWish(w.uuid, 'declined'))}>Not doing this</button>
+                <button type="button" className="gm-btn" disabled={busy} onClick={() => void run({ kind: 'saving' }, () => gm.decideWish(w.uuid, 'built'))}>It's built</button>
+                <button type="button" className="gm-btn" disabled={busy} onClick={() => void run({ kind: 'saving' }, () => gm.decideWish(w.uuid, 'declined'))}>Not doing this</button>
               </div>
             </li>)}</ul>
             : <p className="gm-sub">Nothing on the wishlist.</p>}

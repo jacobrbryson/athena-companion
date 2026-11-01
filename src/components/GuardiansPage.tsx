@@ -299,13 +299,59 @@ function ActiveMissions({ data, busy, act }: SectionProps) {
       </label>
       <button type="submit" className="gm-btn" disabled={!!busy}>Send request</button>
     </form>}
-    {!!data.proposed.length && <>
-      <h3 className="gm-h3">Plans waiting for your approval</h3>
-      <ul className="gm-missions">
-        {data.proposed.map(m => <ProposedCard key={m.uuid} mission={m} busy={busy} act={act} />)}
-      </ul>
-    </>}
+    {!!data.proposed.length && <PlanBrowser plans={data.proposed} busy={busy} act={act} />}
   </section>;
+}
+
+/** The shelves a waiting plan sits on: Athena's own drafts, then the seeded plans by how hard they are. */
+const SHELVES: { key: string; label: string; holds: (m: GmMission) => boolean }[] = [
+  { key: 'drafts', label: "Athena's drafts", holds: m => m.source === 'athena' },
+  ...[1, 2, 3, 4].map(rung => ({ key: `rung-${rung}`, label: RUNG_LABEL[rung], holds: (m: GmMission) => m.source !== 'athena' && m.rung === rung })),
+  { key: 'all', label: 'All', holds: () => true },
+];
+
+/** The waiting plans, one shelf at a time. A row opens to its details and the decision. */
+function PlanBrowser({ plans, busy, act }: { plans: GmMission[]; busy: string; act: Act }) {
+  const [shelf, setShelf] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
+  const shelves = SHELVES.map(s => ({ ...s, plans: plans.filter(s.holds) })).filter(s => s.plans.length);
+  const current = shelves.find(s => s.key === shelf) || shelves[0];
+  const words = search.trim().toLowerCase();
+  const matches = (m: GmMission) => `${m.title} ${m.goal || ''} ${m.capabilities.map(c => c.name).join(' ')}`.toLowerCase().includes(words);
+  const shown = (words ? plans.filter(matches) : current.plans).slice().sort((a, b) => Number(b.priority === 'high') - Number(a.priority === 'high'));
+  return <div className="gm-plans">
+    <div className="gm-plans-head">
+      <h3 className="gm-h3">Plans waiting for your approval <small>{plans.length}</small></h3>
+      <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search plans" aria-label="Search plans" />
+    </div>
+    {!words && <div className="gm-shelves" role="group" aria-label="Show plans">
+      {shelves.map(s => <button key={s.key} type="button" aria-pressed={s.key === current.key} onClick={() => setShelf(s.key)}>{s.label} <small>{s.plans.length}</small></button>)}
+    </div>}
+    {shown.length
+      ? <ul className="gm-plan-rows">{shown.map(m => <PlanRow key={m.uuid} mission={m} showRung={!!words || current.key === 'all'} busy={busy} act={act} />)}</ul>
+      : <p className="gm-sub">No plans match that.</p>}
+  </div>;
+}
+
+function PlanRow({ mission: m, showRung, busy, act }: { mission: GmMission; showRung: boolean; busy: string; act: Act }) {
+  return <li><details className="gm-plan-row">
+    <summary>
+      <span className="gm-plan-row-main">
+        <strong>{m.title}</strong>
+        {m.goal && <small>{m.goal}</small>}
+      </span>
+      {m.priority === 'high' && <em className="gm-chip gm-chip-high">High priority</em>}
+      {showRung && <span className="gm-chip">{RUNG_LABEL[m.rung] || `Rung ${m.rung}`}</span>}
+    </summary>
+    <div className="gm-plan-row-body">
+      {m.goal && <p className="gm-sub">{m.goal}</p>}
+      <Caps mission={m} />
+      <div className="gm-row">
+        <button type="button" className="gm-btn gm-btn-primary" disabled={!!busy} onClick={() => act(`a-${m.uuid}`, () => gm.approve(m.uuid), `Approved: Athena is getting "${m.title}" ready.`)}>Approve plan</button>
+        <button type="button" className="gm-btn" disabled={!!busy} onClick={() => act(`d-${m.uuid}`, () => gm.decline(m.uuid))}>Decline</button>
+      </div>
+    </div>
+  </details></li>;
 }
 
 function ProposedCard({ mission: m, busy, act }: { mission: GmMission; busy: string; act: Act }) {
@@ -348,6 +394,10 @@ function GoPanel({ mission: m, adults, busy, act }: { mission: GmMission; adults
   </div>;
 }
 
+/** An open step an adult settles here: a check they were asked for, or their own step with nothing else to prove it. */
+const adultCheck = (s: GmStep) => !['done', 'pending', 'stuck', 'declined'].includes(s.status)
+  && (s.proofRequired === 'parent_confirm' || (s.proofRequired === 'none' && s.assignee?.kind === 'parent'));
+
 function MissionCard({ mission: m, busy, act, adults }: { mission: GmMission; busy: string; act: Act; adults: GmRecipient[] }) {
   const legacy = m.source === 'legacy';
   const over = ['completed', 'stopped', 'declined', 'archived'].includes(m.status);
@@ -374,12 +424,13 @@ function MissionCard({ mission: m, busy, act, adults }: { mission: GmMission; bu
           const code = window.prompt('The secret code for this step. Athena never sees it.');
           if (code) act(`c-${s.uuid}`, () => gm.setCode(s.uuid, code), 'Code saved.');
         }}>Set the secret code</button>}
-        {s.status !== 'done' && s.proofRequired === 'parent_confirm' && <div className="gm-row">
-          <button type="button" className="gm-btn gm-btn-primary" disabled={!!busy} onClick={() => act(`v-${s.uuid}`, () => gm.verify(s.uuid, true), 'Thanks: recorded as a match.')}>It matches</button>
+        {s.status === 'waiting_kids' && s.sentAt && !s.dueAt && <p className="gm-waiting">{s.assignee?.name || 'They'} hasn't opened this yet. It didn't reach a phone, so tell them to open the Guardians app. Their deadline starts when they do.</p>}
+        {adultCheck(s) && <div className="gm-row">
+          <button type="button" className="gm-btn gm-btn-primary" disabled={!!busy} onClick={() => act(`v-${s.uuid}`, () => gm.verify(s.uuid, true), 'Thanks: recorded.')}>{s.locationCheck ? 'It matches' : 'It\'s done'}</button>
           <button type="button" className="gm-btn" disabled={!!busy} onClick={() => {
-            const why = window.prompt('What\'s different?') || '';
-            act(`v-${s.uuid}`, () => gm.verify(s.uuid, false, why), 'Recorded: it doesn\'t match.');
-          }}>Doesn't match</button>
+            const why = window.prompt(s.locationCheck ? 'What\'s different?' : 'What happened?') || '';
+            act(`v-${s.uuid}`, () => gm.verify(s.uuid, false, why), 'Recorded.');
+          }}>{s.locationCheck ? 'Doesn\'t match' : 'It didn\'t happen'}</button>
         </div>}
         {!s.sentAt && !['done', 'declined', 'pending'].includes(s.status) && <button type="button" className="hp-link" disabled={!!busy} onClick={() => act(`s-${s.uuid}`, () => gm.sendStep(s.uuid))}>Send now</button>}
       </li>)}

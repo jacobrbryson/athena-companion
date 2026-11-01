@@ -28,6 +28,7 @@ export interface GmStep {
   instruction: string;
   place: string | null;
   proofRequired: 'none' | 'photo' | 'photo_set' | 'camera_check' | 'kid_confirm' | 'parent_confirm' | 'code';
+  locationCheck?: boolean;
   status: StepStatus;
   dueAt: string | null;
   sentAt: string | null;

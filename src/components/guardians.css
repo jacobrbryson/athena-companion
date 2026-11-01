@@ -227,6 +227,63 @@
 .gm-dr .gm-kid { padding: 0; border: 0; background: none; }
 .gm-dr .gm-kid h3 { display: none; }
 .gm-dr-ask { justify-self: start; }
+.gm-dr details summary { cursor: pointer; font-size: 14px; }
+.gm-dr details[open] summary { margin-bottom: 8px; }
+.gm-dr h4 { margin: 12px 0 6px; color: #9fd6ff; font-size: 13px; font-weight: 500; }
+.gm-dr label { min-width: 0; }
+.gm-dr .gm-scout { display: grid; gap: 8px; margin-top: 10px; }
+.gm-dr .gm-scout label { display: grid; gap: 4px; font-size: 14px; }
+.gm-dr .gm-scout input, .gm-dr .gm-row select { max-width: 100%; }
+.gm-dr .gm-scout input { width: 100%; padding: 6px 8px; border: 1px solid #284865; border-radius: 8px; background: #0b1c2e; color: inherit; }
+.gm-dr .gm-scout button { justify-self: start; }
+.gm-dr .gm-mission { min-width: 0; padding: 12px; }
+.gm-dr .gm-mission-head { align-items: flex-start; }
+.gm-weakest { display: grid; gap: 12px; }
+.gm-weakest-head { display: flex; justify-content: space-between; gap: 10px; font-size: 14px; }
+.gm-weakest-head b { font-weight: 600; }
+.gm-weakest-head span { color: var(--hp-sub); }
+.gm-weakest-bar { height: 5px; margin: 5px 0 6px; overflow: hidden; border-radius: 3px; background: #142c44; }
+.gm-weakest-bar i { display: block; height: 100%; background: #3aa7f0; }
+.gm-weakest small { display: block; color: var(--hp-sub); font-size: 12px; line-height: 1.45; }
+
+/* Athena at work in the planning drawer. */
+.gm-work-bar { position: sticky; top: 0; z-index: 2; padding: 8px 10px; border: 1px solid #1f7fd6; border-radius: 9px; background: #0a1c30; }
+.gm-working { display: flex; align-items: center; gap: 8px; color: #9fd6ff; font-size: 13px; }
+.gm-working i { flex: none; width: 14px; height: 14px; border: 2px solid #284865; border-top-color: #7ad4ff; border-radius: 50%; animation: gm-spin .8s linear infinite; }
+.gm-mission-working { border-color: #1f7fd6; box-shadow: inset 0 0 14px #2fb4ff22; }
+.gm-draft-coming { display: grid; gap: 8px; }
+.gm-draft-coming b { display: block; height: 11px; border-radius: 5px; background: #16314c; animation: gm-pulse 1.3s ease-in-out infinite; }
+.gm-draft-coming b:first-child { width: 55%; height: 15px; }
+.gm-draft-coming b:last-child { width: 80%; }
+@keyframes gm-spin { to { transform: rotate(360deg); } }
+@keyframes gm-pulse { 50% { opacity: .45; } }
+@media (prefers-reduced-motion: reduce) {
+  .gm-working i { animation-duration: 3s; }
+  .gm-draft-coming b { animation: none; }
+}
+
+/* Waiting plans on the Missions tab: one shelf at a time, rows open to the decision. */
+.gm-plans { margin-top: 18px; }
+.gm-plans-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
+.gm-plans-head .gm-h3 { margin: 0; }
+.gm-plans-head h3 small { margin-left: 4px; color: var(--hp-sub); font-size: 13px; font-weight: 400; }
+.gm-plans-head input { flex: 0 1 240px; min-width: 0; padding: 7px 10px; border: 1px solid #284865; border-radius: 8px; background: #0b1c2e; color: inherit; font-size: 14px; }
+.gm-shelves { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.gm-shelves button { padding: 6px 12px; border: 1px solid var(--hp-line); border-radius: 999px; background: none; color: var(--hp-sub); font-size: 13px; }
+.gm-shelves button small { margin-left: 3px; opacity: .75; font-size: 12px; }
+.gm-shelves button[aria-pressed="true"] { border-color: #1f7fd6; background: #11284a; color: #e8f3ff; }
+.gm-plan-rows { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); align-items: start; gap: 8px; margin-top: 12px; }
+.gm-plan-row { border: 1px solid var(--hp-line); border-radius: 10px; background: #0b1c2e; }
+.gm-plan-row[open] { border-color: #2f5f88; }
+.gm-plan-row summary { display: flex; align-items: center; gap: 8px; padding: 10px 12px; cursor: pointer; list-style: none; }
+.gm-plan-row summary::-webkit-details-marker { display: none; }
+.gm-plan-row summary::after { flex: none; color: var(--hp-sub); content: "›"; font-size: 18px; line-height: 1; transition: transform .15s; }
+.gm-plan-row[open] summary::after { transform: rotate(90deg); }
+.gm-plan-row-main { flex: 1; min-width: 0; }
+.gm-plan-row-main strong { display: block; font-size: 14px; font-weight: 600; }
+.gm-plan-row-main small { display: block; overflow: hidden; color: var(--hp-sub); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.gm-plan-row[open] .gm-plan-row-main small { display: none; }
+.gm-plan-row-body { padding: 0 12px 12px; }
 
 @media (max-width: 1280px) {
   .gm-nav-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
