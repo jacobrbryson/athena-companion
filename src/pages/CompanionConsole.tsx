@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { handsFreeRunning } from '../native/handsFree';
+import { handsFreeRunning, phoneVoices } from '../native/handsFree';
+import { useWaitCues } from '../athena/waitCues';
 import { useAuth } from '../auth/AuthContext';
 import { useChat, type Message } from '../athena/useChat';
 import { useVoiceInput } from '../athena/useVoiceInput';
@@ -18,6 +19,7 @@ import { DevicesPanel } from '../components/DevicesPanel';
 import { ActionsPanel } from '../components/ActionsPanel';
 import { InitiativePanel } from '../components/InitiativePanel';
 import { EmergencyBanner } from '../components/EmergencyBanner';
+import { SystemBanner } from '../components/SystemBanner';
 import { MiniMap } from '../components/MiniMap';
 import { useNudges } from '../athena/useNudges';
 import { ActionProposal, ActionProposalFolded } from '../components/ActionProposal';
@@ -73,8 +75,9 @@ export function CompanionConsole() {
   const holdForVoice = useCallback(async (message: Message) => {
     const speech = ttsRef.current;
     if (!speech.enabled || !speech.isSupported || !message.text?.trim()) return;
-    // The phone's hands-free listener speaks its own replies.
-    if (await handsFreeRunning()) return;
+    // The phone's hands-free listener (or conversation mode, while the
+    // screen was locked) speaks its own replies.
+    if (await phoneVoices(message.text)) return;
     // With lyrics, the held voice is her spoken lead-in (as quick as any
     // reply); the song keeps generating behind it.
     const prepared = speech.prepare(message.text, { lyrics: message.lyrics });
@@ -93,6 +96,8 @@ export function CompanionConsole() {
     onBeforeAthenaMessage: holdForVoice,
     onFiller: (text) => void sayFiller(text),
   });
+  // "Hmm." 1.5 s after their last word, while she works on a reply.
+  useWaitCues(chat.isThinking, chat.filler, tts, handsFreeRunning);
   // Proposals Athena is waiting on. Gated on `arriving` being over so a card
   // cannot land on top of the arrival sequence.
   const actions = useActions(!!profile);
@@ -377,7 +382,9 @@ export function CompanionConsole() {
       preparedSpeechRef.current.delete(last.uuid);
       void prepared.ready.then((ok) => ok && prepared.play());
     } else {
-      tts.speak(last.text);
+      // A reply the phone already said while the screen was locked arrives
+      // here on return: never say it twice.
+      void phoneVoices(last.text).then((phone) => { if (!phone) tts.speak(last.text); });
     }
   }, [chat.messages, chat.ready, tts]);
 
@@ -634,6 +641,10 @@ export function CompanionConsole() {
           </button>
         </div>
       </header>
+
+      {/* Above every view, the dashboard home included: part of Athena is
+          broken (owner only, checks that are down). */}
+      <SystemBanner onOpen={() => navigateDashboard('System')} />
 
       {/* Above every view: an emergency near home is never on a screen you are
           not looking at. The dashboard home draws it itself, in the slot above

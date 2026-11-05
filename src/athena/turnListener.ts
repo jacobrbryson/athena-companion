@@ -1,3 +1,4 @@
+import { markLastWords } from './waitCues';
 import { androidCall } from '../native/android';
 import type { SpeechRecognitionCtor } from './useVoiceInput';
 
@@ -12,6 +13,11 @@ export interface TurnListener {
   cancel: () => void;
 }
 
+/** Conversation mode was turned off on the phone itself (its notification, or quiet while locked). */
+export class ConversationOff extends Error {
+  constructor() { super('Conversation mode was turned off.'); this.name = 'ConversationOff'; }
+}
+
 /** The Android app: its own in-app recognizer (ConversationListener.java). */
 export function androidTurnListener(): TurnListener {
   return {
@@ -19,8 +25,12 @@ export function androidTurnListener(): TurnListener {
       const partial = (event: Event) => onPartial(String((event as MessageEvent).data ?? ''));
       window.addEventListener('athena-conversation-partial', partial);
       try {
-        const { text } = await androidCall<{ text: string }>('conversationListen', { language: navigator.language || 'en-US' });
-        return (text ?? '').trim();
+        const { text, off, quietMs } = await androidCall<{ text: string; off?: boolean; quietMs?: number | null }>('conversationListen', { language: navigator.language || 'en-US' });
+        if (off) throw new ConversationOff();
+        const said = (text ?? '').trim();
+        // The waiting cues count from their last word, not from the send.
+        if (said && typeof quietMs === 'number') markLastWords(performance.now() - quietMs);
+        return said;
       } finally {
         window.removeEventListener('athena-conversation-partial', partial);
       }

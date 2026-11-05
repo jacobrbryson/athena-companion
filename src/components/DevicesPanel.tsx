@@ -3,6 +3,8 @@ import { Drawer, Label, ago } from './Drawer';
 import { devicesApi, type PairedDevice } from '../api/companion';
 import { AndroidInstall } from './AndroidInstall';
 import { HandsFree } from './HandsFree';
+import { VoiceFilter } from './VoiceFilter';
+import { CarConversation } from './CarConversation';
 import { HeartRate } from './HeartRate';
 
 /**
@@ -56,6 +58,8 @@ export function DevicesPanel({ onClose }: { onClose: () => void }) {
   return (
     <Drawer eyebrow="paired devices" title="Phone & car" onClose={onClose}>
       <HandsFree />
+      <VoiceFilter />
+      <CarConversation />
       <HeartRate />
       <AndroidInstall />
       <section className="mb-8">

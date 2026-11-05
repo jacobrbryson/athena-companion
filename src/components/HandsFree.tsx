@@ -10,6 +10,7 @@ const STATE_TEXT: Record<HandsFreeStatus['state'], string> = {
   waiting: 'Listening for “Athena”',
   listening: 'Hearing you…',
   thinking: 'Thinking…',
+  page: 'Conversation mode (on screen)',
   speaking: 'Speaking',
 };
 

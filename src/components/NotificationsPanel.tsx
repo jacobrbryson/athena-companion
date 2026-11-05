@@ -45,7 +45,7 @@ export function NotificationsPanel({ actions, questions, inbox, recent, onAck, o
           </div>
           <ul className="space-y-2">
             {inbox.map(n => (
-              <li key={n.uuid} className="rounded border border-emerald-500/20 bg-white/[0.03] px-3 py-2">
+              <li key={n.uuid} className={`rounded border px-3 py-2 ${n.kind === 'system_health' ? 'border-red-500/50 bg-red-500/10' : 'border-emerald-500/20 bg-white/[0.03]'}`}>
                 <p className="text-sm">{n.body}</p>
                 <div className="mt-1 flex items-center justify-between gap-3">
                   <p className="font-mono text-[10px] opacity-45">{n.title} · {ago(n.createdAt)}</p>

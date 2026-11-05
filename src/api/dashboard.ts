@@ -349,7 +349,7 @@ export interface TimeSaved {
   daily: { date: string; minutes: number }[];
   rates: { actionId: string; label: string; minutesEach: number }[];
 }
-export interface SystemHealth { status: SystemHealthStatus; checkedAt: string; checks: { id: string; label: string; status: SystemHealthStatus; detail: string }[] }
+export interface SystemHealth { status: SystemHealthStatus; checkedAt: string; checks: { id: string; label: string; status: SystemHealthStatus; detail: string }[]; /** True for the owner — who gets the red banner while a check is down. */ owner?: boolean }
 /**
  * A page Athena watches, and the rhythm she has settled on for it. The rhythm
  * is hers: there is no endpoint for setting it, only for saying which pages to

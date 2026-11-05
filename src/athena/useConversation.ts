@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { isAndroidCompanion } from '../native/android';
+import { androidCall, isAndroidCompanion } from '../native/android';
+import { chatSessionId } from '../native/handsFree';
 import { words } from './echo';
 import { connectConversationAudio, supportsRecognitionTrack } from './conversationAudio';
 import { ConversationEcho, ECHO_TAIL_MS } from './conversationEcho';
 import { EchoGate } from './echoGate';
-import { androidTurnListener, browserTurnListener, type TurnListener } from './turnListener';
+import { androidTurnListener, browserTurnListener, ConversationOff, type TurnListener } from './turnListener';
 import { turnWaitMs } from './turnTaking';
 import type { CutOff, Speech } from './useSpeech';
 import { getCtor, type SpeechRecognitionLike } from './useVoiceInput';
@@ -44,6 +45,13 @@ import { SILENT_DB } from './voiceLevel';
  * talking, and opens again once she has finished. No barge-in there — talking
  * over her needs the energy detector above, and without echo control the
  * recognizer would take her voice for yours.
+ *
+ * On the phone it also survives the screen locking. Turning it on starts the
+ * app's conversation service (HandsFreeService, "Conversation on" in the
+ * notification shade): while Athena is on screen the page listens as above,
+ * and while she isn't, the phone listens, sends and speaks by itself. So on
+ * Android a pause doesn't end it; its notification's Stop, the toggle here,
+ * or five quiet minutes off screen do.
  */
 
 const FRAME_MS = 30;
@@ -71,6 +79,11 @@ const STALLED_MS = 2500;
 const SETTLE_MS = 350;
 /** A one- or two-word result the recognizer itself doubts is usually noise. */
 const MIN_SHORT_CONFIDENCE = 0.5;
+
+/** Same as config.localTimezone, kept here so this hook loads without Vite (scripts/conversation.test.mjs). */
+function phoneTimezone(): string | null {
+  try { return Intl.DateTimeFormat().resolvedOptions().timeZone || null; } catch { return null; }
+}
 
 export interface Conversation {
   isSupported: boolean;
@@ -111,16 +124,32 @@ export function useConversation(
   }, []);
 
   /** One turn at a time, where the recognizer can't have the echo-cancelled mic. */
-  const startTurns = useCallback((listener: TurnListener) => {
+  const startTurns = useCallback((listener: TurnListener, android = false) => {
     if (runRef.current) return;
     const generation = ++startGeneration.current;
     setError(null);
+    if (android) {
+      // The phone carries on with the screen locked (see above).
+      const sessionId = chatSessionId();
+      if (sessionId) {
+        void androidCall('conversationService', { on: true, sessionId, timezone: phoneTimezone() })
+          .catch((e: Error) => {
+            if (generation !== startGeneration.current) return;
+            setError(e.message);
+            stop();
+          });
+      }
+    }
     const echo = new ConversationEcho();
     let disposed = false;
     let listening = false;
     let lastActivityAt = Date.now();
     let herEndedAt = 0;
     let watch: number | undefined;
+    // Android, Athena off screen: the phone's service has the conversation.
+    // The page's script keeps running behind the lock screen, so it must
+    // neither listen nor count the quiet towards turning itself off.
+    let paused = false;
 
     const listen = () => {
       if (disposed || listening) return;
@@ -148,7 +177,7 @@ export function useConversation(
           listening = false;
           setHearing(false);
           if (disposed || generation !== startGeneration.current) return;
-          setError(e.message);
+          if (!(e instanceof ConversationOff)) setError(e.message);
           stop();
         });
     };
@@ -156,6 +185,7 @@ export function useConversation(
     const tick = () => {
       if (disposed) return;
       const now = Date.now();
+      if (paused) { lastActivityAt = now; return; }
       const her = speechRef.current.now();
       if (her) {
         echo.observe(her.text, her.loudness(ECHO_LAG_MS), now);
@@ -173,16 +203,28 @@ export function useConversation(
     const onHidden = () => {
       if (document.visibilityState === 'hidden') stop();
     };
-    window.addEventListener('athena-native-pause', stop);
-    document.addEventListener('visibilitychange', onHidden);
+    // Back on screen after the phone kept the conversation going: the quiet
+    // clock starts again from now, not from before the screen went off.
+    const onResume = () => { paused = false; lastActivityAt = Date.now(); };
+    const onPause = () => { paused = true; };
+    if (android) {
+      window.addEventListener('athena-native-resume', onResume);
+      window.addEventListener('athena-native-pause', onPause);
+    } else {
+      window.addEventListener('athena-native-pause', stop);
+      document.addEventListener('visibilitychange', onHidden);
+    }
     watch = window.setInterval(tick, 150);
 
     runRef.current = {
       dispose: () => {
         disposed = true;
         window.clearInterval(watch);
+        window.removeEventListener('athena-native-resume', onResume);
+        window.removeEventListener('athena-native-pause', onPause);
         window.removeEventListener('athena-native-pause', stop);
         document.removeEventListener('visibilitychange', onHidden);
+        if (android) void androidCall('conversationService', { on: false }).catch(() => undefined);
         if (listening) listener.cancel();
         setActive(false);
         setHearing(false);
@@ -194,7 +236,7 @@ export function useConversation(
   }, [stop]);
 
   const start = useCallback(async () => {
-    if (isAndroidCompanion()) return startTurns(androidTurnListener());
+    if (isAndroidCompanion()) return startTurns(androidTurnListener(), true);
     const Ctor = getCtor();
     if (runRef.current || startingRef.current || !Ctor) return;
     // No echo-cancelled mic for the recognizer here: turn by turn instead.
@@ -488,6 +530,18 @@ export function useConversation(
     if (runRef.current || startingRef.current) stop();
     else void start();
   }, [start, stop]);
+
+  // The page reloaded (Android reopens Athena as a fresh page) while the
+  // phone kept the conversation going: pick it back up instead of leaving it
+  // running unseen.
+  useEffect(() => {
+    if (!isAndroidCompanion()) return;
+    let cancelled = false;
+    void androidCall<{ running: boolean }>('conversationStatus')
+      .then((status) => { if (!cancelled && status?.running) startTurns(androidTurnListener(), true); })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [startTurns]);
 
   useEffect(() => () => stop(), [stop]);
 

@@ -98,6 +98,8 @@ export interface Speech {
    * A reply that is ready first waits for the line to finish.
    */
   sayFiller: (text: string) => void;
+  /** Fetch her voice for these filler lines now, so their first use already plays. */
+  warmFillers: (lines: string[]) => void;
   cancel: () => void;
   /** What she is saying right now (for conversation mode); null when she is quiet. */
   now: () => VoiceNow | null;
@@ -563,10 +565,28 @@ export function useSpeech(): Speech {
     [fetchAudio, finish]
   );
 
+  const warmFillers = useCallback(
+    (lines: string[]) => {
+      for (const raw of lines) {
+        const line = raw.trim();
+        if (!line) continue;
+        void cachedFiller(line).then((clip) => {
+          if (clip || fillerFetchesRef.current.has(line)) return;
+          fillerFetchesRef.current.add(line);
+          void fetchAudio(line, false, new AbortController().signal)
+            .then((payload) => (payload ? storeFiller(line, payload) : undefined))
+            .catch(() => undefined)
+            .finally(() => fillerFetchesRef.current.delete(line));
+        });
+      }
+    },
+    [fetchAudio]
+  );
+
   const toggle = useCallback(() => setEnabled((value) => !value), []);
 
   return useMemo(
-    () => ({ isSupported, enabled, attachUnity, toggle, prepare, speak, sayFiller, cancel, now, interrupt }),
-    [attachUnity, cancel, enabled, interrupt, isSupported, now, prepare, sayFiller, speak, toggle]
+    () => ({ isSupported, enabled, attachUnity, toggle, prepare, speak, sayFiller, warmFillers, cancel, now, interrupt }),
+    [attachUnity, cancel, enabled, interrupt, isSupported, now, prepare, sayFiller, speak, toggle, warmFillers]
   );
 }

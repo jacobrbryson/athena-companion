@@ -3,7 +3,20 @@ import { androidCall, isAndroidCompanion } from './android';
 /** What the phone's hands-free listener is doing (HandsFreeService.status). */
 export interface HandsFreeStatus {
   running: boolean;
-  state: 'off' | 'starting' | 'waiting' | 'listening' | 'thinking' | 'speaking';
+  state: 'off' | 'starting' | 'waiting' | 'listening' | 'thinking' | 'speaking' | 'page';
+  /**
+   * 'conversation': the chat's conversation mode, carried on by the phone
+   * while Athena is off screen (the page listens while she is on it).
+   * Missing on APKs before 2026-11-04, which only had the wake word.
+   */
+  mode?: 'wake' | 'conversation';
+  /**
+   * Conversation mode is talking through the car's hands-free (CarAudio): the
+   * phone has the whole conversation, on screen too, and voices every reply.
+   */
+  car?: boolean;
+  /** Replies the phone itself has spoken lately, so the page doesn't repeat them. */
+  voiced?: string[];
   lastHeard: string | null;
   error: string | null;
   /** How the request after the wake word was transcribed — always on the phone. */
@@ -17,14 +30,35 @@ export const handsFreeApi = {
 };
 
 /**
- * True while this phone is listening hands-free. The service speaks its own
- * replies, so the open chat must not voice the same reply a second time.
- * APKs without hands-free (or a browser) answer false.
+ * True while this phone is listening hands-free for her name. The service
+ * speaks its own replies, so the open chat must not voice the same reply a
+ * second time. Conversation mode's phone side doesn't count: while Athena is
+ * on screen the page does the talking. APKs without hands-free (or a
+ * browser) answer false.
  */
 export async function handsFreeRunning(): Promise<boolean> {
   if (!isAndroidCompanion()) return false;
   try {
-    return (await handsFreeApi.status()).running;
+    const status = await handsFreeApi.status();
+    return status.running && status.mode !== 'conversation';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The phone has spoken (or is about to speak) this reply itself: hands-free
+ * is on, or conversation mode answered it while the screen was locked.
+ */
+export async function phoneVoices(text: string): Promise<boolean> {
+  if (!isAndroidCompanion()) return false;
+  try {
+    const status = await handsFreeApi.status();
+    if (!status.running) return false;
+    if (status.mode !== 'conversation') return true;
+    if (status.car) return true;
+    if (status.state === 'thinking' || status.state === 'speaking') return true;
+    return (status.voiced ?? []).includes(text.trim());
   } catch {
     return false;
   }

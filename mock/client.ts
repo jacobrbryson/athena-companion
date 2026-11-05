@@ -605,7 +605,14 @@ function mockSystemBilling(p: string, query: URLSearchParams) {
   const gcpMode = query.get('gcp');
   if (p.endsWith('/health')) {
     const mode = query.get('health');
-    return { status: mode === 'down' ? 'down' : mode === 'degraded' ? 'degraded' : 'ok', checkedAt, checks: [
+    // `?health=broken`: the red banner across every screen (the owner's view).
+    if (mode === 'broken') return { status: 'down', checkedAt, owner: true, checks: [
+      { id: 'database', label: 'Database', status: 'ok', detail: 'Reachable' },
+      { id: 'keys', label: 'Provider keys', status: 'down', detail: "OpenAI is rejecting Athena's API key (HTTP 401) since Oct 27: dream and image calls fail." },
+      { id: 'credentials', label: 'Saved sign-ins', status: 'down', detail: "Athena can't decrypt the saved Webull sign-in (No key k3 on the keyring; cannot decrypt). The process that tried is not loading the encryption keyring — check GCP_PROJECT_ID on that job." },
+      { id: 'nightlySteps', label: 'Nightly steps', status: 'degraded', detail: 'On 2026-11-05: keepGroceries (1 failed).' },
+    ] };
+    return { owner: true, status: mode === 'down' ? 'down' : mode === 'degraded' ? 'degraded' : 'ok', checkedAt, checks: [
       { id: 'database', label: 'Database', status: 'ok', detail: 'Reachable' },
       mode === 'down' ? { id: 'models', label: 'Models', status: 'down', detail: 'No model is available to answer chat.' } : { id: 'models', label: 'Models', status: 'ok', detail: 'Chat is on gpt-5.5 (frontier)' },
       mode === 'degraded' ? { id: 'nightly', label: 'Nightly review', status: 'degraded', detail: 'Last ran 4 days ago (2026-09-24).' } : { id: 'nightly', label: 'Nightly review', status: 'ok', detail: `Last ran ${checkedAt.slice(0, 10)}` },
@@ -1416,7 +1423,9 @@ async function route(method: string, path: string, body?: any): Promise<any> {
     return summary;
   }
   if (p === '/api/v1/dashboard/priority') return dashboardPriority();
-  if (p === '/api/v1/dashboard/inbox') return { unacknowledged: [{ uuid: 'mock-n1', kind: 'nudge', title: 'Athena', body: 'Your 2pm is in fifteen minutes.', url: null, createdAt: new Date(Date.now() - 20 * 60_000).toISOString(), acknowledgedAt: null }], recent: [] };
+  if (p === '/api/v1/dashboard/inbox') return { unacknowledged: [
+    ...(new URLSearchParams(window.location.search).get('health') === 'broken' ? [{ uuid: 'mock-h1', kind: 'system_health', title: 'Something is broken: Provider keys', body: "OpenAI is rejecting Athena's API key (HTTP 401) since Oct 27: dream and image calls fail.", url: '/system', createdAt: new Date(Date.now() - 5 * 60_000).toISOString(), acknowledgedAt: null }] : []),
+    { uuid: 'mock-n1', kind: 'nudge', title: 'Athena', body: 'Your 2pm is in fifteen minutes.', url: null, createdAt: new Date(Date.now() - 20 * 60_000).toISOString(), acknowledgedAt: null }], recent: [] };
   if (p.startsWith('/api/v1/dashboard/inbox/') && method === 'POST') return { cleared: 1 };
   // Emergency banner: quiet by default; ?alert=urgent or =watch to see it.
   if (p === '/api/v1/dashboard/alert/ack' && method === 'POST') {
