@@ -143,6 +143,7 @@ export function VoiceFilter() {
           <p className="mt-2 font-mono text-[10px] uppercase tracking-[0.25em] opacity-60">
             {status.on ? 'on' : 'off'}
             {status.ignored > 0 ? ` · ignored ${status.ignored} ${status.ignored === 1 ? 'turn' : 'turns'} from someone else` : ''}
+            {status.learnedTurns ? ` · learned from ${status.learnedTurns} of your turns` : ''}
           </p>
         </>
       ) : (

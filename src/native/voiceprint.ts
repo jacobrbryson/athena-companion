@@ -14,6 +14,8 @@ export interface VoiceprintStatus {
   /** A second print, taught through the car's microphone (missing on older APKs). */
   carEnrolled?: boolean;
   carEnrolledAt?: number | null;
+  /** Own turns folded into the conversation prints (missing on older APKs). */
+  learnedTurns?: number;
   /** Turns dropped since the app started because they weren't the owner's voice. */
   ignored: number;
   lastScore: number | null;
