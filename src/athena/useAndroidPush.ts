@@ -63,9 +63,15 @@ export function useAndroidPush() {
  * Android's settings screen — there is no in-app prompt for it, by design —
  * so this reports the state and opens that screen.
  */
-export type PulsePointState = 'unavailable' | 'checking' | 'on' | 'off' | 'app-missing';
+/**
+ * 'stalled': access is granted but Android is not running the reader (killed,
+ * updated, or put to sleep by a battery saver), so PulsePoint's alerts sit
+ * unread. The app asks Android to reconnect it each time it opens.
+ */
+export type PulsePointState = 'unavailable' | 'checking' | 'on' | 'stalled' | 'off' | 'app-missing';
 
-type PulsePointStatus = { installed: boolean; granted: boolean; location?: boolean; locationForeground?: boolean };
+/** `running` is absent from builds before 2026-11-09; absent means "on" as before. */
+type PulsePointStatus = { installed: boolean; granted: boolean; running?: boolean; location?: boolean; locationForeground?: boolean };
 
 /** What the phone's "Test PulsePoint alert" reports: its own state plus the server's steps. */
 export type PhoneTestResult = {
@@ -84,14 +90,23 @@ export function usePulsePointAlerts() {
   const [location, setLocation] = useState(false);
 
   const apply = useCallback((r: PulsePointStatus) => {
-    setState(!r.installed ? 'app-missing' : r.granted ? 'on' : 'off');
+    setState(!r.installed ? 'app-missing' : !r.granted ? 'off' : r.running === false ? 'stalled' : 'on');
     setLocation(r.location === true);
   }, []);
 
   const check = useCallback(() => {
     if (!available) return;
     androidCall<PulsePointStatus>('pulsePointStatus')
-      .then(apply)
+      .then((r) => {
+        apply(r);
+        // Opening the app just asked Android to reconnect the reader; give it
+        // a moment before calling it stalled for good.
+        if (r.installed && r.granted && r.running === false) {
+          window.setTimeout(() => {
+            androidCall<PulsePointStatus>('pulsePointStatus').then(apply).catch(() => undefined);
+          }, 3000);
+        }
+      })
       .catch(() => setState('off'));
   }, [available, apply]);
 
@@ -141,4 +156,58 @@ export function usePulsePointAlerts() {
   const test = useCallback(() => androidCall<PhoneTestResult>('testPulsePoint'), []);
 
   return { available, state, location, open, openPulsePointSettings, openAppInfo, enableLocation, test, check };
+}
+
+/**
+ * Reading incoming texts (Google Messages) on the Android app: its own line in
+ * Notification access — "Athena — read my texts" — granted on Android's
+ * settings screen, separate from PulsePoint alerts. 'stalled' as for PulsePoint.
+ */
+export type TextReadingState = 'unavailable' | 'checking' | 'on' | 'stalled' | 'off';
+
+type TextsStatus = { installed: boolean; granted: boolean; running: boolean; notifications: boolean };
+
+export function useTextReading() {
+  const available = isAndroidCompanion();
+  const [state, setState] = useState<TextReadingState>(available ? 'checking' : 'unavailable');
+  const [installed, setInstalled] = useState(true);
+  const [notifications, setNotifications] = useState(true);
+
+  const check = useCallback(() => {
+    if (!available) return;
+    const apply = (r: TextsStatus) => {
+      setInstalled(r.installed);
+      setNotifications(r.notifications);
+      setState(!r.granted ? 'off' : r.running === false ? 'stalled' : 'on');
+    };
+    androidCall<TextsStatus>('textsStatus')
+      .then((r) => {
+        apply(r);
+        if (r.granted && r.running === false) {
+          window.setTimeout(() => {
+            androidCall<TextsStatus>('textsStatus').then(apply).catch(() => undefined);
+          }, 3000);
+        }
+      })
+      // An APK from before this feature has no such call.
+      .catch(() => setState('unavailable'));
+  }, [available]);
+
+  useEffect(() => {
+    check();
+    window.addEventListener('athena-native-resume', check);
+    return () => window.removeEventListener('athena-native-resume', check);
+  }, [check]);
+
+  const open = useCallback(async () => {
+    if (!available) return;
+    await androidCall('openNotificationAccess').catch(() => undefined);
+  }, [available]);
+
+  const openAppInfo = useCallback(async () => {
+    if (!available) return;
+    await androidCall('openAppInfo').catch(() => undefined);
+  }, [available]);
+
+  return { available, state, installed, notifications, open, openAppInfo, check };
 }

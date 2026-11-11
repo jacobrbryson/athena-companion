@@ -91,7 +91,9 @@ export function EmergencyAlertSetup() {
           <p className="mt-2 font-mono text-[10px] opacity-45">
             {pulsePoint.state === 'on'
               ? 'on · I can read PulsePoint alerts here'
-              : pulsePoint.state === 'app-missing'
+              : pulsePoint.state === 'stalled'
+                ? "allowed, but Android isn't running my reader"
+                : pulsePoint.state === 'app-missing'
                 ? "off · I can't see PulsePoint Respond on this phone"
                 : 'off · I cannot see PulsePoint alerts'}
           </p>
@@ -99,7 +101,33 @@ export function EmergencyAlertSetup() {
               hides other apps from us unless they are declared in the manifest,
               and an older build of Athena will always answer no. Offer the
               switch regardless and let the person decide. */}
-          {pulsePoint.state !== 'on' && (
+          {pulsePoint.state === 'stalled' && (
+            <>
+              <p className="mt-1.5 text-[11px] opacity-60">
+                Until it runs again, PulsePoint's alerts stay in your notifications and don't reach me. I've asked
+                Android to restart it. If this doesn't change to on, switch <strong>Athena</strong> off and back on in
+                notification access. Then set Athena's battery use to <strong>Unrestricted</strong> so it isn't put to
+                sleep again.
+              </p>
+              <div className="mt-1.5 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => void pulsePoint.open()}
+                  className="rounded bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-black"
+                >
+                  Open notification access
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void pulsePoint.openAppInfo()}
+                  className="rounded border border-emerald-500/40 px-3 py-1.5 text-xs font-semibold text-emerald-300"
+                >
+                  Open Athena's app info
+                </button>
+              </div>
+            </>
+          )}
+          {pulsePoint.state !== 'on' && pulsePoint.state !== 'stalled' && (
             <>
               <button
                 type="button"

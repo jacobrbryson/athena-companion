@@ -11,6 +11,7 @@ import {
 import { useWebPush } from '../athena/useWebPush';
 import { useAndroidPush } from '../athena/useAndroidPush';
 import { LegalLinks } from './LegalLinks';
+import { TextReadingSetup } from './TextReadingSetup';
 import { SMS_SENDER } from '../legal';
 
 /**
@@ -256,6 +257,8 @@ export function InitiativePanel({ onClose }: { onClose: () => void }) {
           </div>
         )}
       </section>
+
+      <TextReadingSetup initiativeOn={pref?.enabled === true} />
 
       <section className="mb-8">
         <Label>speaking first</Label>
