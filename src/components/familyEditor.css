@@ -1,0 +1,110 @@
+/* Family member side drawer (FamilyPersonEditor.tsx), from the owner's 2026-11-12 mockup. */
+.fme { --fme-line: #1d4657; --fme-line-soft: #173847; --fme-cyan: #3ddcf5; --fme-sub: #9fb6c4; --fme-field: #071d29;
+  position: fixed; inset: 0; z-index: 60; display: flex; justify-content: flex-end; font-family: "Segoe UI", system-ui, sans-serif; }
+.fme :is(button, input, select, textarea) { font-family: inherit; }
+.fme-scrim { position: absolute; inset: 0; border: 0; background: #010a12b8; backdrop-filter: blur(6px); cursor: default; }
+.fme-panel { position: relative; display: flex; width: min(600px, 100%); height: 100%; border-left: 1px solid #2a6a80;
+  background: linear-gradient(180deg, #071824, #04111a 40%, #030d15); color: #e6f3f9; box-shadow: -24px 0 60px #000a;
+  animation: fme-in .22s ease-out; }
+@keyframes fme-in { from { transform: translateX(32px); opacity: 0; } to { transform: none; opacity: 1; } }
+.fme-form { display: flex; flex-direction: column; width: 100%; min-height: 0; }
+
+/* Head: badge, title, close, and the glow wave behind them. */
+.fme-head { position: relative; display: flex; align-items: center; gap: 28px; padding: 22px 26px 22px 28px; border-bottom: 1px solid var(--fme-line-soft); overflow: hidden; isolation: isolate;
+  background: radial-gradient(120% 140% at 85% 100%, #1b4fd640, transparent 60%), radial-gradient(60% 90% at 100% 0%, #3ddcf522, transparent 70%); }
+.fme-head > div { flex: 1; min-width: 0; }
+.fme-head small { color: #b9cfdb; font-size: 13px; letter-spacing: .12em; }
+.fme-head h2 { margin-top: 4px; font-size: 27px; font-weight: 600; line-height: 1.15; color: #fff; }
+.fme-badge { display: grid; place-items: center; flex: 0 0 68px; height: 66px; border: 1px solid #2d7186; border-radius: 12px; background: #0b2a3a; color: var(--fme-cyan); box-shadow: inset 0 0 18px #3ddcf51a; }
+.fme-badge .hp-icon { width: 36px; height: 36px; stroke-width: 1.6; }
+.fme-close { display: grid; place-items: center; flex: 0 0 40px; height: 40px; align-self: flex-start; border: 1px solid #5c7f90; border-radius: 50%; color: #fff; background: #04111acc; }
+.fme-close .hp-icon { width: 18px; height: 18px; }
+.fme-close:hover { border-color: var(--fme-cyan); color: var(--fme-cyan); }
+.fme-wave { position: absolute; inset: auto 0 0 30%; width: 70%; height: 100%; z-index: -1; pointer-events: none; }
+.fme-wave path { fill: none; stroke: #4aa8ff; stroke-width: 1.4; filter: drop-shadow(0 0 6px #3d8dff) drop-shadow(0 0 14px #7c5cff88); opacity: .85; }
+.fme-wave path + path { stroke: #3ddcf5; stroke-width: .8; opacity: .45; }
+
+.fme-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 14px 20px 18px; scrollbar-width: thin; scrollbar-color: #2b5a70 transparent; }
+
+/* Profile: portrait with a camera badge, name and relationship chip. */
+.fme-profile { display: flex; align-items: center; gap: 28px; padding: 0 0 20px 26px; }
+.fme-avatar { position: relative; flex: 0 0 112px; height: 112px; cursor: pointer; }
+.fme-avatar .memory-avatar { width: 112px; height: 112px; border: 2px solid var(--fme-cyan); border-radius: 50%; object-fit: cover; font-size: 40px; display: grid; place-items: center; box-shadow: 0 0 18px #3ddcf544; }
+.fme-avatar input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.fme-avatar:focus-within .memory-avatar { outline: 2px solid var(--fme-cyan); outline-offset: 3px; }
+.fme-camera { position: absolute; right: -6px; bottom: 0; display: grid; place-items: center; width: 40px; height: 40px; border: 2px solid #04111a; border-radius: 50%; background: #0e7f97; color: #e8fbff; box-shadow: 0 0 10px #3ddcf566; }
+.fme-camera .hp-icon { width: 20px; height: 20px; }
+.fme-profile h3 { font-size: 26px; font-weight: 600; color: #fff; overflow-wrap: anywhere; }
+.fme-chip { display: inline-flex; align-items: center; gap: 9px; margin-top: 10px; padding: 7px 16px; border: 1px solid var(--fme-line); border-radius: 9px; background: #0a2130; color: #e6f3f9; font-size: 15px; }
+.fme-chip .hp-icon { width: 18px; height: 18px; }
+.fme-profile .fme-text-button { display: block; margin-top: 8px; }
+
+/* Tabs sit on the card they switch. */
+.fme-tabs { display: flex; overflow-x: auto; border: 1px solid var(--fme-line-soft); border-bottom: 0; border-radius: 12px 12px 0 0; background: #061722; scrollbar-width: none; }
+.fme-tabs button { position: relative; display: flex; flex: 1 0 auto; align-items: center; justify-content: center; gap: 9px; padding: 15px 18px; color: #dbe9f1; font-size: 15px; white-space: nowrap; }
+.fme-tabs button .hp-icon { width: 19px; height: 19px; }
+.fme-tabs button:hover { color: #fff; background: #0b2433; }
+.fme-tabs button.active { color: var(--fme-cyan); background: linear-gradient(180deg, #0f3346, #0a2636); border-radius: 12px 0 0 0; }
+.fme-tabs button.active:not(:first-child) { border-radius: 0; }
+.fme-tabs button.active::after { content: ""; position: absolute; left: 8px; right: 8px; bottom: 0; height: 2px; border-radius: 2px; background: var(--fme-cyan); box-shadow: 0 0 10px var(--fme-cyan); }
+.fme-card { display: grid; gap: 18px; min-width: 0; margin: 0; padding: 22px 18px 20px; border: 1px solid var(--fme-line-soft); border-radius: 0 0 12px 12px; background: #04131c; }
+.fme-card label { display: grid; gap: 9px; color: #e6f3f9; font-size: 14px; }
+.fme-card :is(input, select, textarea) { width: 100%; padding: 11px 14px; border: 1px solid #2a6a80; border-radius: 7px; background: var(--fme-field); color: #fff; font-size: 16px; font-family: inherit; }
+.fme-card select { appearance: none; padding-right: 40px; background: var(--fme-field) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23dbe9f1' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") no-repeat right 14px center / 18px; }
+.fme-card textarea { min-height: 100px; resize: vertical; line-height: 1.5; }
+.fme-card :is(input, select, textarea):focus { outline: none; border-color: var(--fme-cyan); box-shadow: 0 0 0 3px #3ddcf522; }
+.fme-tip { display: flex; align-items: flex-start; gap: 12px; color: #c9dbe5; font-size: 13px; line-height: 1.55; }
+.fme-tip > span { display: grid; place-items: center; flex: 0 0 38px; height: 38px; border-radius: 9px; background: #2e2a12; color: #f5cf5a; }
+.fme-tip .hp-icon { width: 20px; height: 20px; }
+.fme-lead { color: #c9dbe5; font-size: 14px; line-height: 1.6; }
+.fme-row { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; }
+
+/* Linked contact card. */
+.fme-contact { display: flex; align-items: flex-start; gap: 18px; margin-top: 16px; padding: 18px 18px 18px 18px; border: 1px solid #23596c; border-radius: 13px; background: #051722; }
+.fme-contact > div { flex: 1; min-width: 0; display: grid; gap: 3px; }
+.fme-contact strong { color: #fff; font-size: 15px; font-weight: 600; }
+.fme-contact > div > span { color: #e6f3f9; font-size: 15px; }
+.fme-contact p { margin-top: 10px; color: #a9bfcc; font-size: 13px; line-height: 1.55; }
+.fme-contact-icon { display: grid; place-items: center; flex: 0 0 44px; height: 44px; border: 1px solid #2a5f74; border-radius: 10px; background: #0a2232; color: #7cc8ff; }
+.fme-contact-icon .hp-icon { width: 22px; height: 22px; }
+.fme-muted { color: var(--fme-sub) !important; font-size: 13px !important; }
+
+.fme-outline { display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0; padding: 9px 12px; border: 1px solid var(--fme-cyan); border-radius: 8px; color: var(--fme-cyan); font-size: 14px; white-space: nowrap; }
+.fme-outline .hp-icon { width: 16px; height: 16px; }
+.fme-outline:hover:not(:disabled) { background: #3ddcf514; }
+.fme-text-button { color: var(--fme-cyan); font-size: 13px; text-decoration: underline; text-underline-offset: 3px; }
+.fme-danger { color: #ff8a8a; }
+.fme-error { margin-top: 14px; padding: 12px; border-radius: 8px; background: #4a2222dd; color: #ffd6d6; font-size: 13px; }
+.fme :is(button, input, select, textarea):disabled { opacity: .55; cursor: default; }
+
+/* Footer: remove on the left, cancel + save on the right. */
+.fme-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 14px; padding: 18px 26px max(22px, env(safe-area-inset-bottom)) 28px; }
+.fme-remove { display: inline-flex; align-items: center; gap: 12px; color: #ff8a8a; font-size: 15px; }
+.fme-remove > span { display: grid; place-items: center; width: 38px; height: 38px; border: 1px solid #b6424a; border-radius: 8px; color: #ff8a8a; }
+.fme-remove .hp-icon { width: 19px; height: 19px; }
+.fme-remove:hover:not(:disabled) > span { background: #b6424a22; }
+.fme-confirm { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; color: #ffd6d6; font-size: 14px; }
+.fme-actions { display: flex; gap: 14px; margin-left: auto; }
+.fme-cancel { min-width: 88px; padding: 12px 18px; border: 1px solid #36586a; border-radius: 9px; background: #071a26; color: #fff; font-size: 16px; }
+.fme-cancel:hover:not(:disabled) { border-color: #6c8ea0; }
+.fme-save { display: inline-flex; align-items: center; gap: 9px; padding: 12px 20px; border-radius: 9px; background: linear-gradient(180deg, #4ef0ff, #22d3ee); color: #03202a; font-size: 16px; font-weight: 600; box-shadow: 0 0 18px #22d3ee55; }
+.fme-save .hp-icon { width: 19px; height: 19px; stroke-width: 2.2; }
+.fme-save:hover:not(:disabled) { background: #8af5ff; }
+
+@media (max-width: 600px) {
+  .fme-panel { border-left: 0; }
+  .fme-head { gap: 16px; padding: 16px; }
+  .fme-head h2 { font-size: 21px; }
+  .fme-badge { flex-basis: 52px; height: 52px; }
+  .fme-scroll { padding: 12px 12px 16px; }
+  .fme-profile { gap: 18px; padding-left: 8px; }
+  .fme-avatar, .fme-avatar .memory-avatar { flex-basis: 88px; width: 88px; height: 88px; }
+  .fme-profile h3 { font-size: 22px; }
+  .fme-tabs button { flex: 1 1 0; gap: 6px; padding: 12px 6px; font-size: 13px; }
+  .fme-tabs button .hp-icon { width: 16px; height: 16px; }
+  .fme-contact { flex-wrap: wrap; }
+  .fme-foot { padding: 14px 16px max(16px, env(safe-area-inset-bottom)); }
+  .fme-actions { width: 100%; }
+  .fme-actions > * { flex: 1; justify-content: center; white-space: nowrap; padding: 11px 12px; }
+}
+@media (prefers-reduced-motion: reduce) { .fme-panel { animation: none; } }

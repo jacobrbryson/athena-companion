@@ -148,3 +148,5 @@ button.cp-stat { text-align: left; color: inherit; }
   .fp-day li { grid-template-columns: 58px 3px 20px minmax(0, 1fr); gap: 8px; }
   .fp-day time { font-size: 12px; }
 }
+/* The tabs sit between the header and the metrics; space them off the metrics like every other section gap. */
+.fp > .property-nav { margin-bottom: 16px; }

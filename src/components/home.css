@@ -300,3 +300,11 @@
   .dashboard-home :is(.dh-stat, .dh-change, .dh-node, .dh-source-pills button):hover { transform: none; }
 }
 
+
+/* One vertical rhythm down the briefing: alert, work strip, latest changes,
+   metrics and card rows all sit the same distance apart. Each block used to
+   set its own (8, 12, 15, 16, 18px). */
+.dashboard-home { --dh-gap: 15px; }
+.dashboard-home > :is(.dashboard-notice, .work-strip, .dh-change-strip, .dh-stats) { margin: 0 0 var(--dh-gap); }
+.dashboard-home > .dh-row { margin-top: var(--dh-gap); }
+@media (max-width: 700px) { .dashboard-home { --dh-gap: 12px; } }

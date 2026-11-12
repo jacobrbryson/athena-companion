@@ -143,7 +143,7 @@ export function RightNowCard(props: RightNowProps) {
     ? `In ${Math.max(0, imminent.inMinutes ?? 0)} min` : free ? `${free} free` : 'Suggestion';
   const note = data.window.busyWith || imminent?.title || lead?.title;
   return <>
-    <HomeStat icon="Calendar" label="Right Now" value={value} note={note} chip={<span aria-hidden="true"> ↗</span>}
+    <HomeStat icon="StatNow" label="Right Now" value={value} note={note} chip={<span aria-hidden="true"> ↗</span>}
       tone="good" onClick={() => setOpen(true)} />
     {open && createPortal(<Drawer eyebrow="Athena" title="Right Now" onClose={() => setOpen(false)}>
       <RightNowDetails {...props} onAsk={prompt => { setOpen(false); props.onAsk(prompt); }}

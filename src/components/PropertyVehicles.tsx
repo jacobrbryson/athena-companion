@@ -379,7 +379,7 @@ export function VehicleDeadlineBanner({ vehicles, taxes = [], events = [], onOpe
     ...taxList.map(t => ({ key: `tax:${t.installment.uuid}`, name: t.label.charAt(0).toUpperCase() + t.label.slice(1), day: t.day, days: t.days, when: t.when })),
   ].sort((a, b) => a.days - b.days);
   return <section role="alert" aria-live="polite"
-    className={`mb-[15px] overflow-hidden rounded-xl border-2 shadow-2xl ${urgent ? 'border-red-400 bg-red-700 text-white shadow-red-900/60' : 'border-amber-300 bg-amber-400 text-black'}`}>
+    className={`mb-[var(--dh-gap,15px)] overflow-hidden rounded-xl border-2 shadow-2xl ${urgent ? 'border-red-400 bg-red-700 text-white shadow-red-900/60' : 'border-amber-300 bg-amber-400 text-black'}`}>
     <div className="flex items-start gap-3 px-4 pt-4">
       <span className="relative mt-1 flex h-4 w-4 shrink-0" aria-hidden>
         {urgent && <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-white opacity-75" />}

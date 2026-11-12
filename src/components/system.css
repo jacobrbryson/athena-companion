@@ -140,3 +140,9 @@ button.sys-fact:hover { border-color: #2f6a95; }
 
 /* System's tab strip on the pages that are its tabs (SectionPage `tabs`). */
 .section-page-tabs { margin-top: 18px; }
+
+/* Section pages keep the panels' 15px rhythm: Property's tabs (under the
+   header) sit 15px above the metrics, and the metric row and any notice sit
+   15px above the panels — they were flush and 20px. */
+.dashboard-section .ph + .section-page-tabs { margin: 15px 0; }
+.dashboard-section :is(.stat-row, .dashboard-notice) { margin-bottom: 15px; }

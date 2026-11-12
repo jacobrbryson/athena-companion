@@ -43,15 +43,8 @@ interface Props {
   onWorkouts: () => void;
 }
 
-const RANGES = [
-  // Today's tiles read today; its trend chart shows the six weeks leading here.
-  { id: 'today', label: 'Today', days: 42 },
-  { id: '7d', label: '7D', days: 7 },
-  { id: '30d', label: '30D', days: 30 },
-  { id: '3m', label: '3M', days: 91 },
-  { id: '1y', label: '1Y', days: 365 },
-] as const;
-type RangeId = typeof RANGES[number]['id'];
+// The trend chart shows the six weeks leading to today; the tiles show a week.
+const PROGRESS_DAYS = 42;
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const DAY = 86400000;
 const lbOf = (kg: number) => kg * 2.20462;
@@ -129,6 +122,11 @@ const PATHS: Record<string, ReactNode> = {
   book: <path d="M12 6.5c-2-1.5-5-2-8-1.5v13c3-.5 6 0 8 1.5 2-1.5 5-2 8-1.5V5c-3-.5-6 0-8 1.5ZM12 6.5v13" />,
   task: <><rect x="4" y="4" width="16" height="16" rx="2.5" /><path d="M8.5 12.5l2.5 2.5 4.5-5" /></>,
   briefcase: <><rect x="3.5" y="7.5" width="17" height="12" rx="2" /><path d="M9 7.5V5.5A1.5 1.5 0 0 1 10.5 4h3A1.5 1.5 0 0 1 15 5.5v2M3.5 12.5h17" /></>,
+  layers: <><path d="m12 3.5 8.5 4.5-8.5 4.5L3.5 8 12 3.5Z" /><path d="m3.5 12 8.5 4.5 8.5-4.5M3.5 16l8.5 4.5 8.5-4.5" /></>,
+  trash: <><path d="M4.5 7h15M9.5 7V4.5h5V7M6.5 7l1 12.5h9l1-12.5" /><path d="M10 11v5M14 11v5" /></>,
+  external: <><path d="M14 4.5h5.5V10M19.5 4.5 11 13" /><path d="M17.5 13.5v5a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1v-11a1 1 0 0 1 1-1h5" /></>,
+  bulb: <><path d="M9 17.5h6M10 20.5h4" /><path d="M12 3.5a6 6 0 0 0-3.6 10.8c.7.6 1.1 1.4 1.1 2.2v1h5v-1c0-.8.4-1.6 1.1-2.2A6 6 0 0 0 12 3.5Z" /></>,
+  close: <path d="M6 6l12 12M18 6 6 18" />,
   speech: <path d="M5 5h14a1.5 1.5 0 0 1 1.5 1.5v8A1.5 1.5 0 0 1 19 16h-8l-4.5 3.5V16H5a1.5 1.5 0 0 1-1.5-1.5v-8A1.5 1.5 0 0 1 5 5Z" />,
 };
 export function Icon({ name, className }: { name: keyof typeof PATHS | string; className?: string }) {
@@ -252,7 +250,6 @@ function takeOf(readiness: HealthReadiness | null, program: TrainingProgram | nu
 // The page
 // ---------------------------------------------------------------------------
 export function HealthOverview({ recovery, sleep, strain, weighIns, readiness, whoopNote, bodyNote, weightPlan, onAsk, onWorkouts }: Props) {
-  const [range, setRange] = useState<RangeId>('today');
   const [plan, setPlan] = useState<HealthPlan | null>(null);
   const [planError, setPlanError] = useState('');
   const [editing, setEditing] = useState<null | 'program' | 'food' | 'targets'>(null);
@@ -264,7 +261,6 @@ export function HealthOverview({ recovery, sleep, strain, weighIns, readiness, w
   useEffect(load, [load]);
   useEffect(() => { workoutsApi.list(400).then(r => setWorkouts(r.workouts)).catch(() => setWorkouts([])); }, []);
 
-  const days = RANGES.find(r => r.id === range)!.days;
   const today = recovery[0];
   const night = sleep[0];
   // Today's cycle is listed before WHOOP has scored it, so the newest row is
@@ -277,8 +273,7 @@ export function HealthOverview({ recovery, sleep, strain, weighIns, readiness, w
   const rhrDelta = today?.resting_heart_rate != null && avg(prior.map(r => r.resting_heart_rate)) != null ? today.resting_heart_rate - avg(prior.map(r => r.resting_heart_rate))! : null;
   const hrvDelta = today?.hrv_ms != null && avg(prior.map(r => r.hrv_ms)) != null ? today.hrv_ms - avg(prior.map(r => r.hrv_ms))! : null;
   const sleepDelta = night && sleep[1] ? night.hours_asleep - sleep[1].hours_asleep : null;
-  // Tiles draw the window the range asks for, up to what WHOOP returned.
-  const sparkDays = range === 'today' || range === '7d' ? 7 : 14;
+  const sparkDays = 7;
   const series = <T,>(rows: T[], pick: (r: T) => number | null | undefined) => rows.slice(0, sparkDays).map(r => pick(r) ?? null).reverse();
   const strainWeek = Array.from({ length: 7 }, (_, i) => {
     const date = localDay(new Date(Date.now() - (6 - i) * DAY));
@@ -299,9 +294,6 @@ export function HealthOverview({ recovery, sleep, strain, weighIns, readiness, w
     <PageHeader eyebrow="HEALTH & PERFORMANCE" title={<>Stronger for<br />what matters</>}
       blurb="More energy for your family, the field, and the life you want to live."
       art="/assets/heart.png"
-      controls={<div className="hp-range" role="tablist" aria-label="Time range">
-        {RANGES.map(r => <button key={r.id} role="tab" aria-selected={range === r.id} className={range === r.id ? 'active' : ''} onClick={() => setRange(r.id)}>{r.label}</button>)}
-      </div>}
       aside={<div className={`hp-avg-hr${live != null ? ' hp-live' : ''}`}>
         <Ecg bpm={shownHr} />
         <div><strong>{shownHr ?? '—'}<small> bpm</small></strong><span>{live != null ? <><i className="hp-live-dot" />Live Heart Rate</> : 'Avg Heart Rate'}</span></div>
@@ -352,7 +344,7 @@ export function HealthOverview({ recovery, sleep, strain, weighIns, readiness, w
     <div className="hp-grid hp-grid-bottom">
       <div className="hp-stack">
         <NutritionPanel food={food} targets={targets} loading={!plan && !planError} onOpen={o => { setFoodOpen(o); setEditing('food'); }} onTargets={() => setEditing('targets')} onChanged={n => setPlan(prev => prev && { ...prev, nutrition: n })} />
-        <Progress weighIns={weighIns} workouts={workouts} days={days} targets={targets} weightPlan={weightPlan} bodyNote={bodyNote} onTargets={() => setEditing('targets')} />
+        <Progress weighIns={weighIns} workouts={workouts} days={PROGRESS_DAYS} targets={targets} weightPlan={weightPlan} bodyNote={bodyNote} onTargets={() => setEditing('targets')} />
       </div>
       <div className="hp-stack">
         <ProgramWeek program={program} loading={!plan && !planError} onEdit={() => setEditing('program')} onMarked={p => setPlan(prev => prev && { ...prev, program: p })} onAsk={onAsk} onViewAll={onWorkouts} />

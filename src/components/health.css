@@ -4,9 +4,6 @@
 .hp-icon { width: 20px; height: 20px; flex-shrink: 0; }
 
 /* --- Hero: what Health puts in the shared head (PageHeader.tsx) ----------- */
-.hp-range { display: inline-flex; margin-top: 34px; padding: 3px; border: 1px solid #284865; border-radius: 10px; background: #071628cc; }
-.hp-range button { min-width: 58px; padding: 9px 14px; border-radius: 8px; color: #c7d6e6; font-size: 14px; }
-.hp-range button.active { color: #fff; background: linear-gradient(180deg, #1f7fd6, #1460ad); box-shadow: 0 0 14px #1d8cff55; }
 .hp-avg-hr { display: flex; align-items: center; justify-content: center; gap: 8px; }
 .hp-ecg { width: 190px; height: 50px; filter: drop-shadow(0 0 4px #3ee4ffaa); }
 .hp-ecg-head { fill: #e9fdff; filter: drop-shadow(0 0 3px #3ee4ff); }
@@ -239,8 +236,6 @@ em.hp-tone-idle { color: var(--hp-dim); } .hp-tone-dot.hp-tone-idle { background
   .hp-grid-bottom .hp-wellness { order: 3; }
 }
 @media (max-width: 760px) {
-  .hp-range { display: flex; margin-top: 22px; }
-  .hp-range button { flex: 1; min-width: 0; padding: 8px 4px; }
   .hp-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
   .hp-tile { min-height: 0; }
   .hp-tile:first-child { grid-column: 1 / -1; }

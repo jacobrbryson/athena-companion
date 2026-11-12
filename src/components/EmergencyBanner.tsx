@@ -108,7 +108,8 @@ export function EmergencyBanner({
   pinned?: boolean;
   inline?: boolean;
 }) {
-  const gutter = inline ? 'mb-4' : 'mx-3 mt-2';
+  // Inline on the briefing: the gap below matches the blocks under it (--dh-gap, 15px).
+  const gutter = inline ? 'mb-[var(--dh-gap,15px)]' : 'mx-3 mt-2';
   const [topbar, setTopbar] = useState(0);
   useEffect(() => {
     if (!pinned) return;

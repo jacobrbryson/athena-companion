@@ -52,8 +52,9 @@ export function useDashboardData() {
       const current = ++revision.current;
       const canPublish = () => alive.current && current === revision.current;
       async function load<T>(fetcher: () => Promise<T>, setter: Dispatch<SetStateAction<Result<T>>>) {
-        // Keep cards steady during routine polling. Push invalidation clears
-        // them immediately below; a failed read also removes the old contents.
+        // Keep cards steady while a read is in flight — polling and pushes
+        // alike — so a page never blanks and redraws under someone mid-use
+        // (ticking a chore pushes an update). A failed read removes the old contents.
         setter(previous => ({ ...previous, loading: previous.data === null, error: null }));
         try { const data = await retryRead(fetcher, canPublish); if (canPublish()) setter({ data, loading: false, error: null }); }
         catch (e) { if (canPublish()) setter({ data: null, loading: false, error: (e as Error).name === 'TimeoutError' ? 'The connection is taking too long. Please retry.' : (e as Error).message || 'Unavailable' }); }
@@ -78,10 +79,11 @@ export function useDashboardData() {
     alive.current = true;
     void refresh();
     const tick = () => { if (!document.hidden && Date.now() - lastRefresh.current >= SILENT_REFRESH_MS) void refresh(); };
+    // A push: drop cached reads so the refetch is fresh, but leave what's on
+    // screen until the new data lands — clearing it here blanked every page.
     const refreshNow = () => {
       revision.current++;
       invalidateReads();
-      setSummary(initial); setFacts(initial); setActions(initial); setNews(initial); setPriority(null); setRightNow(initial); setNearby(initial); setCommunity(initial);
       void refresh();
     };
     const timer = window.setInterval(tick, SILENT_REFRESH_MS);

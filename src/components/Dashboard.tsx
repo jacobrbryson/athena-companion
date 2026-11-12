@@ -1893,18 +1893,18 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
     };
     const statStrip = <div className="dh-stats">
       {!working && <RightNowCard data={data.rightNow.data} loading={data.rightNow.loading} error={data.rightNow.error} onAsk={onAsk} onManage={() => setPlansOpen(true)} />}
-      <HomeStat icon="Health" label="Recovery" onClick={go('Health')} tone={whoopDown ? 'idle' : readinessTone}
+      <HomeStat icon="StatRecovery" label="Recovery" onClick={go('Health')} tone={whoopDown ? 'idle' : readinessTone}
         value={recovery?.recovery_score != null && !whoopDown ? `${recovery.recovery_score}%` : '—'}
         chip={readiness && !whoopDown ? <span className={`readiness readiness-${readiness.level}`}>{readiness.label}</span> : undefined}
         note={!ready(summary?.recovery) ? (summary ? statusText[summary.recovery.status] : 'Loading…') : recoveryDelta ? `${recoveryDelta.delta > 0 ? '+' : ''}${recoveryDelta.delta} points vs ${recoveryDelta.previous.date}` : readiness?.headline || 'No scored result'}
         freshness={ready(summary?.recovery) && recovery ? `Reading ${recovery.date}` : undefined}
         spark={ready(summary?.recovery) && <Spark tone="green" values={week(scoredDays, r => r.recovery_score).map(d => d.value)} label="Recovery over the last seven calendar days" />} />
-      <HomeStat icon="Health" label="Sleep" onClick={go('Health')} tone={sleep?.sleep_performance_percent != null && sleep.sleep_performance_percent >= 85 ? 'good' : 'idle'}
+      <HomeStat icon="StatSleep" label="Sleep" onClick={go('Health')} tone={sleep?.sleep_performance_percent != null && sleep.sleep_performance_percent >= 85 ? 'good' : 'idle'}
         value={ready(summary?.sleep) && sleep ? hoursMinutes(sleep.hours_asleep) : '—'}
         note={!ready(summary?.sleep) ? (summary ? statusText[summary.sleep.status] : 'Loading…')
           : sleep?.sleep_performance_percent != null ? `${sleep.sleep_performance_percent}% of need`
             : sleep ? 'Sleep performance unavailable' : 'No sleep recorded'} />
-      <HomeStat icon="Calendar" label={lead ? `Next event · ${lead.ongoing ? 'on now' : dayWord(lead.event)}` : 'Next event'} onClick={go('Calendar')} tone={lead?.ongoing ? 'warn' : 'idle'}
+      <HomeStat icon="StatCalendar" label={lead ? `Next event · ${lead.ongoing ? 'on now' : dayWord(lead.event)}` : 'Next event'} onClick={go('Calendar')} tone={lead?.ongoing ? 'warn' : 'idle'}
         value={lead ? eventTime(lead.event, timeZone) : ready(summary?.calendar) ? 'Clear' : '—'}
         note={lead ? `${lead.event.title} · ${lead.ongoing ? 'on now' : `in ${untilLabel(lead.ms)}`}` : ready(summary?.calendar) ? 'Nothing timed coming up' : summary ? statusText[summary.calendar.status] : 'Loading…'} freshness={checked('calendar')} />
       <HomeStat icon="Tasks" label="Open tasks" onClick={go('Work')} tone={ready(summary?.jira) && issues.length ? 'warn' : 'idle'}

@@ -52,6 +52,12 @@ const DRAWN: Record<string, { tone: Tone; art: ReactNode }> = {
   // The briefing's stat strip.
   Gym: { tone: 'blue', art: <path d="M3 12h18M6.5 7.5v9M4 9.5v5M17.5 7.5v9M20 9.5v5" /> },
   Weather: { tone: 'blue', art: <path d="M7 18.5h10.2a3.8 3.8 0 0 0 .5-7.6 5.5 5.5 0 0 0-10.6 1.4A3.1 3.1 0 0 0 7 18.5Z" /> },
+  // Drawn so they centre in the stat circles like Tasks and Weather; the
+  // sprite's Health/Calendar tiles stay in the nav and on cards.
+  StatRecovery: { tone: 'blue', art: <path d="M12 20s-7.5-4.6-7.5-10A4.3 4.3 0 0 1 12 7.6 4.3 4.3 0 0 1 19.5 10c0 5.4-7.5 10-7.5 10ZM5.5 12.5h3l1.5-2.5 2.5 5 1.5-2.5h4.5" /> },
+  StatSleep: { tone: 'blue', art: <><path d="M19.5 14.5A7.8 7.8 0 1 1 9.5 4.5a6.2 6.2 0 0 0 10 10Z" /><path d="M15 4h3l-3 3.5h3" /></> },
+  StatCalendar: { tone: 'blue', art: <><rect x="4" y="5" width="16" height="15" rx="2" /><path d="M4 10h16M8.5 3v4M15.5 3v4" /><path d="M8 14h2M14 14h2M8 17h2" /></> },
+  StatNow: { tone: 'blue', art: <><circle cx="12" cy="12" r="8.4" /><path d="M12 7.5V12l3 2" /></> },
   Tasks: { tone: 'blue', art: <><rect x="4" y="4" width="16" height="16" rx="3" /><path d="m8.5 12 2.5 2.5 4.5-5" /></> },
   Dreams: { tone: 'violet', art: <><path className="icon-fill" d="M15.6 4.4a7.6 7.6 0 1 0 4 10.6 6.2 6.2 0 0 1-4-10.6Z" /><path d="M18.4 4.2v2.4M17.2 5.4h2.4" /><path d="M20.6 9.4v1.2M20 10h1.2" /></> },
 };
