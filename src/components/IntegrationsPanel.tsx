@@ -11,7 +11,7 @@ import { androidCall, isAndroidCompanion } from '../native/android';
 import { WhoopActivityReviews } from './WhoopActivityReviews';
 
 /**
- * Connect Athena to Google (Gmail, Calendar, Contacts, Websites), Whoop and more.
+ * Connect Athena to Google (Gmail, Calendar, Contacts, Tasks, Websites), Whoop and more.
  *
  * The flow leaves this app: `connect` returns an authorize URL and we navigate
  * to it, the provider sends the browser back to the origin with
@@ -44,6 +44,7 @@ const ICONS: Record<string, string> = {
   gmail: '✉️', jira: '🔷', slack: '💬',
   google_calendar: '📅',
   google_contacts: '👥',
+  google_tasks: '✅',
   websites: '🌐',
   whoop: '💤',
   nest: '🌡️',
@@ -58,6 +59,7 @@ const BLURBS: Record<string, string> = {
   google_calendar: 'Reads your upcoming events and free/busy time.',
   websites: 'Reads Search Console and Analytics for the sites you manage, so Athena can show how each is doing. Read-only.',
   google_contacts: 'Reads names, phone numbers, emails, relationships, birthdays and photos, so Athena can link them to the family and people she knows. Read-only.',
+  google_tasks: 'Reads your task lists and to-dos. Adds, ticks off, changes or deletes a task only when you approve a card.',
   whoop: 'Reads your recovery, sleep and strain scores.',
   smartcar: 'Reads your car’s odometer, fuel or charge and whether it’s locked, straight from the car, and keeps its mileage on Property → Vehicles current. Location only for a car you turn it on for. Read-only: can’t lock, unlock or start it.',
   nest: 'Reads whether each thermostat you share is online, plus its temperature, humidity and settings, so Athena can tell you when one goes offline. Google lets you pick which thermostats. Changes the mode, temperature or eco only when you approve a card.',
@@ -300,7 +302,7 @@ function ProviderRow({
 }
 
 /**
- * Gmail, Calendar, Contacts and Websites on one card. "Connect all" opens the same
+ * Gmail, Calendar, Contacts, Tasks and Websites on one card. "Connect all" opens the same
  * consent screen sign-in does; each row's own button elevates just that
  * service (or links it to a different account — Gmail is often a work one).
  */
@@ -331,7 +333,7 @@ function GoogleGroupCard({
         <div className="min-w-0">
           <p className="truncate text-sm">{ICONS.google} Google</p>
           <p className="mt-1 text-[11px] leading-snug opacity-50">
-            Gmail, Calendar, Contacts and Websites share one Google approval. Signing in asks for
+            Gmail, Calendar, Contacts, Tasks and Websites share one Google approval. Signing in asks for
             all of them; connect any you skipped below.
           </p>
           {accounts.length > 0 && (

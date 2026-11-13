@@ -14,6 +14,7 @@ const READS: Record<string, { reads: string; writes: string }> = {
   gmail: { reads: 'Sender, subject and date of your inbox; a message body only when you open it.', writes: 'Archive, trash, unsubscribe or save a draft only when you approve. She never sends.' },
   websites: { reads: 'Search Console and Analytics numbers for the sites you list, checked daily and when you press Check now.', writes: 'Nothing — read-only.' },
   google_contacts: { reads: 'Names, numbers, emails, addresses, birthdays and photos, read live.', writes: 'Nothing — read-only.' },
+  google_tasks: { reads: 'Your task lists and the to-dos on them, read live when you ask.', writes: 'Adds, ticks off, changes or deletes a task only when you approve a card.' },
   whoop: { reads: 'Recovery, sleep, strain, resting heart rate, HRV and blood oxygen.', writes: 'Nothing — read-only.' },
   nest: { reads: 'Whether each shared thermostat is online, and its temperature, humidity, mode and setting.', writes: 'Mode, temperature or eco, only when you approve a card.' },
   family_chores: { reads: 'Whose chores are due, what is done, coins earned.', writes: 'Nothing — read-only.' },
