@@ -192,7 +192,8 @@ export interface LabStats {
   byEndpoint: LabStatRow[];
   byTask: LabStatRow[];
   incidents: { endpointId: string; startsAt: number; endsAt: number; errors: number; quota: boolean }[];
-  savings: { calls: number; tokens: number; usd: number; estimate: boolean };
+  /** Optional: core_api before 2026-11-16 computed it but left it out. */
+  savings?: { calls: number; tokens: number; usd: number; estimate: boolean };
   tests: { smoke: number; evals: number };
 }
 

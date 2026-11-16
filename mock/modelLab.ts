@@ -140,6 +140,15 @@ export async function mockModelLab(method: string, url: URL, body: any): Promise
   const p = url.pathname;
   if (!p.startsWith('/api/v1/llm/lab')) return undefined;
   if (ls('mock_lab_owner') === 'false') fail(403, 'Only the owner can use the model lab');
+  // Replay captured production payloads: set window.__REAL_LAB = { overview,
+  // stats, evals, preview } before opening the tab. The mock's own data is
+  // richer than a fresh production server's, which is how a missing field
+  // once blanked the page in production only (2026-11-16).
+  const real = (globalThis as { __REAL_LAB?: Record<string, unknown> }).__REAL_LAB;
+  if (real && method === 'GET') {
+    const key = p === '/api/v1/llm/lab' ? 'overview' : p.split('/').pop()!;
+    if (key in real) return real[key];
+  }
 
   if (p === '/api/v1/llm/lab') {
     return { owner: true, policy: 'smart', scenarios: SCENARIOS, maxDrillMinutes: 30, outage: mockOutage(),

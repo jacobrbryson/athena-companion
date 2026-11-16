@@ -357,7 +357,8 @@ export function ModelsPage({ ctx, tabs }: { ctx: SectionContext; tabs?: ReactNod
       <Stat label="Answering" value={answering ? nameOf(answering.endpointId, answering.tier) : o ? 'Nothing' : '…'} note={o ? (o.outage.level === 'ok' ? `policy ${o.policy}` : o.outage.level === 'down' ? 'no model available' : 'on a fallback') : undefined} tone={!o ? 'idle' : o.outage.level === 'ok' ? 'good' : o.outage.level === 'down' ? 'alert' : 'ok'} />
       <Stat label="Answered locally" value={s ? `${Math.round(s.totals.localShare * 100)}%` : '…'} note={s ? `${s.totals.localOk} of ${s.totals.ok} in ${days === 1 ? '24 h' : `${days} days`}` : undefined} tone={s && s.totals.localShare > 0 ? 'good' : 'idle'} />
       <Stat label="Fallbacks" value={s ? s.totals.fallbackOk : '…'} note="answered after another model failed" tone={s && s.totals.fallbackOk ? 'ok' : 'idle'} />
-      <Stat label="Saved (est.)" value={s ? `$${s.savings.usd.toFixed(2)}` : '…'} note={s ? `${s.savings.tokens.toLocaleString()} tokens kept off the cloud` : undefined} />
+      {/* savings is optional: a server that leaves it out must not blank the page. */}
+      <Stat label="Saved (est.)" value={s ? (s.savings ? `$${s.savings.usd.toFixed(2)}` : '—') : '…'} note={s?.savings ? `${s.savings.tokens.toLocaleString()} tokens kept off the cloud` : undefined} />
     </>}
   >
     {o && <div className="section-panel-wide mdl-outage-slot"><OutageNotice outage={o.outage} onStop={stopDrill} busy={stopBusy} /></div>}
