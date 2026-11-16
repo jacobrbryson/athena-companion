@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { dashboardApi, dreamsApi, type CommunityWeather, type Dream } from '../api/dashboard';
 import { healthPlanApi, localDay, type HealthPlan } from '../api/healthPlan';
+import { propertyGuardianApi, type GuardianOverview } from '../api/propertyGuardian';
 import { DashboardIcon } from './icons';
 import { DASHBOARD_REFRESH_EVENT } from '../athena/useChat';
 import { freshness, type HomeUpdate } from './livingHome';
@@ -123,6 +124,8 @@ export function useHomeExtras(enabled: boolean) {
   const [plan, setPlan] = useState<Read<HealthPlan>>({ data: null, loading: true });
   const [weather, setWeather] = useState<Read<CommunityWeather>>({ data: null, loading: true });
   const [dreams, setDreams] = useState<Read<Dream[]>>({ data: null, loading: true });
+  // Is the property secure: the Guardian sweep's verdict and open incidents (Property card).
+  const [guardian, setGuardian] = useState<Read<GuardianOverview>>({ data: null, loading: true });
   useEffect(() => {
     if (!enabled) return;
     let alive = true;
@@ -135,9 +138,10 @@ export function useHomeExtras(enabled: boolean) {
       void settle(healthPlanApi.overview(localDay()), setPlan);
       void settle(dashboardApi.communityWeather(), setWeather);
       void settle(dreamsApi.list().then(r => r.dreams), setDreams);
+      void settle(propertyGuardianApi.overview(), setGuardian);
     };
     const onPush = () => {
-      setPlan({ data: null, loading: true }); setWeather({ data: null, loading: true }); setDreams({ data: null, loading: true });
+      setPlan({ data: null, loading: true }); setWeather({ data: null, loading: true }); setDreams({ data: null, loading: true }); setGuardian({ data: null, loading: true });
       refresh();
     };
     const visible = () => { if (!document.hidden) refresh(); };
@@ -151,5 +155,5 @@ export function useHomeExtras(enabled: boolean) {
       document.removeEventListener('visibilitychange', visible);
     };
   }, [enabled]);
-  return { plan, weather, dreams };
+  return { plan, weather, dreams, guardian };
 }

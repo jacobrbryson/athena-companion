@@ -38,6 +38,15 @@ export type GuardianOverview = {
 };
 export type GuardianScenario = Partial<Record<'garage_door' | 'patio_umbrella', Record<string, string>>>;
 
+/** Guardian sweep status words, shared with the Home Property card. */
+export const GUARDIAN_STATUS = {
+  secure: { label: 'Secure', note: 'Everything checked was verified safe.', cls: 'is-on' },
+  attention: { label: 'Needs attention', note: 'Something is open that should be closed.', cls: 'is-alert' },
+  unverified: { label: "Couldn't verify", note: "Something couldn't be checked — unknown is not safe.", cls: 'is-warn' },
+  waiting: { label: 'Waiting for the first sweep', note: 'Nothing has been checked yet.', cls: 'is-off' },
+  off: { label: 'Off', note: 'No protocol is switched on.', cls: 'is-off' },
+} as const;
+
 const base = '/api/v1/projects/property/security/guardian';
 export const propertyGuardianApi = {
   overview: () => api.get<GuardianOverview>(base),

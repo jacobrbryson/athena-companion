@@ -3,6 +3,7 @@ import {
   propertyGuardianApi, type GuardianConfig, type GuardianIncident, type GuardianOverview, type GuardianProtocol, type GuardianRun, type GuardianScenario, type GuardianSubject,
 } from '../api/propertyGuardian';
 import type { SecurityDevice } from '../api/propertySecurity';
+import { GUARDIAN_STATUS } from '../api/propertyGuardian';
 import { Icon, useMediaUrl } from './securityShared';
 
 /**
@@ -17,13 +18,6 @@ const stamp = (v: string | null) => {
   const d = new Date(v);
   return d.toDateString() === new Date().toDateString() ? `${clock(v)} today` : `${d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })} · ${clock(v)}`;
 };
-const STATUS = {
-  secure: { label: 'Secure', note: 'Everything checked was verified safe.', cls: 'is-on' },
-  attention: { label: 'Needs attention', note: 'Something is open that should be closed.', cls: 'is-alert' },
-  unverified: { label: "Couldn't verify", note: "Something couldn't be checked — unknown is not safe.", cls: 'is-warn' },
-  waiting: { label: 'Waiting for the first sweep', note: 'Nothing has been checked yet.', cls: 'is-off' },
-  off: { label: 'Off', note: 'No protocol is switched on.', cls: 'is-off' },
-} as const;
 const CONDITION: Record<string, string> = { open: 'appears to be open', up: 'appears to be up', unknown: "couldn't be verified", offline: 'camera not responding' };
 const REASON: Record<string, string> = {
   offline: "camera isn't responding", device_unavailable: "camera isn't responding", bridge_unreachable: "bridge isn't reachable", station_busy: 'base station was busy',
@@ -260,7 +254,7 @@ export function SecurityGuardian({ enabled, cameras }: { enabled: boolean; camer
 
   if (!enabled || (!data && !error)) return null;
   if (!data) return <p className="ps-alert" role="alert">{error}</p>;
-  const status = STATUS[data.status];
+  const status = GUARDIAN_STATUS[data.status];
   const sweep = data.protocols.find(p => p.id === 'nightly_sweep')!;
   const lastGarage = (data.lastSweep?.results || []).filter(r => r.check === 'garage_door');
   const lastUmbrella = data.runs.flatMap(r => r.results).find(r => r.check === 'patio_umbrella');

@@ -115,10 +115,157 @@ export interface LlmStatus {
   childPolicy: string;
   embeddingSpace: string;
   serving: Record<string, ServingTier | null>;
+  /** Is a model down, and what that means for a person (the outage banner). */
+  outage?: LlmOutage;
   orcwood: EndpointStatus[];
   frontier: EndpointStatus[];
   recentCalls: { at: number; task: string; endpointId: string; tier: string; outcome: string; latencyMs: number }[];
 }
+
+export interface LlmOutageEndpoint {
+  endpointId: string;
+  name: string;
+  tier: string;
+  /** quota | rate_limit | timeout | auth | errors */
+  reason: string;
+  /** Set when a drill caused it, not a real failure. */
+  drill: string | null;
+  reopensInMs: number | null;
+  since?: number | null;
+}
+
+export interface LlmServerDrill {
+  scenario: string;
+  label: string;
+  startedAt: number;
+  endsAt: number;
+  remainingMs: number;
+}
+
+export interface LlmOutage {
+  /** ok: nothing a person notices · degraded: running on a fallback · down: nothing can answer */
+  level: 'ok' | 'degraded' | 'down';
+  message: string | null;
+  down: LlmOutageEndpoint[];
+  /** A backup that is down while everything else is fine (no banner). */
+  backupDown: LlmOutageEndpoint[];
+  answering: { endpointId: string; tier: string; model: string; name: string } | null;
+  lost: string[];
+  drill: LlmServerDrill | null;
+}
+
+// ------------------------------------------------------------- model lab ---
+
+export interface LabCheck { rule: string; ok: boolean; detail: string }
+
+export interface LabPreview {
+  task: string;
+  decision: {
+    task: string;
+    policy: string;
+    urgency?: string;
+    lead: { endpointId: string | null; why: string } | null;
+    local: { endpointId: string; model: string | null; lead: boolean; checks: LabCheck[] }[];
+    excluded?: { endpoints: string[]; why: string };
+  };
+  chain: { endpointId: string; tier: string; model: string | null; available: boolean; drilled: string | null; openReason: string | null }[];
+  serving: { endpointId: string; tier: string; model: string | null } | null;
+}
+
+export interface LabStatRow {
+  key?: string;
+  endpointId?: string;
+  task?: string;
+  tier: string;
+  calls: number;
+  ok: number;
+  errors: number;
+  invalid: number;
+  fallbackOk: number;
+  p50: number | null;
+  p95: number | null;
+}
+
+export interface LabStats {
+  days: number;
+  totals: { calls: number; ok: number; fallbackOk: number; localOk: number; localShare: number };
+  byEndpoint: LabStatRow[];
+  byTask: LabStatRow[];
+  incidents: { endpointId: string; startsAt: number; endsAt: number; errors: number; quota: boolean }[];
+  savings: { calls: number; tokens: number; usd: number; estimate: boolean };
+  tests: { smoke: number; evals: number };
+}
+
+export interface LabEvalRow {
+  endpointId: string;
+  tier?: string;
+  model: string | null;
+  suite: string;
+  passed: number;
+  total: number;
+  avgLatencyMs?: number | null;
+  at: number;
+  source?: string;
+}
+
+export interface LabDrillResult {
+  scenario: string;
+  label: string;
+  passed: boolean;
+  reply: string | null;
+  servedBy: { endpointId: string; tier: string; model: string; fallback: boolean; why: string } | null;
+  attempts: { endpointId: string; error: string; drill: boolean }[];
+  error: string | null;
+  latencyMs: number;
+  wouldLose: string[];
+}
+
+export interface LabCompareRow {
+  endpointId: string;
+  tier: string;
+  model: string | null;
+  latencyMs: number | null;
+  valid: boolean;
+  reply: string | null;
+  error: string | null;
+}
+
+export interface LabPing {
+  endpointId: string;
+  baseUrl: string;
+  viaTailnet: boolean;
+  reachable: boolean;
+  latencyMs: number | null;
+  models: string[];
+  missing: string[];
+  /** enforced: refuses without the token · open: answers anyone · unknown/unreachable */
+  gate: 'enforced' | 'open' | 'unknown' | 'unreachable';
+  error: string | null;
+}
+
+export interface LabOverview {
+  owner: boolean;
+  policy: string;
+  scenarios: { id: string; label: string }[];
+  maxDrillMinutes: number;
+  outage: LlmOutage;
+  endpoints: { id: string; tier: string; chat: string | null }[];
+}
+
+/** The Models tab's stats and test tools. Owner only — everyone else gets a 403. */
+export const labApi = {
+  overview: () => api.get<LabOverview>('/api/v1/llm/lab'),
+  stats: (days: number) => api.get<LabStats>(`/api/v1/llm/lab/stats?days=${days}`),
+  evals: () => api.get<{ latest: LabEvalRow[]; history: LabEvalRow[] }>('/api/v1/llm/lab/evals'),
+  runEvals: () => api.post<{ latest: LabEvalRow[] }>('/api/v1/llm/lab/evals'),
+  preview: (q: { task: string; audience?: string; urgency?: string; chars?: number; scenario?: string; prefer?: string }) =>
+    api.get<LabPreview>(`/api/v1/llm/lab/preview?${new URLSearchParams(Object.entries(q).filter(([, v]) => v !== undefined && v !== '').map(([k, v]) => [k, String(v)])).toString()}`),
+  ping: () => api.get<{ endpoints: LabPing[] }>('/api/v1/llm/lab/ping'),
+  drillTest: (scenario: string, message: string, urgency: string) => api.post<LabDrillResult>('/api/v1/llm/lab/drill/test', { scenario, message, urgency }),
+  startDrill: (scenario: string, minutes: number) => api.post<{ drill: LlmServerDrill; outage: LlmOutage }>('/api/v1/llm/lab/drill/server', { scenario, minutes }),
+  stopDrill: () => api.del<{ stopped: boolean; outage: LlmOutage }>('/api/v1/llm/lab/drill/server'),
+  compare: (message: string) => api.post<{ message: string; results: LabCompareRow[] }>('/api/v1/llm/lab/compare', { message }),
+};
 
 export interface DeviceModel {
   id: string;
@@ -322,7 +469,7 @@ export const actionsApi = {
    * (complete_chore) or its Undo (undo_complete_chore). Only actions core_api
    * marks direct are accepted; the result is the executed, audited row.
    */
-  perform: (actionId: 'complete_chore' | 'undo_complete_chore' | 'put_project_session_on_calendar', params: { chore_id: string } | { session_uuid: string }) =>
+  perform: (actionId: 'complete_chore' | 'undo_complete_chore' | 'put_project_session_on_calendar' | 'complete_google_task' | 'reopen_google_task', params: { chore_id: string } | { session_uuid: string } | { task_id: string; task_list?: string }) =>
     api.post<{ success: true; action: AthenaAction }>(`/api/v1/actions/direct/${actionId}`, { params }),
   revokeAuthority: (actionId: string) =>
     api.del<{ success: true; authorities: ActionAuthority[] }>(

@@ -28,6 +28,7 @@ export const SYSTEM_TABS = [
   { id: 'News', label: 'News', icon: 'SystemNews' },
   { id: 'Dreams', label: 'Dreams', icon: 'Dreams' },
   { id: 'Finance', label: 'Finance', icon: 'Finance' },
+  { id: 'Models', label: 'Models', icon: 'SystemModels' },
 ] as const;
 export type SystemTab = typeof SYSTEM_TABS[number]['id'];
 export const SYSTEM_TAB_IDS: readonly string[] = SYSTEM_TABS.map(t => t.id);
@@ -45,6 +46,7 @@ const GLYPHS: Record<string, ReactNode> = {
   question: <><circle cx="12" cy="12" r="8.5" /><path d="M9.6 9.5a2.5 2.5 0 1 1 3.4 2.3c-.7.3-1 .8-1 1.5v.5M12 16.8h.01" /></>,
   gear: <><circle cx="12" cy="12" r="3" /><path d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M5.6 18.4l1.8-1.8M16.6 7.4l1.8-1.8" /></>,
   chart: <path d="M5 20v-6M10 20V9M15 20v-4M20 20V5" />,
+  chip: <><rect x="7" y="7" width="10" height="10" rx="2" /><path d="M10 7V4M14 7V4M10 20v-3M14 20v-3M7 10H4M7 14H4M20 10h-3M20 14h-3" /></>,
   warning: <><path d="m12 3.5 9 16H3Z" /><path d="M12 10v4.5M12 17.2h.01" /></>,
   book: <><path d="M4 5.5c2.5-1 5.5-1 8 .8 2.5-1.8 5.5-1.8 8-.8v13c-2.5-1-5.5-1-8 .8-2.5-1.8-5.5-1.8-8-.8Z" /><path d="M12 6.3v13" /></>,
 };

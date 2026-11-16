@@ -46,6 +46,11 @@ export interface Message {
    * and returned in live replies, history and polling.
    */
   sources?: { title: string; url: string }[];
+  /**
+   * Which model wrote this reply and why. Live socket replies only, so the
+   * transcript can mark one that came from a backup during an outage.
+   */
+  served_by?: { endpoint_id: string | null; tier: string | null; fallback: boolean; why: string | null };
 }
 
 /** Where Athena is talking from, sent with every message (see message.js). */

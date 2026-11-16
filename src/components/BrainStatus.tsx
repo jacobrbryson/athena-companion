@@ -34,16 +34,28 @@ export function useBrainStatus(intervalMs = 60_000) {
   }, []);
   // A header pill nobody is looking at needs no refreshing.
   usePresentPoll(tick, intervalMs);
+  // Something changed routing on purpose (a drill started or stopped in the
+  // Models tab): read it now rather than at the next poll.
+  useEffect(() => {
+    window.addEventListener(BRAIN_REFRESH_EVENT, tick);
+    return () => window.removeEventListener(BRAIN_REFRESH_EVENT, tick);
+  }, [tick]);
   return status;
 }
 
+/** Dispatch on window to make every brain-status reader refresh now. */
+export const BRAIN_REFRESH_EVENT = 'athena:brain-refresh';
+
 export function BrainPill({ status, onClick }: { status: LlmStatus | null; onClick: () => void }) {
-  const tier = status ? status.serving.chat?.tier || 'offline' : null;
-  const style = tier ? TIER_STYLE[tier] || TIER_STYLE.frontier : null;
+  const level = status?.outage?.level;
+  const tier = status ? (level === 'down' ? 'offline' : status.serving.chat?.tier || 'offline') : null;
+  const base = tier ? TIER_STYLE[tier] || TIER_STYLE.frontier : null;
+  // On a fallback, say so: the tier alone ("ORCWOOD") reads as normal.
+  const style = base && level === 'degraded' ? { ...base, label: `${base.label} · BACKUP`, dot: 'bg-amber-400 animate-pulse' } : base;
   return (
     <button
       onClick={onClick}
-      title={status?.serving.chat ? `Answering with ${status.serving.chat.model}` : 'Model status'}
+      title={status?.outage?.message || (status?.serving.chat ? `Answering with ${status.serving.chat.model}` : 'Model status')}
       className="flex items-center gap-1.5 rounded border border-emerald-500/20 px-2 py-1 text-[10px] tracking-[0.2em] hover:bg-emerald-500/10"
     >
       <span className={`inline-block h-1.5 w-1.5 rounded-full ${style ? style.dot : 'bg-emerald-500/30 animate-pulse'}`} aria-hidden />
@@ -142,7 +154,7 @@ function Monologue({ turns }: { turns: MonologueTurn[] }) {
   );
 }
 
-export function BrainPanel({ onClose }: { onClose: () => void }) {
+export function BrainPanel({ onClose, onOpenModels }: { onClose: () => void; onOpenModels?: () => void }) {
   const status = useBrainStatus(15_000);
   const [manifest, setManifest] = useState<{ version: string; models: DeviceModel[] } | null>(null);
   useEffect(() => {
@@ -165,6 +177,11 @@ export function BrainPanel({ onClose }: { onClose: () => void }) {
         </p>
       ) : (
         <div className="space-y-6">
+          {status.outage && status.outage.level !== 'ok' && status.outage.message && (
+            <p role="status" className={`rounded border px-3 py-2 text-xs leading-relaxed ${status.outage.level === 'down' ? 'border-red-400/50 text-red-200' : 'border-amber-400/50 text-amber-100'}`}>
+              {status.outage.message}
+            </p>
+          )}
           <section>
             <Label>right now</Label>
             <div className="grid grid-cols-3 gap-2 font-mono text-[10px] uppercase tracking-[0.15em]">
@@ -186,6 +203,11 @@ export function BrainPanel({ onClose }: { onClose: () => void }) {
               <p className="mt-1 text-xs opacity-60">
                 Last {served} answers: {Math.round((local / served) * 100)}% served locally.
               </p>
+            )}
+            {onOpenModels && (
+              <button onClick={onOpenModels} className="mt-2 text-xs text-emerald-300 underline underline-offset-2 hover:text-emerald-200">
+                Details, stats and test tools ↗
+              </button>
             )}
           </section>
 

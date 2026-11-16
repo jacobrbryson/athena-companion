@@ -53,7 +53,8 @@
 .wsd-quick button { display: flex; align-items: center; gap: 10px; border: 1px solid #154768; border-radius: 7px; padding: 12px 9px; background: #06223b88; color: #cbdcf2; font-size: 11px; text-align: left; }
 .wsd-quick button:hover { background: #0c3654; border-color: #37b8e5; }
 .wsd-quick .hp-icon { color: #2bbcff; width: 24px; height: 24px; }
-.wsd-view-overview { grid-template-areas: 'activity pulls email' 'deployments services quick'; }
+.wsd-view-overview { grid-template-areas: 'sprint sprint sprint' 'activity pulls email' 'deployments services quick'; }
+.wsd-view-overview #ws-sprint { grid-area: sprint; }
 .wsd-view-overview #ws-activity { grid-area: activity; }
 .wsd-view-overview #ws-pulls { grid-area: pulls; }
 .wsd-view-overview #ws-email { grid-area: email; }
@@ -64,15 +65,15 @@
 .wsd-view-overview > #ws-agents { grid-column: 1 / -1; }
 .wsd-grid:not(.wsd-view-overview) { grid-template-columns: minmax(0,1fr); }
 .wsd-grid:not(.wsd-view-overview) > .wsd-card { display: none; }
-.wsd-view-jira > #ws-jira,.wsd-view-github > :is(#ws-pulls,#ws-agents),.wsd-view-deployments > #ws-deployments,.wsd-view-monitoring > :is(#ws-services,#ws-sites),.wsd-view-team > :is(#ws-slack,#ws-upcoming,#ws-agents),.wsd-view-docs > #ws-projects { display: block; }
+.wsd-view-jira > :is(#ws-sprint,#ws-jira),.wsd-view-team > #ws-sprint,.wsd-view-github > :is(#ws-pulls,#ws-agents),.wsd-view-deployments > #ws-deployments,.wsd-view-monitoring > :is(#ws-services,#ws-sites),.wsd-view-team > :is(#ws-slack,#ws-upcoming,#ws-agents),.wsd-view-docs > #ws-projects { display: block; }
 @media (max-width: 1200px) {
-  .wsd-view-overview { grid-template-columns: repeat(2,minmax(0,1fr)); grid-template-areas: 'activity pulls' 'email services' 'deployments quick'; }
+  .wsd-view-overview { grid-template-columns: repeat(2,minmax(0,1fr)); grid-template-areas: 'sprint sprint' 'activity pulls' 'email services' 'deployments quick'; }
 }
 @container (max-width: 1050px) {
-  .wsd-view-overview { grid-template-columns: repeat(2,minmax(0,1fr)); grid-template-areas: 'activity pulls' 'email services' 'deployments quick'; }
+  .wsd-view-overview { grid-template-columns: repeat(2,minmax(0,1fr)); grid-template-areas: 'sprint sprint' 'activity pulls' 'email services' 'deployments quick'; }
 }
 @container (max-width: 620px) {
-  .wsd-view-overview { grid-template-columns: minmax(0,1fr); grid-template-areas: 'activity' 'pulls' 'email' 'deployments' 'services' 'quick'; }
+  .wsd-view-overview { grid-template-columns: minmax(0,1fr); grid-template-areas: 'sprint' 'activity' 'pulls' 'email' 'deployments' 'services' 'quick'; }
 }
 @media (max-width: 760px) {
   .wsd .ph-with-side { grid-template-columns: minmax(0,1fr); }
@@ -80,6 +81,6 @@
   .wsd .ph-side { max-width: none; }
   .wsd-business { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); }
   .wsd-business > button { grid-column: 1/-1; }
-  .wsd-view-overview { grid-template-columns: minmax(0,1fr); grid-template-areas: 'activity' 'pulls' 'email' 'deployments' 'services' 'quick'; }
+  .wsd-view-overview { grid-template-columns: minmax(0,1fr); grid-template-areas: 'sprint' 'activity' 'pulls' 'email' 'deployments' 'services' 'quick'; }
   .wsd-services svg:not(.hp-icon) { width: 65px; }
 }

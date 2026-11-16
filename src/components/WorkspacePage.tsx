@@ -8,6 +8,7 @@ import { Stat } from './SectionMetric';
 import { DrawerButton } from './ActionControls';
 import { PullRequestReviewDrawer, RepositoryReviewDrawer } from './WorkspaceReviewDrawers';
 import { WorkspaceSettingsDrawer } from './WorkspaceSettingsDrawer';
+import { SprintPanel, useSprint } from './SprintCard';
 import { AgentRow, PHASE_TONE, Spark, TONES, ago, ownership, phaseOf, slackTime, useAgentProgress } from './WorkPage';
 import './health.css';
 import './calendar.css';
@@ -122,6 +123,7 @@ export function WorkspacePage(props: Props) {
   const [pullFilter, setPullFilter] = useState('Open');
   const [mailFilter, setMailFilter] = useState('All new');
   const [drawer, setDrawer] = useState<{ kind: 'repository'; repository: string } | { kind: 'pull'; repository: string; number: number } | { kind: 'keys' } | null>(null);
+  const sprint = useSprint(workspaceUuid);
   const [returnTo, setReturnTo] = useState<{ kind: 'pull'; repository: string; number: number } | null>(null);
 
   // Reviews belong to one company, so this page lists only its own.
@@ -205,6 +207,10 @@ export function WorkspacePage(props: Props) {
     </section>
 
     <div id="workspace-panel" role="tabpanel" tabIndex={0} aria-labelledby={`tab-${tab}`} className={`wsd-grid wsd-view-${tab}`}>
+      <Card id="ws-sprint" wide icon="list" tone="wp-green" title="Sprint Progress" sub="Story points vs 64 · PRs reviewed : created">
+        {sprint.error ? <p className="hp-empty">{sprint.error}</p> : !sprint.data ? <p className="hp-empty">Reading Jira and GitHub…</p> : <SprintPanel data={sprint.data} />}
+      </Card>
+
       <Card id="ws-activity" wide icon="pulse" title="Recent Activity" sub="Across this workspace">
         {filters(['All', 'Jira', 'GitHub', 'Mail', 'Slack', 'Agents'], activityFilter, setActivityFilter)}
         {!visibleActivity.length ? <p className="hp-empty">Nothing recent in this view.</p>

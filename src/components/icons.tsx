@@ -49,6 +49,8 @@ const DRAWN: Record<string, { tone: Tone; art: ReactNode }> = {
   SystemProjects: { tone: 'blue', art: <><rect x="4" y="4" width="16" height="16" rx="2" /><path d="m8 12 3 3 5-6" /></> },
   SystemNews: { tone: 'blue', art: <><path d="M6 3.5h8.5L19 8v12.5H6Z" /><path d="M14 3.5V8h5M9 12h7M9 15.5h7M9 8.5h3" /></> },
   Finance: { tone: 'blue', art: <path d="M5 20v-6M10 20V9M15 20v-4M20 20V5M3.5 20h17" /> },
+  // System → Models: a chip with its pins.
+  SystemModels: { tone: 'violet', art: <><rect x="7" y="7" width="10" height="10" rx="2" /><path d="M10 7V4M14 7V4M10 20v-3M14 20v-3M7 10H4M7 14H4M20 10h-3M20 14h-3" /><path className="icon-fill" d="M10.5 10.5h3v3h-3Z" /></> },
   // The briefing's stat strip.
   Gym: { tone: 'blue', art: <path d="M3 12h18M6.5 7.5v9M4 9.5v5M17.5 7.5v9M20 9.5v5" /> },
   Weather: { tone: 'blue', art: <path d="M7 18.5h10.2a3.8 3.8 0 0 0 .5-7.6 5.5 5.5 0 0 0-10.6 1.4A3.1 3.1 0 0 0 7 18.5Z" /> },

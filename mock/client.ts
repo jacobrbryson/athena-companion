@@ -8,6 +8,7 @@
  */
 
 import { mockTrading } from './trading';
+import { mockModelLab, mockOutage } from './modelLab';
 import type { NewsSource } from '../src/api/dashboard';
 import { mockProjectsRoute, mockVehicles, mockApplyBill } from './projects';
 import { mockWorkItems } from './workItems';
@@ -419,6 +420,15 @@ function dashboardSummary() {
     emailTriage: ready(mailSummary()),
     familyHealth: ready({ active: mockHealth() }),
     groceries: ready({ appUrl: 'https://keep.google.com/', lists: [{ title: 'Groceries', toBuy: ['Turkey', 'Milk', 'Tortillas', 'Shredded cheese', 'Bananas'], usualCount: 214 }] }),
+    tasks: ready({ appUrl: 'https://tasks.google.com/', lists: ['My Tasks', 'House'], total: 7, unreadableLists: [], tasks: [
+      { id: 'gt-1', listId: 'L1', list: 'My Tasks', title: 'Renew passport photos', due: dayStamp(2), notes: null },
+      { id: 'gt-2', listId: 'L1', list: 'My Tasks', title: 'Call the dentist', due: dayStamp(0), notes: null },
+      { id: 'gt-3', listId: 'L2', list: 'House', title: 'Replace furnace filter', due: dayStamp(-3), notes: '16x25x1' },
+      { id: 'gt-4', listId: 'L2', list: 'House', title: 'Clean gutters', due: null, notes: null },
+      { id: 'gt-5', listId: 'L1', list: 'My Tasks', title: 'Book flights for Thanksgiving', due: null, notes: null },
+      { id: 'gt-6', listId: 'L1', list: 'My Tasks', title: 'Return library books', due: null, notes: null },
+      { id: 'gt-7', listId: 'L2', list: 'House', title: 'Winterize the hose bibs', due: null, notes: null },
+    ] }),
   };
 }
 
@@ -1143,6 +1153,7 @@ async function route(method: string, path: string, body?: any): Promise<any> {
   if (p === '/api/v1/workouts') return { days: 3650, workouts: mockWorkouts() };
   // Family → Trading: illustrative desk data (mock/trading.ts).
   { const t = mockTrading(method, p); if (t !== undefined) return t; }
+  { const m = await mockModelLab(method, url, body); if (m !== undefined) return m; }
   // Family → Finance: an illustrative Webull read (connectors/webull.js shape).
   if (p.startsWith('/api/v1/finance/brokerage')) {
     if (localStorage.getItem('mock_webull') === 'off') return { status: 'not_connected', accounts: [] };
@@ -1567,6 +1578,28 @@ async function route(method: string, path: string, body?: any): Promise<any> {
   if (p === '/api/v1/dashboard/community/calendar') {
     const ev = (id: string, title: string, mins: number, len: number) => ({ id, title, start: inMinutes(mins), end: inMinutes(mins + len), allDay: false, location: null, calendar: null, shared: false, eventType: 'default' });
     return { connected: true, terms: ['Troutman'], events: [ev('t0', 'Maya softball game', 3 * 60, 90), ev('t1', 'Troutman soccer practice', 30 * 60, 90), ev('t2', 'Troutman Rec game vs Mooresville', 4 * 24 * 60 - 120, 60), ev('t3', 'Troutman Founders Day 5K', 4 * 24 * 60 + 420, 90)] };
+  }
+  if (/^\/api\/v1\/dashboard\/workplaces\/[^/]+\/sprint$/.test(p)) {
+    // Mirrors the screenshot the owner shared (2026-11-13); statuses as statusOf() gives them at 60% elapsed.
+    const person = (id: string, name: string, issues: number, done: number, inProgress: number, notStarted: number, status: string, login: string | null, reviewed: number | null, created: number | null, me = false) =>
+      ({ id, name, avatar: null, me, issues, done, inProgress, notStarted, status, github: { login, created, reviewed } });
+    const people = [
+      person('me', 'Ross Bryson', 77, 52, 10, 4, 'on_track', 'rossbryson', 9, 5, true),
+      person('em', 'Emily Reese', 17, 13.3, 25.5, 64, 'behind', 'eareese-v', 2, 6),
+      person('rc', 'Ronald Coello', 4, 0, 12.8, 12, 'at_risk', null, null, null),
+      person('js', 'Joseph Savage-Addams', 25, 3, 58, 5, 'behind', 'jsavageaddams', 4, 3),
+      person('sg', 'Scott Gasparick', 24, 30, 20, 14, 'at_risk', 'sgasparick', 6, 2),
+      person('cg', 'Caleb Graves', 18, 64, 0, 0, 'complete', 'caleb-graves', 3, 4),
+    ];
+    const team = people.filter(x => !x.me);
+    const avg = (k: 'done' | 'inProgress' | 'notStarted') => Math.round(team.reduce((t, x) => t + x[k], 0) / team.length * 10) / 10;
+    return {
+      workplace: { uuid: 'w1', name: 'Vivacity Tech PBC' }, error: null, target: 64,
+      sprint: { id: 42, name: 'Dream Sprint 42', start: '2026-11-04T14:00:00Z', end: '2026-11-18T22:00:00Z', goal: null, elapsed: 0.6, daysLeft: 4, expected: 38.4 },
+      me: people[0],
+      team: { size: team.length, average: { done: avg('done'), inProgress: avg('inProgress'), notStarted: avg('notStarted'), status: 'behind', created: 3.8, reviewed: 3.8 }, atRisk: [{ name: 'Emily Reese', status: 'behind' }, { name: 'Joseph Savage-Addams', status: 'behind' }, { name: 'Ronald Coello', status: 'at_risk' }, { name: 'Scott Gasparick', status: 'at_risk' }] },
+      people, unassigned: 8, otherSprints: [], teamFilter: 'Red', github: { error: null },
+    };
   }
   if (p.startsWith('/api/v1/dashboard/workplaces')) {
     type W = { uuid: string; name: string; role: string | null; domain: string | null; primary: boolean; notes: string | null };
@@ -2110,7 +2143,7 @@ Sam` };
     return { success: true, scene };
   }
   if (method === 'DELETE' && p.startsWith('/api/v1/memory')) return { success: true };
-  if (p === '/api/v1/llm/status') return status;
+  if (p === '/api/v1/llm/status') return { ...status, outage: mockOutage() };
   if (p === '/api/v1/llm/manifest') return manifest;
   if (p === '/api/v1/llm/monologue') {
     const at = (min: number) => new Date(Date.now() - min * 60_000).toISOString();
@@ -2268,6 +2301,11 @@ Sam` };
     return { success: true, uuid, status: n!.status };
   }
 
+  // A tick on the Tasks card (complete_google_task / reopen_google_task).
+  if (method === 'POST' && /^\/api\/v1\/actions\/direct\/(complete_google_task|reopen_google_task)$/.test(p)) {
+    await wait(500);
+    return { success: true, action: { uuid: `direct-${Date.now()}`, action_id: p.split('/')[5], status: 'done', approval: 'human' } };
+  }
   // A tick on the Family page (core_api perform(): the click is the approval).
   if (method === 'POST' && /^\/api\/v1\/actions\/direct\/(complete_chore|undo_complete_chore)$/.test(p)) {
     const actionId = p.split('/')[5];

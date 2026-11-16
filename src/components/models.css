@@ -1,0 +1,76 @@
+/* System → Models (ModelsPage.tsx). Same palette as the section panels. */
+.mdl-badge { display: inline-block; white-space: nowrap; margin-left: 8px; padding: 1px 6px; border: 1px solid #2c6a80; border-radius: 4px; font: 9px/1.5 ui-monospace,monospace; letter-spacing: .08em; text-transform: uppercase; vertical-align: 1px; }
+.mdl-good { color: #7ff0b8; border-color: #2f7a5a; }
+.mdl-warn { color: #ffd479; border-color: #7a6230; }
+.mdl-bad { color: #ff9b9b; border-color: #7a3434; }
+.mdl-info { color: #b9a4ff; border-color: #4f4290; }
+.mdl-idle { color: #8fadbe; }
+
+.mdl-outage-slot:empty { display: none; }
+.mdl-outage { display: flex; gap: 16px; align-items: flex-start; justify-content: space-between; padding: 14px 18px; border: 1px solid #7a6230; border-radius: 13px; background: #2a1f0bd9; color: #ffe7b3; font-size: 12px; line-height: 1.6; }
+.mdl-outage strong { display: block; font-size: 13px; font-weight: 600; }
+.mdl-outage p { margin: 2px 0 0; }
+.mdl-outage-down { border-color: #8a3434; background: #2a0e0ed9; color: #ffd0d0; }
+.mdl-outage-ok { border-color: #2c6a80; background: #04222ed9; color: #c1dae8; }
+.mdl-outage-drill { border-color: #4f4290; background: #160f33d9; color: #ddd3ff; }
+.mdl-outage .source-fix { flex-shrink: 0; margin: 0; }
+
+.mdl-now { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; margin-top: 14px; }
+.mdl-now-card { min-width: 0; padding: 10px 12px; border: 1px solid #244453; border-radius: 9px; background: #04161fcc; }
+.mdl-now-card small { display: block; color: #7fa8bc; font: 9px/1.6 ui-monospace,monospace; letter-spacing: .12em; text-transform: uppercase; }
+.mdl-now-card strong { display: block; margin-top: 3px; color: #dcecf6; font-size: 13px; font-weight: 550; }
+.mdl-now-card p { margin: 4px 0 0; color: #8fadbe; font-size: 10px; line-height: 1.5; overflow-wrap: anywhere; }
+
+.mdl-toggle { display: inline-flex; gap: 4px; }
+.mdl-toggle button { padding: 1px 8px; border: 1px solid #244453; border-radius: 4px; color: #7fa8bc; font: inherit; letter-spacing: inherit; }
+.mdl-toggle button.mdl-on { border-color: #40879b; color: #91f0ff; background: #042532aa; }
+
+.mdl-table td, .mdl-table th { white-space: nowrap; }
+.mdl-table td small.mdl-sub { display: block; }
+.mdl-sub { color: #7fa8bc; font-size: 10px; overflow-wrap: anywhere; }
+.mdl-bad-cell { color: #ff9b9b; }
+.mdl-pass { color: #7ff0b8; }
+.mdl-fail { color: #ff9b9b; }
+.mdl-spark { display: inline-flex; align-items: flex-end; gap: 1px; height: 14px; margin-left: 8px; vertical-align: -2px; }
+.mdl-spark i { display: block; width: 3px; background: #39dcf8aa; border-radius: 1px; }
+
+.mdl-chain { display: grid; gap: 4px; margin: 10px 0 0; padding: 0; list-style: none; font-size: 12px; color: #dcecf6; }
+.mdl-chain li span { display: inline-block; width: 18px; color: #7fa8bc; font-family: ui-monospace,monospace; }
+.mdl-chain li small { color: #7fa8bc; font-size: 10px; }
+.mdl-chain li.mdl-off { opacity: .65; text-decoration: line-through; text-decoration-color: #ff9b9b88; }
+.mdl-checks { display: grid; gap: 3px; margin: 10px 0 0; padding: 0; list-style: none; font-size: 11px; line-height: 1.5; }
+.mdl-chain li, .mdl-checks li { list-style: none; }
+.mdl-checks li span { display: inline-block; width: 16px; }
+.mdl-checks b { font-weight: 600; margin-right: 4px; }
+.mdl-checks .mdl-pass { color: #b9f5d6; }
+.mdl-checks .mdl-fail { color: #ffc2c2; }
+
+.mdl-tools { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px; margin-top: 14px; }
+.mdl-tool { min-width: 0; padding: 14px 16px; border: 1px solid #244453; border-radius: 10px; background: #04161fcc; }
+.mdl-tool-wide { grid-column: 1 / -1; }
+.mdl-tool h3 { margin: 0 0 2px; font-size: 13px; font-weight: 600; color: #dcecf6; }
+.mdl-form { max-width: none; margin-top: 10px; }
+.mdl-form label { display: grid; gap: 4px; color: #7fa8bc; font: 9px/1.6 ui-monospace,monospace; letter-spacing: .12em; text-transform: uppercase; }
+.mdl-form label :is(input, select) { font-family: inherit; letter-spacing: 0; text-transform: none; font: 12px system-ui, sans-serif; }
+.mdl-form .source-fix { justify-self: start; }
+.mdl-form-row { grid-template-columns: 1fr auto; align-items: end; }
+.mdl-result { margin-top: 12px; padding: 10px 12px; border: 1px solid #244453; border-radius: 8px; background: #030e17; font-size: 12px; line-height: 1.6; color: #c1dae8; min-width: 0; }
+.mdl-result strong { display: block; color: #dcecf6; }
+.mdl-result p { margin: 4px 0 0; overflow-wrap: anywhere; }
+.mdl-result ul { margin: 6px 0 0; padding-left: 16px; list-style: disc; }
+.mdl-result blockquote { margin: 6px 0 0; padding-left: 10px; border-left: 2px solid #2c6a80; color: #dcecf6; }
+.mdl-result-pass { border-color: #2f7a5a; }
+.mdl-result-fail { border-color: #7a3434; }
+.mdl-compare { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
+/* The tables are wider than a phone. The shared one-column layout below
+   1150px uses `1fr`, whose minimum is the widest table, so the whole column
+   (every panel) grew past the screen. Here the column may shrink and each
+   table scrolls inside its own panel instead. */
+@media (max-width: 1150px) {
+  .section-panels:has(.mdl-now) { grid-template-columns: minmax(0, 1fr); }
+}
+.section-panel .ff-table-wrap:has(.mdl-table) { overflow-x: auto; }
+@media (max-width: 640px) {
+  .mdl-form-row { grid-template-columns: 1fr; }
+  .mdl-outage { flex-direction: column; }
+}

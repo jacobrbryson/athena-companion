@@ -4,7 +4,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import type { CalendarEvent, Source, JiraIssue, RecoveryDay, WeighIn, DashboardSummary, GcpBilling, TimeSaved, TriageEmail, NearbyIncident, WeatherAlert, WorkplacesOverview, FamilyHealthStatus } from '../api/dashboard';
 import { dashboardApi } from '../api/dashboard';
 import { localDay } from '../api/healthPlan';
-import { integrationsApi, type Fact } from '../api/companion';
+import { integrationsApi, type Fact, type LlmStatus } from '../api/companion';
 import { androidCall, isAndroidCompanion } from '../native/android';
 import type { ApiError } from '../api/client';
 import { useDashboardData } from './useDashboardData';
@@ -19,6 +19,7 @@ import { Drawer } from './Drawer';
 import { HealthWatchModal } from './HealthWatch';
 import { familyHealthSummary } from './familyHealthSummary';
 import { DoorToDoor } from './DoorToDoor';
+import { TasksCardBody } from './TasksCard';
 import { communityEvents } from './communityCalendar.ts';
 import { WorkBanner } from './WorkBanner';
 import { isInProgress, isReadyToStart, untilLabel, workStatus } from './workStatus';
@@ -27,6 +28,7 @@ import { MailBundles } from './MailBundles';
 import { MailActivity } from './MailActivity';
 import { MailHero } from './MailHero';
 import { DreamCard, DreamsPage, DreamImage, STATUS_LINE, nightLabel } from './Dreams';
+import { ModelsPage } from './ModelsPage';
 import { DashboardIcon } from './icons';
 import { PointsOfInterest, Neighbors, LocalEvents, PlaceReminders, ContactAvatar, eventWhen, isPastEvent } from './Community';
 import { EmergencyAlertSetup } from './EmergencyAlertSetup';
@@ -45,6 +47,7 @@ import { CommunityOverview } from './CommunityPage';
 import { WorkOverview } from './WorkPage';
 import { WorkspacePage } from './WorkspacePage';
 import { WorkItems } from './WorkItems';
+import { SPRINT_STATUS, SprintSummary, useSprint } from './SprintCard';
 import { NavigationLink, DrawerButton } from './ActionControls';
 import { plannedToday } from './ProjectData';
 import { useProjects, openProjects, ProjectList, ProjectBoard, ProjectsDrawers, ConcernList, CharterView, StateChip, type ProjectsDrawer } from './Projects';
@@ -67,13 +70,14 @@ import { SystemOverview, SystemTabs, SYSTEM_TAB_IDS, type SystemTab, type System
 import { HomeHero, HomeChanges, HomeSection, HomeStat, HomeTabs, Spark, useHomeExtras, type HeroNode, type Tone } from './DashboardHome';
 import { freshness, homeUpdates, recoveryChange } from './livingHome';
 import { AREA_LABEL, STATE_LABEL } from '../api/projects';
+import { GUARDIAN_STATUS } from '../api/propertyGuardian';
 
 /** Enough for a household, so nobody sorted late in the alphabet is cut off the card. */
 const FAMILY_CARD_ROWS = 7;
 
 /** Open a console panel; `consentFor` opens Connected apps on that provider's consent prompt. */
 export type OpenPanel = (panel: 'integrations' | 'memory' | 'actions' | 'notifications' | 'knows' | 'photo' | 'devices', options?: { consentFor?: string }) => void;
-export type DashboardSection = 'Dashboard' | 'Property' | 'Today' | 'Calendar' | 'Health' | 'Family' | 'Community' | 'Mail' | 'Work' | 'Projects' | 'News' | 'Dreams' | 'System' | 'Finance' | 'Workouts' | 'FamilyFinance' | 'FamilyTrading' | 'CommunityPlaces' | 'Research' | 'Guardians';
+export type DashboardSection = 'Dashboard' | 'Property' | 'Today' | 'Calendar' | 'Health' | 'Family' | 'Community' | 'Mail' | 'Work' | 'Projects' | 'News' | 'Dreams' | 'System' | 'Finance' | 'Models' | 'Workouts' | 'FamilyFinance' | 'FamilyTrading' | 'CommunityPlaces' | 'Research' | 'Guardians';
 // Icons live in ./icons — one registry, so a drawn icon looks the same in
 // the nav, on its card and in the phone's bottom bar.
 export { DashboardIcon } from './icons';
@@ -105,7 +109,7 @@ type FamilyTab = typeof FAMILY_TABS[number]['id'];
 // community. Home (the house) follows them (2026-10-13; placement is the
 // owner's call). Ids are shared with services/dashboardPriority.js in core_api —
 // changing one means changing both.
-const DEFAULT_CARD_ORDER = ['health', 'family', 'community', 'home', 'calendar', 'mail', 'work', 'news', 'projects'];
+const DEFAULT_CARD_ORDER = ['health', 'family', 'community', 'home', 'calendar', 'tasks', 'mail', 'work', 'news', 'projects'];
 // The first row holds three cards; whatever ranks below them drops to the second.
 const PRIMARY_SLOTS = 3;
 const statusText = { not_connected: 'Not connected', needs_reauth: 'Reconnect to refresh', consent_required: 'Health consent required', error: 'Couldn’t load this source', ready: 'Connected' };
@@ -116,7 +120,7 @@ const statusText = { not_connected: 'Not connected', needs_reauth: 'Reconnect to
 const SOURCE_PROVIDER: Partial<Record<keyof DashboardSummary, string>> = {
   calendar: 'google_calendar', emailTriage: 'gmail',
   recovery: 'whoop', sleep: 'whoop', strain: 'whoop',
-  jira: 'jira', slack: 'slack', familyChores: 'family_chores',
+  jira: 'jira', slack: 'slack', familyChores: 'family_chores', tasks: 'google_tasks',
 };
 /** What a source that cannot be read offers to do about it, where it is read. */
 interface SourceFix { reconnect?: () => void; panel: () => void; retry: () => void; busy?: boolean }
@@ -717,13 +721,36 @@ function eventTime(event: CalendarEvent, timeZone?: string) {
   return new Date(event.start).toLocaleTimeString(undefined, { timeZone, hour: 'numeric', minute: '2-digit' });
 }
 
-export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, onPlaces, onNavigate, compact = false, onExpand }: {
+/**
+ * System's Models tile: who is answering, the share answered locally in the
+ * router's recent calls, and the outage in a word when there is one.
+ */
+function modelsTile(brain: LlmStatus | null): SystemTile {
+  const ok = (brain?.recentCalls || []).filter(c => c.outcome === 'ok' && !c.task.startsWith('smoke:') && c.task !== 'eval');
+  const local = ok.filter(c => c.tier !== 'frontier').length;
+  const level = brain?.outage?.level;
+  const answering = brain?.outage?.answering;
+  const name = answering ? (answering.tier === 'orcwood' ? 'Desktop' : answering.name) : brain?.serving.chat?.endpointId === 'gemini' ? 'Gemini' : brain?.serving.chat?.endpointId || null;
+  return {
+    id: 'Models', title: 'Models', icon: 'chip', tone: level && level !== 'ok' ? 'red' : 'violet', unit: 'local',
+    value: brain ? (ok.length ? `${Math.round((local / ok.length) * 100)}%` : '—') : '—',
+    sub: !brain ? 'Loading…' : level === 'down' ? 'Nothing can answer' : level === 'degraded' ? `On a backup: ${name || 'fallback'}` : name ? `Answering: ${name}` : 'No model answering',
+    segments: ok.length ? [
+      { key: 'local', value: local, tone: 'green', title: `Answered locally: ${local}` },
+      { key: 'cloud', value: ok.length - local, tone: 'blue', title: `Answered in the cloud: ${ok.length - local}` },
+    ] : undefined,
+  };
+}
+
+export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, onPlaces, onNavigate, compact = false, onExpand, brain = null }: {
   section?: DashboardSection;
   firstName: string; onAsk: (text: string) => void;
   onPanel: OpenPanel;
   onPlaces?: () => void;
   onNavigate?: (section: DashboardSection) => void;
   compact?: boolean; onExpand?: () => void;
+  /** The router status the header already polls — System's Models tile reads it. */
+  brain?: LlmStatus | null;
 }) {
   const location = useLocation();
   const navigate = useNavigate();
@@ -733,12 +760,14 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
   const summary: DashboardSummary | null = data.summary.data || (data.summary.error ? {
     calendar: failedSource, recovery: failedSource, sleep: failedSource, strain: failedSource,
     familyChores: failedSource, jira: failedSource, slack: failedSource, emailTriage: failedSource,
-    familyHealth: failedSource, body: failedSource, groceries: failedSource,
+    familyHealth: failedSource, body: failedSource, groceries: failedSource, tasks: failedSource,
   } : null);
   const [sourcesOpen, setSourcesOpen] = useState(false);
   const [addingWorkplace, setAddingWorkplace] = useState(false);
   // What the Workplaces panel last loaded, so the Work overview above it stays in step.
   const [workOverview, setWorkOverview] = useState<WorkplacesOverview | null>(null);
+  // The primary workplace's open sprint, for the Work card (404s quietly when there's no workplace).
+  const workSprint = useSprint('primary');
   const [workIssueUrl, setWorkIssueUrl] = useState<string | null>(null);
   const [plansOpen, setPlansOpen] = useState(false);
   const [selectedEmail, setSelectedEmail] = useState<string | null>(null);
@@ -769,7 +798,9 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
   // Report, view or edit a property issue; the uuid names which.
   const [issueDrawer, setIssueDrawer] = useState<{ kind: 'report' } | { kind: 'view' | 'edit'; uuid: string } | null>(null);
   const propertyTab = propertyTabFromPath(location.pathname);
-  const setPropertyTab = (tab: PropertyTab) => navigate(propertyTabPath(property.property?.uuid, tab));
+  // Which Projects filter a Property metric opened; tab navigation clears it.
+  const [projectFilter, setProjectFilter] = useState('all');
+  const setPropertyTab = (tab: PropertyTab, filter = 'all') => { setProjectFilter(filter); navigate(propertyTabPath(property.property?.uuid, tab)); };
   // A registration, inspection or insurance deadline: Home shows it until the date moves (owner, 2026-10-25).
   // Unpaid tax installments that are close ride in the same banner (from a scanned bill).
   const vehicleDeadline = <VehicleDeadlineBanner vehicles={vehicles.vehicles} taxes={taxes.taxes} events={summary?.calendar.data?.events} onAsk={onAsk}
@@ -1077,7 +1108,9 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
     return tiles;
   }
   function workBody(limit: number) {
+    const sprint = workSprint.data && !workSprint.data.error ? workSprint.data : null;
     return <>
+      {sprint && <SprintSummary data={sprint} onOpen={() => navigate(`${dashboardPath('Work')}/${encodeURIComponent(sprint.workplace.uuid)}`)} />}
       <SourceBlock source={summary?.jira} label="Jira · assigned open issues" name="Jira" fix={fixFor('jira')}>
         {!issues.length && <p className="dashboard-empty">No assigned open issues returned.</p>}<Issues issues={issues.slice(0, limit)} />{summary?.jira.data?.partial && <p className="source-note">Some sites could not be included.</p>}
       </SourceBlock>
@@ -1167,17 +1200,23 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
   const whoopDown = (['recovery', 'sleep', 'strain'] as const).every(key => summary?.[key]?.status === 'not_connected');
   const dashProjects = openProjects(proj.snap, undefined, { includeWork: false });
   const homeOpen = openProjects(proj.snap, 'home');
-  const homeConcerns = proj.snap.concerns.filter(c => c.area === 'home' && c.status === 'open').sort((a, b) => b.severity - a.severity);
+  // Concerns are long-running (some span years), so Home never lists or colors by them;
+  // only open issues tint the Property card. They live on Property → Concerns (owner, 2026-11-14).
   const projectsCardBody = () => proj.error && !proj.snap.projects.length ? <EmptyCta text="Projects couldn’t load." action="Retry" onClick={proj.reload} />
     : dashProjects.length ? <ul className="dashboard-data-list">{dashProjects.slice(0, 3).map(p => <li key={p.uuid}><button type="button" className="w-full text-left" onClick={() => openProject(p.uuid)}><strong>{p.title}</strong><small>{[p.effectiveStatus, ...p.rankWhy].join(' · ')}</small></button></li>)}</ul>
       : <EmptyCta text="No projects yet." action="Start one" onClick={() => newProject()} />;
   const homeCardBody = () => proj.error && !proj.snap.projects.length ? <EmptyCta text="Projects couldn’t load." action="Retry" onClick={proj.reload} />
     : <>
-      {homeConcerns.length > 0 && <><p className="source-note">Open concerns</p><ul className="dashboard-data-list">{homeConcerns.slice(0, 2).map(c => <li key={c.uuid}><strong>{c.title}</strong><small>{c.frequency || 'open'}</small></li>)}</ul></>}
       <p className="source-note">Up next</p>
       {homeOpen.length ? <ul className="dashboard-data-list">{homeOpen.filter(p => p.kind !== 'program').slice(0, 3).map(p => <li key={p.uuid}><button type="button" className="w-full text-left" onClick={() => openProject(p.uuid)}><strong>{p.title}</strong><small>{[p.effectiveStatus, ...p.rankWhy].join(' · ')}</small></button></li>)}</ul>
         : <EmptyCta text="No house projects yet." action="Add one" onClick={() => newProject('home')} />}
     </>;
+  const openTasks = summary?.tasks?.data?.tasks || [];
+  const taskToday = zonedDay(new Date(), timeZone);
+  const overdueTasks = openTasks.filter(t => t.due && t.due < taskToday).length;
+  const openGoogleTasks = () => { const url = summary?.tasks?.data?.appUrl || 'https://tasks.google.com/'; if (isAndroidCompanion()) void androidCall('openExternal', { url }); else window.open(url, '_blank', 'noopener,noreferrer'); };
+  const tasksCardBody = () => !ready(summary?.tasks) ? unavailable('tasks', 'Google Tasks')
+    : <>{(summary!.tasks!.data!.unreadableLists || []).length > 0 && <p className="source-note">Couldn’t read {summary!.tasks!.data!.unreadableLists!.join(', ')}</p>}<TasksCardBody tasks={openTasks} total={summary!.tasks!.data!.total} today={taskToday} /></>;
   const headlines: Record<string, ReactNode> = {
     health: whoopDown ? sayStatus(summary?.recovery, 'WHOOP')
       : readiness ? say(<span className={`readiness readiness-${readiness.level}`}>{readiness.label}</span>, `Recovery ${recovery?.recovery_score}% · ${readiness.headline}`)
@@ -1191,14 +1230,17 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
           : data.nearby.loading ? say('Checking…') : data.nearby.error ? say('Couldn’t load') : say('Quiet', 'near your places'),
     calendar: lead ? say(lead.event.title, lead.ongoing ? `on now · ends in ${untilLabel(lead.ms)}` : `in ${untilLabel(lead.ms)}`)
       : ready(summary?.calendar) ? say('Clear', 'nothing timed coming up') : sayStatus(summary?.calendar, 'Google Calendar'),
+    tasks: !ready(summary?.tasks) ? sayStatus(summary?.tasks, 'Google Tasks')
+      : !openTasks.length ? say('All clear', 'nothing open')
+        : overdueTasks ? say(`${overdueTasks} overdue`, openTasks[0].title) : say(openTasks[0].title, openTasks[0].due ? `due ${openTasks[0].due}` : `${openTasks.length} open`),
     mail: ready(summary?.emailTriage) ? say(openMail, needReply ? `open · ${needReply} need you` : 'open') : sayStatus(summary?.emailTriage, 'Gmail'),
-    work: ready(summary?.jira) ? say(issues.length, 'open issues assigned to you') : sayStatus(summary?.jira, 'Jira'),
+    work: workSprint.data?.me && workSprint.data.target ? say(`${workSprint.data.me.done} / ${workSprint.data.target} SP`, `${SPRINT_STATUS[workSprint.data.me.status].label.toLowerCase()} · ${workSprint.data.team?.atRisk.length || 0} teammate${workSprint.data.team?.atRisk.length === 1 ? '' : 's'} at risk`)
+      : ready(summary?.jira) ? say(issues.length, 'open issues assigned to you') : sayStatus(summary?.jira, 'Jira'),
     news: news[0] ? say(news[0].title, news[0].source) : data.news.loading ? say('Loading…') : say('No headlines yet', newsSources.length ? 'still reading' : 'add a news page'),
     projects: proj.loading && !proj.snap.projects.length ? say('Loading…')
       : dashProjects.length ? say(dashProjects[0].title, dashProjects[0].rankWhy[0] || `${dashProjects.length} open`) : say('Nothing open', 'start a project'),
     home: proj.loading && !proj.snap.projects.length ? say('Loading…')
-      : homeConcerns.length ? say(homeConcerns[0].title, `${homeConcerns.length} open concern${homeConcerns.length === 1 ? '' : 's'}`)
-        : homeOpen.length ? say(homeOpen[0].title, `${homeOpen.length} open`) : say('All quiet', 'no open house projects'),
+      : homeOpen.length ? say(homeOpen[0].title, `${homeOpen.length} open`) : say('All quiet', 'no open house projects'),
   };
   const cards: Record<string, ReactNode> = {
     // Every card now opens its own page, including when its source is down:
@@ -1217,6 +1259,7 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
       {nextLocalEvent && <><p className="source-note">Coming up locally</p><ul className="dashboard-data-list calendar-events"><li><span className="event-dot" /><div><small>{eventWhen(nextLocalEvent)}</small><strong>{nextLocalEvent.title}</strong></div></li></ul></>}
       {community && !community.places.length && onPlaces && <button type="button" className="source-fix" onClick={onPlaces}>Add a point of interest <span>↗</span></button>}
     </>, 'View community', go('Community'), nearbyCalls.length + nearbyWeather.length || undefined, headlines.community),
+    tasks: card('tasks', 'Tasks', 'Tasks', tasksCardBody(), 'Open Google Tasks', openGoogleTasks, summary?.tasks?.data?.total || undefined, headlines.tasks),
     mail: card('mail', 'Mail', 'Mail', mailBody(3), 'Review inbox', go('Mail'), summary?.emailTriage.data?.newCount, headlines.mail),
     work: card('work', 'Work', 'Work', workBody(1), 'View work', go('Work'), undefined, headlines.work),
     news: card('news', 'News', 'News & Updates', newsBody(3), 'View news', go('News'), news.length || undefined, headlines.news),
@@ -1287,6 +1330,7 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
       { id: 'News', title: 'News', icon: 'news', tone: 'violet', unit: 'headlines',
         value: data.news.loading && !news.length ? '—' : news.length,
         sub: data.news.error ? 'News couldn’t load' : 'Read this week', bars: newsBars },
+      modelsTile(brain),
     ];
     // One entry per provider (WHOOP feeds three sources), plus the scale.
     const providers = new Map<string, Source<unknown>[]>();
@@ -1297,7 +1341,7 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
     if (summary?.body) providers.set('vesync', [summary.body]);
     if (summary?.groceries) providers.set('google_keep', [summary.groceries]);
     const linked = [...providers.entries()].filter(([, list]) => list.some(x => x.status !== 'not_connected'));
-    const NAMES: Record<string, string> = { google_calendar: 'Google Calendar', gmail: 'Gmail', whoop: 'WHOOP', jira: 'Jira', slack: 'Slack', family_chores: 'Family Chores', vesync: 'VeSync scale', google_keep: 'Google Keep' };
+    const NAMES: Record<string, string> = { google_calendar: 'Google Calendar', gmail: 'Gmail', whoop: 'WHOOP', jira: 'Jira', slack: 'Slack', family_chores: 'Family Chores', vesync: 'VeSync scale', google_keep: 'Google Keep', google_tasks: 'Google Tasks' };
     const attention = linked.filter(([, list]) => list.some(x => x.status !== 'ready' && x.status !== 'not_connected')).map(([p]) => NAMES[p] || p);
     return <main className="dashboard-content dashboard-section">
       <div className="dashboard-toolbar"><time dateTime={new Date().toISOString()}>{new Date().toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}</time><button onClick={() => onAsk('')} className="ask-athena">ϟ <span>Ask Athena…</span> ↗</button></div>
@@ -1718,11 +1762,11 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
       blurb={property.property?.description || 'The house and the land around it: what needs doing, what’s worrying you, and the rules you decide by.'}
       ask="Look at my home projects, concerns and open property issues. What should I do next, and how can you help?"
       stats={propertyTab === 'property-projects' ? undefined : <>
-        <Stat label="Property health" icon="Home" value={propertyIssues.loading ? '—' : propertyIssues.error ? 'Unavailable' : health.label} note={propertyIssues.loading || propertyIssues.error ? 'from active issues' : health.note} tone={propertyIssues.loading || propertyIssues.error ? undefined : health.tone} />
-        <Stat label="Active issues" icon="Issues" value={propertyIssues.loading ? '—' : propertyIssues.error ? 'Unavailable' : openIssues.length} note={seriousIssues ? `${seriousIssues} high or emergency` : openIssues.length ? 'none serious' : 'nothing reported'} tone={seriousIssues ? 'alert' : openIssues.length ? 'ok' : 'good'} />
-        <Stat label="Open projects" icon="ProjectList" value={proj.loading && !home.length ? '—' : open.filter(p => p.kind !== 'program').length} note={`${open.filter(p => p.effectiveStatus === 'active').length} active`} />
-        <Stat label="Open concerns" icon="Concerns" value={concerns.length} note={critical ? `${critical} critical` : 'none critical'} tone={critical ? 'alert' : concerns.length ? 'ok' : 'good'} />
-        <Stat label="Done this month" icon="Completed" value={doneRecently} note="last 30 days" tone={doneRecently ? 'good' : 'idle'} />
+        <Stat label="Property health" icon="Home" value={propertyIssues.loading ? '—' : propertyIssues.error ? 'Unavailable' : health.label} note={propertyIssues.loading || propertyIssues.error ? 'from active issues' : health.note} tone={propertyIssues.loading || propertyIssues.error ? undefined : health.tone} onClick={() => setPropertyTab('property-issues')} />
+        <Stat label="Active issues" icon="Issues" value={propertyIssues.loading ? '—' : propertyIssues.error ? 'Unavailable' : openIssues.length} note={seriousIssues ? `${seriousIssues} high or emergency` : openIssues.length ? 'none serious' : 'nothing reported'} tone={seriousIssues ? 'alert' : openIssues.length ? 'ok' : 'good'} onClick={() => setPropertyTab('property-issues')} />
+        <Stat label="Open projects" icon="ProjectList" value={proj.loading && !home.length ? '—' : open.filter(p => p.kind !== 'program').length} note={`${open.filter(p => p.effectiveStatus === 'active').length} active`} onClick={() => setPropertyTab('property-projects')} />
+        <Stat label="Open concerns" icon="Concerns" value={concerns.length} note={critical ? `${critical} critical` : 'none critical'} onClick={() => setPropertyTab('property-concerns')} />
+        <Stat label="Done this month" icon="Completed" value={doneRecently} note="last 30 days" tone={doneRecently ? 'good' : 'idle'} onClick={() => setPropertyTab('property-projects', 'done')} />
       </>}
     >
       <div className="property-tab-content" role="tabpanel" id="property-tab-panel" aria-labelledby={`tab-${propertyTab}`} tabIndex={0}>
@@ -1757,7 +1801,10 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
           <DrawerButton primary onClick={() => newProject('home')}><span aria-hidden="true">＋</span>New project</DrawerButton>
         </div>
       </Panel>}
-      {propertyTab === 'property-projects' && <PropertyProjects state={proj} onOpen={openProject} onNew={() => newProject('home')} onMap={() => setPropertyTab('property-map')} onSeason={() => setPropertyTab('property-season')} />}
+      {propertyTab === 'property-projects' && <PropertyProjects key={projectFilter} initialStatus={projectFilter} state={proj} onOpen={openProject} onNew={() => newProject('home')} onMap={() => setPropertyTab('property-map')} onSeason={() => setPropertyTab('property-season')} />}
+      {propertyTab === 'property-concerns' && <Panel title="Concerns" note="the problems your projects answer" wide id="property-concerns">
+        <ConcernList state={proj} area="home" onOpen={uuid => setDrawer({ kind: 'concern', uuid, area: 'home' })} onNew={() => setDrawer({ kind: 'concern', uuid: null, area: 'home' })} />
+      </Panel>}
       {propertyTab === 'property-overview' && <Panel title="Recent activity" note="project updates and issues" id="property-activity" scroll>
         <div className="property-activity">{activity.map(a => <button key={a.key} onClick={a.open}><span>{a.label}</span><time>{new Date(a.at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</time></button>)}{!activity.length && <p>No property activity yet.</p>}</div>
       </Panel>}
@@ -1780,9 +1827,6 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
             </li>)}</ul>
           </li>;
         })}</ul>
-      </Panel>}
-      {propertyTab === 'property-concerns' && <Panel title="Concerns" note="the problems your projects answer" wide id="property-concerns">
-        <ConcernList state={proj} area="home" onOpen={uuid => setDrawer({ kind: 'concern', uuid, area: 'home' })} onNew={() => setDrawer({ kind: 'concern', uuid: null, area: 'home' })} />
       </Panel>}
       </div>
       {drawers}
@@ -1848,6 +1892,13 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
     const checked = (key: keyof DashboardSummary) => ready(summary?.[key]) ? `Checked ${freshness(summary?.[key]?.checkedAt, now)}` : undefined;
     const calendarLead = ready(summary?.calendar) ? lead : null;
     const openIssues = propertyIssues.issues.filter(i => i.status === 'open');
+    // The Property card answers two things: is the house secure (the Guardian sweep's
+    // verdict) and is anything wrong (open issues). Concerns stay off Home (owner, 2026-11-14).
+    const guard = home.guardian.data;
+    const guardOpen = guard?.incidents.filter(i => i.state === 'open' || i.state === 'notified' || i.state === 'acknowledged') || [];
+    const seriousIssues = openIssues.some(i => i.severity === 'high' || i.severity === 'emergency');
+    const issuesWord = openIssues.length ? `${openIssues.length} issue${openIssues.length === 1 ? '' : 's'}` : 'no issues';
+    const incidentText = (i: (typeof guardOpen)[number]) => `${i.subjectName} ${i.condition === 'open' ? 'appears open' : i.condition === 'up' ? 'appears up' : i.condition === 'offline' ? '— camera not responding' : "couldn't be verified"}`;
     const dreams = [...(home.dreams.data || [])].sort((a, b) => b.date.localeCompare(a.date));
     const monthAgo = zonedDay(new Date(Date.now() - 30 * 86400000), timeZone);
     const dreamt = dreams.filter(d => d.date > monthAgo && (d.status === 'ok' || d.status === 'partial'));
@@ -1866,8 +1917,9 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
         tone: !ready(summary?.jira) ? 'idle' : issues.length ? 'warn' : 'good',
         status: ready(summary?.jira) ? `${issues.length} open` : summary ? statusText[summary.jira.status] : loadingWord },
       { id: 'property', label: 'Property', icon: 'Home', onOpen: go('Property'),
-        tone: openIssues.some(i => i.severity === 'high' || i.severity === 'emergency') ? 'alert' : openIssues.length || homeConcerns.length ? 'warn' : 'good',
-        status: propertyIssues.loading ? loadingWord : propertyIssues.error || proj.error ? 'Unavailable' : openIssues.length ? `${openIssues.length} issue${openIssues.length === 1 ? '' : 's'}` : homeConcerns.length ? `${homeConcerns.length} concern${homeConcerns.length === 1 ? '' : 's'}` : 'No open issues' },
+        tone: seriousIssues || guard?.status === 'attention' ? 'alert' : openIssues.length || guard?.status === 'unverified' ? 'warn' : guard?.status === 'secure' ? 'good' : 'idle',
+        status: propertyIssues.loading || home.guardian.loading ? loadingWord : propertyIssues.error ? 'Unavailable'
+          : guard ? `${GUARDIAN_STATUS[guard.status].label} · ${issuesWord}` : openIssues.length ? issuesWord : 'No open issues' },
       { id: 'dreams', label: 'Dreams', icon: 'Dreams', onOpen: go('Dreams'), tone: dreamt.length ? 'good' : 'idle',
         status: home.dreams.loading ? loadingWord : !home.dreams.data ? 'Unavailable' : `${dreamt.length} night${dreamt.length === 1 ? '' : 's'}` },
       { id: 'community', label: 'Community', icon: 'Community', onOpen: go('Community'),
@@ -1970,6 +2022,7 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
     const pill = (i: JiraIssue) => i.statusCategory === 'indeterminate' ? 'progress' : i.statusCategory === 'done' ? 'done' : /review/i.test(i.status) ? 'review' : 'todo';
     const work = <HomeSection id="work" icon="Work" title="Work" onAction={go('Work')}
       tabs={ready(summary?.jira) && <HomeTabs label="Jira sites" tabs={sites.map(s => ({ id: s, label: siteName(s), count: actionableIssues.filter(i => i.site === s).length }))} active={activeSite} onChange={setWorkSite} />}>
+      {workSprint.data && !workSprint.data.error && <SprintSummary data={workSprint.data} onOpen={() => navigate(`${dashboardPath('Work')}/${encodeURIComponent(workSprint.data!.workplace.uuid)}`)} />}
       {!ready(summary?.jira) ? <SourceNote source={summary?.jira} name="Jira" fix={fixFor('jira')} />
         : !actionableIssues.length ? <p className="dashboard-empty">Nothing In Progress or Ready to Start.</p>
           : <>
@@ -2029,11 +2082,15 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
         : propertyIssues.error ? <EmptyCta text="Issues couldn’t load." action="Retry" onClick={propertyIssues.retry} />
           : proj.error ? <EmptyCta text="Property projects and concerns couldn’t load." action="Retry" onClick={proj.reload} />
           : <ul className="dh-status-list">
+            {home.guardian.loading ? null : !guard ? <li><button type="button" onClick={() => setPropertyTab('property-security')}><i>?</i><span><strong>Security status unavailable</strong><small>Open Security to check</small></span></button></li>
+              : guardOpen.length ? guardOpen.slice(0, 2).map(i => <li key={i.id} className={i.severity === 'urgent' ? 'dh-status-alert' : 'dh-status-warn'}>
+                <button type="button" onClick={() => setPropertyTab('property-security')}><i>!</i><span><strong>{incidentText(i)}</strong><small>Security · since {reportedWhen(i.firstDetectedAt)}</small></span></button>
+              </li>)
+              : <li className={guard.status === 'secure' ? 'dh-status-good' : guard.status === 'unverified' ? 'dh-status-warn' : ''}>
+                <button type="button" onClick={() => setPropertyTab('property-security')}><i>{guard.status === 'secure' ? '✓' : '?'}</i><span><strong>{GUARDIAN_STATUS[guard.status].label}</strong><small>{guard.lastSweep?.finishedAt ? `Last checked ${reportedWhen(guard.lastSweep.finishedAt)}` : GUARDIAN_STATUS[guard.status].note}</small></span></button>
+              </li>}
             {openIssues.slice(0, 2).map(i => <li key={i.uuid} className={`dh-status-${i.severity === 'high' || i.severity === 'emergency' ? 'alert' : 'warn'}`}>
               <button type="button" onClick={go('Property')}><i>!</i><span><strong>{i.description}</strong><small>{i.location} · reported {reportedWhen(i.createdAt)}</small></span></button>
-            </li>)}
-            {homeConcerns.slice(0, openIssues.length ? 1 : 2).map(c => <li key={c.uuid} className="dh-status-warn">
-              <button type="button" onClick={go('Property')}><i>?</i><span><strong>{c.title}</strong><small>Open concern{c.frequency ? ` · ${c.frequency}` : ''}</small></span></button>
             </li>)}
             {!openIssues.length && <li className="dh-status-good"><button type="button" onClick={go('Property')}><i>✓</i><span><strong>No open issues</strong><small>{homeOpen.length ? `${homeOpen.length} house project${homeOpen.length === 1 ? '' : 's'} open` : 'Nothing reported'}</small></span></button></li>}
           </ul>}
@@ -2069,7 +2126,13 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
       <HomeChanges updates={updates} now={now} onOpen={area => onNavigate?.(area)} compact />
       {statStrip}
 
-      <div className="dh-row dh-row-three">{schedule}{work}{projects}</div>
+      {/* Tasks beside the day it is planned against (owner, 2026-11-13). */}
+      <div className="dh-row dh-row-four dh-row-first">{schedule}
+        <HomeSection id="tasks" icon="Tasks" title="Tasks" action="Open Google Tasks" onAction={openGoogleTasks}>
+          {ready(summary?.tasks) && <p className="dh-section-caption">Google Tasks · {checked('tasks')}</p>}
+          {!ready(summary?.tasks) ? <SourceNote source={summary?.tasks} name="Google Tasks" fix={fixFor('tasks')} /> : tasksCardBody()}
+        </HomeSection>
+        {work}{projects}</div>
       {/* Health, then Family: the owner's order for the areas of a life. */}
       <div className="dh-row dh-row-four">{health}
         <HomeSection id="family" icon="Family" title="Family" onAction={go('Family')}>{familyCardBody()}</HomeSection>
@@ -2099,6 +2162,7 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
     if (section === 'News') return NewsPage();
     if (section === 'Dreams') return <DreamsPage ctx={ctx} tabs={systemTabs('Dreams')} />;
     if (section === 'Finance') return <FinancePage ctx={ctx} tabs={systemTabs('Finance')} />;
+    if (section === 'Models') return <ModelsPage ctx={ctx} tabs={systemTabs('Models')} />;
     if (section === 'System') return SystemPage();
   }
 

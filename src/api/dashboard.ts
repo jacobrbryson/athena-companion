@@ -50,7 +50,11 @@ export interface DashboardSummary {
    *  what the family is out of; `usualCount` how many regulars sit ticked on it.
    *  Optional so an older server's payload still renders. */
   groceries?: Source<{ lists: GroceryList[]; appUrl?: string | null }>;
+  /** Open Google Tasks across every list, soonest due first. Optional so an
+   *  older server's payload still renders. */
+  tasks?: Source<{ lists: string[]; tasks: GoogleTask[]; total: number; unreadableLists?: string[]; appUrl?: string | null }>;
 }
+export interface GoogleTask { id: string; listId: string; list: string; title: string; due: string | null; notes: string | null }
 export interface GroceryList { title: string; toBuy: string[]; usualCount: number }
 /** One weigh-in, metric; null where the scale didn't measure it. */
 export interface WeighIn {
@@ -252,6 +256,28 @@ export interface WorkspacePull { id: number; number: number; title: string; url:
 export interface WorkspaceEpic { key: string; title: string; status: string; statusCategory: string | null; project: string | null; updated: string | null; due: string | null; url: string; done: number; total: number }
 /** `error`: not_connected (nothing linked to the workspace), unsupported, rejected (the key was refused) or unavailable. */
 export interface WorkspaceExtras { pullRequests: { items: WorkspacePull[]; login?: string; error: string | null }; epics: { items: WorkspaceEpic[]; error: string | null } }
+export type SprintStatus = 'complete' | 'on_track' | 'at_risk' | 'behind';
+/** One developer in the open sprint: story points by status, and PRs since the sprint began (null when GitHub couldn't be matched or read). */
+export interface SprintPerson {
+  id: string; name: string; avatar: string | null; me: boolean; issues: number;
+  done: number; inProgress: number; notStarted: number; status: SprintStatus;
+  github: { login: string | null; created: number | null; reviewed: number | null };
+}
+/** `error`: not_connected, unsupported, rejected, unavailable, no_sprint_field or no_open_sprint. */
+export interface WorkspaceSprint {
+  workplace: { uuid: string; name: string }; error: string | null;
+  target?: number;
+  sprint?: { id: number; name: string; start: string | null; end: string | null; goal: string | null; elapsed: number; daysLeft: number | null; expected: number };
+  me?: SprintPerson | null;
+  team?: { size: number; average: { done: number; inProgress: number; notStarted: number; status: SprintStatus | null; created: number | null; reviewed: number | null }; atRisk: { name: string; status: SprintStatus }[] };
+  people?: SprintPerson[];
+  unassigned?: number;
+  otherSprints?: string[];
+  /** 'Red' when the people are filtered to Jira's Red team; null when no Red team was found (everyone shown). */
+  teamFilter?: string | null;
+  /** note: no_org (the key sees no organization) or no_team (it can't see teammates' pull requests). */
+  github?: { error: string | null; note?: string | null };
+}
 export type WorkplaceInput = { name: string; role?: string | null; domain?: string | null; primary?: boolean; notes?: string | null };
 /** What Google says the person can see, to pick from. `linked: false` means Websites isn't connected. */
 export interface WebsiteDiscovery {
@@ -513,6 +539,8 @@ export const dashboardApi = {
   /** Workplaces on the Work page. Every write can move the primary flag or a link, so the whole overview comes back. */
   workspaceExtras: (uuid: string) => api.get<WorkspaceExtras>(`/api/v1/dashboard/workplaces/${encodeURIComponent(uuid)}/dashboard`),
   workplaces: () => api.get<WorkplacesOverview>('/api/v1/dashboard/workplaces'),
+  /** `uuid` may be 'primary' for the primary workplace (the main Dashboard's Work card). */
+  workspaceSprint: (uuid: string) => api.get<WorkspaceSprint>(`/api/v1/dashboard/workplaces/${encodeURIComponent(uuid)}/sprint`),
   saveWorkplace: (input: WorkplaceInput, uuid?: string) => uuid
     ? api.patch<WorkplacesOverview>(`/api/v1/dashboard/workplaces/${encodeURIComponent(uuid)}`, input)
     : api.post<WorkplacesOverview>('/api/v1/dashboard/workplaces', input),

@@ -15,6 +15,7 @@ import { PhotoMemory } from '../components/PhotoMemory';
 import { CameraPanel } from '../components/CameraPanel';
 import { useSight, LOOK_BEFORE_SEND_MS } from '../athena/useSight';
 import { BrainPanel, BrainPill, useBrainStatus } from '../components/BrainStatus';
+import { ModelOutageBanner } from '../components/ModelOutageBanner';
 import { DevicesPanel } from '../components/DevicesPanel';
 import { ActionsPanel } from '../components/ActionsPanel';
 import { InitiativePanel } from '../components/InitiativePanel';
@@ -646,6 +647,10 @@ export function CompanionConsole() {
           broken (owner only, checks that are down). */}
       <SystemBanner onOpen={() => navigateDashboard('System')} />
 
+      {/* Above every view, for everyone: Athena is answering on a backup model
+          (Gemini out of quota, a drill), and what that changes. */}
+      <ModelOutageBanner status={brain} onOpen={() => openPanel('brain')} />
+
       {/* Above every view: an emergency near home is never on a screen you are
           not looking at. The dashboard home draws it itself, in the slot above
           its cards. */}
@@ -653,7 +658,7 @@ export function CompanionConsole() {
         <EmergencyBanner onAsk={askAthena} onPlaces={showPointsOfInterest} pinned={view === 'chat'} />
       )}
 
-      {view === 'dashboard' && <Dashboard section={activeSection} firstName={firstName} onAsk={askAthena} onPanel={openPanel} onPlaces={showPointsOfInterest} onNavigate={navigateDashboard} />}
+      {view === 'dashboard' && <Dashboard section={activeSection} firstName={firstName} onAsk={askAthena} onPanel={openPanel} onPlaces={showPointsOfInterest} onNavigate={navigateDashboard} brain={brain} />}
       <div className="companion-chat" hidden={view !== 'chat'}>
 
       {/* Athena — large and front-and-center */}
@@ -743,6 +748,11 @@ export function CompanionConsole() {
                   </span>
                   {entry.message.lyrics && (
                     <span className="mt-2 block italic text-emerald-200/90">♪ {entry.message.lyrics}</span>
+                  )}
+                  {entry.message.served_by?.fallback && (
+                    <span className="mt-2 block text-[10px] text-amber-200/80" title={entry.message.served_by.why || undefined}>
+                      answered by a backup model{entry.message.served_by.tier === 'orcwood' ? ' (desktop)' : ''}
+                    </span>
                   )}
                   {!!entry.message.sources?.length && (
                     <span className="mt-2 flex flex-wrap gap-1.5">
@@ -1044,7 +1054,7 @@ export function CompanionConsole() {
       {panel === 'memory' && <MemoryPanel onClose={() => setPanel(null)} />}
       {panel === 'photo' && <PhotoMemory onClose={() => setPanel(null)} onTalkAbout={talkAboutPhoto} />}
       {panel === 'camera' && <CameraPanel sight={sight} onClose={() => setPanel(null)} onTalkAbout={talkAboutScene} />}
-      {panel === 'brain' && <BrainPanel onClose={() => setPanel(null)} />}
+      {panel === 'brain' && <BrainPanel onClose={() => setPanel(null)} onOpenModels={() => { setPanel(null); navigateDashboard('Models'); }} />}
       {panel === 'devices' && <DevicesPanel onClose={() => setPanel(null)} />}
       {panel === 'actions' && <ActionsPanel onClose={() => setPanel(null)} />}
       {panel === 'notifications' && (

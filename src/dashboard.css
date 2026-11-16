@@ -812,3 +812,15 @@ svg.dashboard-icon-drawn .icon-fill { fill: currentColor; fill-opacity: .9; }
 .workplace-add { margin-left: 8px; padding: 0 7px; height: 16px; border: 1px solid #2b6c85; border-radius: 999px; background: transparent; color: #8fd6ea; font: 600 10px/1 inherit; letter-spacing: normal; text-transform: none; vertical-align: baseline; cursor: pointer; }
 .workplace-add:hover:not(:disabled) { background: #042532aa; border-color: #5ecde6; }
 .workplace-add:disabled { opacity: .45; cursor: default; }
+
+/* Tasks card (Google Tasks): a checkbox per open task, Undo after a tick. */
+.task-list li { display: flex; align-items: flex-start; gap: 10px; }
+.task-list li > div { display: flex; flex-direction: column; min-width: 0; }
+.task-check { flex: none; width: 18px; height: 18px; margin-top: 1px; border: 1px solid #4d798c; border-radius: 5px; background: transparent; color: #8fe0b0; font-size: 11px; line-height: 16px; text-align: center; cursor: pointer; }
+.task-check:hover:not(:disabled) { border-color: #8fe0b0; background: rgba(143, 224, 176, .08); }
+.task-check:disabled { cursor: default; }
+.task-done strong { color: #8fb3c4; text-decoration: line-through; text-decoration-color: #4d798c; }
+.task-overdue { color: #f0b46a !important; }
+.task-note { display: flex; align-items: center; gap: 10px; margin: 8px 0 0; color: var(--muted); font-size: 11px; }
+.task-note button { border: 0; background: none; color: #8fe0b0; font-size: 11px; cursor: pointer; padding: 0; }
+.task-note button:last-child { margin-left: auto; color: var(--muted); }

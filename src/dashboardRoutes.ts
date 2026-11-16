@@ -5,7 +5,7 @@ const SECTION_PATHS: Record<DashboardSection, string> = {
   Family: '/family', FamilyFinance: '/family/finance', FamilyTrading: '/family/trading', Community: '/community', CommunityPlaces: '/community/points-of-interest', Property: '/properties', Work: '/work', Research: '/research', Guardians: '/guardians',
   System: '/system', Calendar: '/system/calendar', Mail: '/system/mail',
   Projects: '/system/projects', News: '/system/news', Dreams: '/system/dreams',
-  Finance: '/system/finance',
+  Finance: '/system/finance', Models: '/system/models',
 };
 
 export function dashboardPath(section: DashboardSection): string {

@@ -14,7 +14,7 @@ const money = (value: number) => new Intl.NumberFormat(undefined, { style: 'curr
 const category = (p: Project) => p.kind || 'Uncategorized';
 const colors = ['#32b8f4', '#66d9cd', '#a58af6', '#e9b967', '#739bcb', '#df8ea8'];
 const progress = (p: Project) => p.progress.contributors.total ? p.progress.contributors : p.progress.steps;
-const needsAttention = (p: Project, today: string) => !closed(p) && (p.priority >= 4 || p.effectiveStatus === 'blocked' || !!p.execution?.dueFollowUps.length || !!(target(p) && target(p)! < today));
+const needsAttention =(p: Project, today: string) => !closed(p) && (p.priority >= 4 || p.effectiveStatus === 'blocked' || !!p.execution?.dueFollowUps.length || !!(target(p) && target(p)! < today));
 
 function ProjectIcon({ name }: { name: string }) {
   const glyph = name === 'search' ? <><circle cx="10" cy="10" r="6.5" /><path d="m15 15 5 5" /></>
@@ -42,11 +42,13 @@ function ProjectCard({ project: p, onOpen }: { project: Project; onOpen: (uuid: 
 }
 
 /** Property's project workspace; all counts, dates and photos come from the existing snapshot. */
-export function PropertyProjects({ state, onOpen, onNew, onMap, onSeason }: {
+export function PropertyProjects({ state, onOpen, onNew, onMap, onSeason, initialStatus = 'all' }: {
   state: ProjectsState; onOpen: (uuid: string) => void; onNew: () => void; onMap: () => void; onSeason: () => void;
+  /** The status filter a Property metric opened the tab with. */
+  initialStatus?: string;
 }) {
   const [query, setQuery] = useState('');
-  const [status, setStatus] = useState('all');
+  const [status, setStatus] = useState(initialStatus);
   const [kind, setKind] = useState('all');
   const [priority, setPriority] = useState('all');
   const [seasonFilter, setSeasonFilter] = useState('all');
