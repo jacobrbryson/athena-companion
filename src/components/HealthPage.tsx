@@ -5,7 +5,10 @@ import { workoutsApi, type Workout } from '../api/workouts';
 import { PageHeader } from './PageHeader';
 import { downscale } from './photoStore';
 import { Ecg, useLiveHeartRate } from './Ecg';
+import { createPortal } from 'react-dom';
 import './health.css';
+// The Today's Food sidebar wears the Family editor's drawer shell (fme-*).
+import './familyEditor.css';
 
 /**
  * The Health & Performance page (redesigned 2026-10-14 from the owner's
@@ -150,6 +153,27 @@ export function Ring({ value, max, color, size = 104, stroke = 9, children }: { 
     </svg>
     <div className="hp-ring-label">{children}</div>
   </div>;
+}
+
+/**
+ * Concentric rings, outermost first: each one a share of its target. A missing
+ * target leaves only the track. Children sit in the middle. Shared by the
+ * Today's Food sidebar and the briefing's Nutrition tile.
+ */
+export function MacroRings({ rings, size = 64, stroke = 5, gap = 3, children }: { rings: { color: string; share: number }[]; size?: number; stroke?: number; gap?: number; children?: ReactNode }) {
+  const mid = size / 2;
+  const svg = <svg className="dh-macro-rings" viewBox={`0 0 ${size} ${size}`} width={size} height={size} aria-hidden="true">
+    {rings.map((ring, i) => {
+      const r = mid - stroke / 2 - i * (stroke + gap);
+      const c = 2 * Math.PI * r;
+      return <g key={i}>
+        <circle cx={mid} cy={mid} r={r} stroke="#1c3442" strokeWidth={stroke} fill="none" />
+        {ring.share > 0 && <circle cx={mid} cy={mid} r={r} stroke={ring.color} strokeWidth={stroke} fill="none" strokeLinecap="round"
+          strokeDasharray={`${Math.min(1, ring.share) * c} ${c}`} transform={`rotate(-90 ${mid} ${mid})`} style={{ filter: `drop-shadow(0 0 4px ${ring.color}88)` }} />}
+      </g>;
+    })}
+  </svg>;
+  return children ? <div className="hp-rings-stack" style={{ width: size, height: size }}>{svg}<div>{children}</div></div> : svg;
 }
 
 /** Dots joined by a line; nulls are gaps, not zeros. */
@@ -361,7 +385,7 @@ export function HealthOverview({ recovery, sleep, strain, weighIns, readiness, w
     </div>
 
     {editing === 'program' && <ProgramEditor program={program} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }} />}
-    {editing === 'food' && <FoodLog food={food} open={foodOpen} onClose={() => setEditing(null)} onChanged={n => setPlan(prev => prev && { ...prev, nutrition: n })} />}
+    {editing === 'food' && <FoodLog food={food} targets={targets} open={foodOpen} onClose={() => setEditing(null)} onChanged={n => setPlan(prev => prev && { ...prev, nutrition: n })} />}
     {editing === 'targets' && <TargetsEditor targets={targets} onClose={() => setEditing(null)} onSaved={t => { setPlan(prev => prev && { ...prev, targets: t }); setEditing(null); }} />}
   </div>;
 }
@@ -426,7 +450,7 @@ function ProgramWeek({ program, loading, onEdit, onMarked, onAsk, onViewAll }: {
 // ---------------------------------------------------------------------------
 // Nutrition
 // ---------------------------------------------------------------------------
-const MACROS = [
+export const MACROS = [
   { key: 'calories', target: 'calories', label: 'Calories', unit: '', color: '#2fe0a0' },
   { key: 'protein_g', target: 'protein_g', label: 'Protein', unit: ' g', color: '#3aa6ff' },
   { key: 'carbs_g', target: 'carbs_g', label: 'Carbs', unit: ' g', color: '#ff6b4a' },
@@ -459,8 +483,8 @@ const kcalOf = (f: { calories: number | null }) => (f.calories != null ? `${f.ca
  * Manual entry. Shared by the Nutrition card and the food log's New record so
  * the two can't drift apart; what each choice does is the caller's.
  */
-function LogFoodMenu({ label, busy, disabled, down, favorites, onFavorite, onTell, onPhoto, onManual }: {
-  label: ReactNode; busy: string | null; disabled?: boolean; down?: boolean;
+function LogFoodMenu({ label, busy, disabled, down, buttonClass, favorites, onFavorite, onTell, onPhoto, onManual }: {
+  label: ReactNode; busy: string | null; disabled?: boolean; down?: boolean; buttonClass?: string;
   favorites?: NutritionFavorite[]; onFavorite?: (uuid: string) => void;
   /** Resolves true when it logged, so the box can clear. */
   onTell: (text: string) => Promise<boolean>; onPhoto: (file: File) => void; onManual: () => void;
@@ -490,7 +514,7 @@ function LogFoodMenu({ label, busy, disabled, down, favorites, onFavorite, onTel
   };
   const place = down ? 'hp-menu hp-menu-down' : 'hp-menu';
   return <div className="hp-menu-wrap" ref={menuRef}>
-    <button type="button" className={down ? 'hp-new-record' : undefined} aria-haspopup="menu" aria-expanded={menu} disabled={!!busy || disabled} onClick={() => setMenu(m => !m)}><Icon name="plus" /> {busy || label} <Icon name="down" className="hp-caret" /></button>
+    <button type="button" className={buttonClass ?? (down ? 'hp-new-record' : undefined)} aria-haspopup="menu" aria-expanded={menu} disabled={!!busy || disabled} onClick={() => setMenu(m => !m)}><Icon name="plus" /> {busy || label} <Icon name="down" className="hp-caret" /></button>
     {menu && telling && <form className={`${place} hp-tell`} onSubmit={tell}>
       <label htmlFor="hp-tell-input">Tell Athena what you ate</label>
       <input id="hp-tell-input" autoFocus value={told} onChange={e => setTold(e.target.value)} placeholder="Big Mac from McDonald’s" maxLength={200} enterKeyHint="send" />
@@ -598,7 +622,19 @@ function FoodFields({ draft, setDraft }: { draft: FoodDraft; setDraft: (f: (d: F
   </>;
 }
 
-function FoodLog({ food, open, onClose, onChanged }: { food: NutritionDay | null; open: FoodLogOpen; onClose: () => void; onChanged: (n: NutritionDay) => void }) {
+/** The Today food log, as the Health page's Nutrition card opens it; the briefing's Nutrition stat opens the same one. */
+export function TodayFoodLog({ food, targets, onClose, onChanged }: { food: NutritionDay | null; targets: NutritionTargets | null; onClose: () => void; onChanged: (n: NutritionDay) => void }) {
+  return <FoodLog food={food} targets={targets} open={{ mode: 'list' }} onClose={onClose} onChanged={onChanged} />;
+}
+
+/** The Today's Food sidebar: the day, its totals against targets, Add Food, and what was logged. */
+function FoodLog({ food, targets, open, onClose, onChanged }: { food: NutritionDay | null; targets: NutritionTargets | null; open: FoodLogOpen; onClose: () => void; onChanged: (n: NutritionDay) => void }) {
+  // Escape closes the sidebar — unless the Add Food menu is open, which Escape closes first.
+  useEffect(() => {
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape' && !document.querySelector('.hp-food-panel .hp-menu')) onClose(); };
+    window.addEventListener('keydown', esc);
+    return () => window.removeEventListener('keydown', esc);
+  }, [onClose]);
   const [draft, setDraft] = useState(FOOD_BLANK);
   const [star, setStar] = useState(false);
   const [editing, setEditing] = useState<{ uuid: string; draft: FoodDraft } | null>(null);
@@ -681,12 +717,49 @@ function FoodLog({ food, open, onClose, onChanged }: { food: NutritionDay | null
     if (await run(uuid, () => healthPlanApi.removeEntry(uuid), 'Couldn’t remove that.') && editing?.uuid === uuid) { setEditing(null); setNote(''); }
   };
   const t = shown?.totals;
-  return <Modal title={isToday ? 'Today’s food' : 'Food log'} eyebrow="NUTRITION · WHAT YOU LOGGED" onClose={onClose} wide>
+  const title = isToday ? 'Today’s Food' : 'Food Log';
+  const shortDay = noon(date).toLocaleDateString(undefined, { timeZone: 'UTC', weekday: 'short', month: 'short', day: 'numeric' });
+  const macros = MACROS.map(m => {
+    const v = Math.round(t?.[m.key] ?? 0);
+    const goal = targets?.[m.target] ?? null;
+    const unit = m.unit || '';
+    return { ...m, share: goal ? v / goal : 0, text: goal ? `${v.toLocaleString()} / ${goal.toLocaleString()}${unit} (${Math.round((v / goal) * 100)}%)` : `${v.toLocaleString()}${unit || ' cal'}` };
+  });
+  return createPortal(<div className="fme hp-food-drawer" role="dialog" aria-modal="true" aria-labelledby="food-log-title">
+    <button type="button" className="fme-scrim" aria-label="Close food log" onClick={onClose} />
+    <aside className="fme-panel hp-food-panel">
+      <header className="fme-head">
+        <span className="fme-badge"><Icon name="food" /></span>
+        <div><small>NUTRITION</small><h2 id="food-log-title">{title}</h2></div>
+        <button type="button" className="fme-close" aria-label="Close food log" onClick={onClose}><Icon name="close" /></button>
+        <svg className="fme-wave" viewBox="0 0 400 110" preserveAspectRatio="none" aria-hidden="true">
+          <path d="M0 96 C90 92 160 70 230 62 S340 40 400 18" />
+          <path d="M40 104 C130 98 200 80 270 72 S360 52 400 36" />
+        </svg>
+      </header>
+      <div className="fme-scroll hp-food-scroll">
     <div className="hp-day-nav">
       <button type="button" aria-label="Previous day" disabled={!!busy || loadingDay} onClick={() => go(-1)}><Icon name="chevronLeft" /></button>
-      <div><strong>{isToday ? 'Today' : dayLabel}</strong><small>{isToday ? dayLabel : t ? `${Math.round(t.calories).toLocaleString()} kcal · P ${Math.round(t.protein_g)} g · C ${Math.round(t.carbs_g)} g · F ${Math.round(t.fat_g)} g` : ' '}</small></div>
+      <div><strong><Icon name="calendar" />{isToday ? 'Today' : noon(date).toLocaleDateString(undefined, { timeZone: 'UTC', weekday: 'long' })}</strong><small>{shortDay}</small></div>
       <button type="button" aria-label="Next day" disabled={isToday || !!busy || loadingDay} onClick={() => go(1)}><Icon name="chevron" /></button>
     </div>
+    <section className="hp-food-summary" aria-label="Totals against targets">
+      <MacroRings rings={macros} size={124} stroke={7} gap={4}>
+        <strong>{Math.round(t?.calories ?? 0).toLocaleString()}</strong><small>cal</small>
+      </MacroRings>
+      <ul>{macros.map(m => <li key={m.key}><i style={{ background: m.color }} /><span>{m.label}</span><b>{m.text}</b></li>)}</ul>
+    </section>
+    {!editing && !adding && <LogFoodMenu down buttonClass="hp-add-food" label={isToday ? 'Add Food' : `Add Food for ${noon(date).toLocaleDateString(undefined, { timeZone: 'UTC', month: 'short', day: 'numeric' })}`} busy={busy === 'favorite' ? 'Logging…' : logging} disabled={loadingDay || !!busy}
+      favorites={food?.favorites || []} onFavorite={uuid => void run('favorite', () => healthPlanApi.logFavorite(uuid, date), 'Couldn’t log that.')}
+      onTell={text => logged('Athena is looking it up…', () => healthPlanApi.describe(text, date), 'Athena couldn’t look that up.')}
+      onPhoto={file => void logged('Athena is looking…', async () => healthPlanApi.scan({ ...(await photoBody(file)), eaten_on: date }), 'Athena couldn’t read that photo.')}
+      onManual={openManual} />}
+    <div className="hp-food-head">
+      <h3>{isToday ? 'Today’s Food' : shortDay} ({entries.length})</h3>
+      {t && <small>{`${Math.round(t.calories).toLocaleString()} cal · P ${Math.round(t.protein_g)} g · C ${Math.round(t.carbs_g)} g · F ${Math.round(t.fat_g)} g`}</small>}
+    </div>
+    {/* Only this part scrolls: the day, its totals and Add Food stay put above it. */}
+    <div className="hp-food-body">
     {note &&<p className="hp-scan-note" role="status"><Icon name={/^Found/.test(note) ? 'barcode' : /^Logged/.test(note) ? 'speech' : 'camera'} />{note} Check it, fix anything that’s off, or remove it.</p>}
     {entries.length ? <ul className="hp-food-list">{entries.map(e => <li key={e.uuid} className={editing?.uuid === e.uuid ? 'hp-food-editing' : ''}>
       {editing?.uuid === e.uuid ? <form className="hp-form hp-food-edit" onSubmit={save}>
@@ -705,12 +778,7 @@ function FoodLog({ food, open, onClose, onChanged }: { food: NutritionDay | null
       </>}
     </li>)}</ul> : <p className="hp-empty">{loadingDay ? 'Loading…' : isToday ? 'Nothing logged yet today.' : 'Nothing logged that day.'}</p>}
     {(editing || !adding) && error && <p className="hp-error" role="status">{error}</p>}
-    {!editing && !adding && <LogFoodMenu down label={`New record${isToday ? '' : ` for ${noon(date).toLocaleDateString(undefined, { timeZone: 'UTC', month: 'short', day: 'numeric' })}`}`} busy={busy === 'favorite' ? 'Logging…' : logging} disabled={loadingDay || !!busy}
-      favorites={food?.favorites || []} onFavorite={uuid => void run('favorite', () => healthPlanApi.logFavorite(uuid, date), 'Couldn’t log that.')}
-      onTell={text => logged('Athena is looking it up…', () => healthPlanApi.describe(text, date), 'Athena couldn’t look that up.')}
-      onPhoto={file => void logged('Athena is looking…', async () => healthPlanApi.scan({ ...(await photoBody(file)), eaten_on: date }), 'Athena couldn’t read that photo.')}
-      onManual={openManual} />}
-    <form ref={manualRef} className="hp-form" hidden={!!editing || !adding} onSubmit={add}>
+    <form ref={manualRef} className="hp-form hp-food-manual" hidden={!!editing || !adding} onSubmit={add}>
       <h3 className="hp-span hp-form-head">New record{isToday ? '' : ` · ${dayLabel}`}</h3>
       <FoodFields draft={draft} setDraft={setDraft} />
       <label className="hp-span hp-check"><input type="checkbox" checked={star} onChange={e => setStar(e.target.checked)} /> Save to favorites</label>
@@ -720,7 +788,10 @@ function FoodLog({ food, open, onClose, onChanged }: { food: NutritionDay | null
         <button type="submit" className="dashboard-chat-cta" disabled={!!busy}>{busy === 'add' ? 'Logging…' : 'Log it'} <span>↗</span></button>
       </div>
     </form>
-  </Modal>;
+    </div>
+      </div>
+    </aside>
+  </div>, document.body);
 }
 
 function TargetsEditor({ targets, onClose, onSaved }: { targets: NutritionTargets | null; onClose: () => void; onSaved: (t: NutritionTargets) => void }) {

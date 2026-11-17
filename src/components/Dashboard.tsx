@@ -35,7 +35,7 @@ import { EmergencyAlertSetup } from './EmergencyAlertSetup';
 import { Websites } from './Websites';
 import { Workplaces } from './Workplaces';
 import { WorkoutsPanel } from './Workouts';
-import { HealthOverview } from './HealthPage';
+import { HealthOverview, Icon, MACROS, TodayFoodLog } from './HealthPage';
 import { PageHeader } from './PageHeader';
 import { CalendarOverview } from './CalendarPage';
 import { FamilyOverview } from './FamilyPage';
@@ -43,7 +43,7 @@ import { FamilyFinance } from './FamilyFinance';
 import { FamilyTrading } from './FamilyTrading';
 import { ResearchPage } from './ResearchPage';
 import { GuardiansPage } from './GuardiansPage';
-import { CommunityOverview } from './CommunityPage';
+import { CommunityOverview, degrees, skyIcon } from './CommunityPage';
 import { WorkOverview } from './WorkPage';
 import { WorkspacePage } from './WorkspacePage';
 import { WorkItems } from './WorkItems';
@@ -67,7 +67,7 @@ import { BillScanDrawer } from './BillScan';
 import { useThermostats, ThermostatList } from './PropertyThermostats';
 import { PropertySecurity } from './PropertySecurity';
 import { SystemOverview, SystemTabs, SYSTEM_TAB_IDS, type SystemTab, type SystemTile } from './SystemPage';
-import { HomeHero, HomeChanges, HomeSection, HomeStat, HomeTabs, Spark, useHomeExtras, type HeroNode, type Tone } from './DashboardHome';
+import { HomeHero, HomeChanges, HomeSection, HomeStat, HomeTabs, NutritionStat, ShareBar, Spark, useHomeExtras, type HeroNode, type Tone } from './DashboardHome';
 import { freshness, homeUpdates, recoveryChange } from './livingHome';
 import { AREA_LABEL, STATE_LABEL } from '../api/projects';
 import { GUARDIAN_STATUS } from '../api/propertyGuardian';
@@ -770,6 +770,8 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
   const workSprint = useSprint('primary');
   const [workIssueUrl, setWorkIssueUrl] = useState<string | null>(null);
   const [plansOpen, setPlansOpen] = useState(false);
+  // The Today food log, opened from the briefing's Nutrition stat.
+  const [foodOpen, setFoodOpen] = useState(false);
   const [selectedEmail, setSelectedEmail] = useState<string | null>(null);
   // Bumped after propose/confirm/decline/dismiss so MailPage's own list refetches —
   // it does not live in useDashboardData, same reasoning as places/projects below.
@@ -1214,6 +1216,16 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
   const openTasks = summary?.tasks?.data?.tasks || [];
   const taskToday = zonedDay(new Date(), timeZone);
   const overdueTasks = openTasks.filter(t => t.due && t.due < taskToday).length;
+  const dueTodayTasks = openTasks.filter(t => t.due === taskToday).length;
+  // The Open tasks tile goes to the Tasks card on this page, or Google Tasks where there's no card.
+  const showTasks = () => { const card = document.getElementById('dashboard-tasks'); if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' }); else openGoogleTasks(); };
+  /** What kind of thing the next event is, for the Next event tile's icon. */
+  const eventKind = (e: CalendarEvent): { icon: string; label: string } => {
+    if (/\bzoom\b|google meet|meet\.google|\bteams\b|webex|https?:\/\//i.test(e.location || '')) return { icon: 'EventVideo', label: 'Video call' };
+    if ((e.attendees || 0) > 1) return { icon: 'EventMeeting', label: `Meeting · ${e.attendees} guests` };
+    if (e.location) return { icon: 'EventPlace', label: e.location };
+    return { icon: 'EventBlock', label: 'On your calendar' };
+  };
   const openGoogleTasks = () => { const url = summary?.tasks?.data?.appUrl || 'https://tasks.google.com/'; if (isAndroidCompanion()) void androidCall('openExternal', { url }); else window.open(url, '_blank', 'noopener,noreferrer'); };
   const tasksCardBody = () => !ready(summary?.tasks) ? unavailable('tasks', 'Google Tasks')
     : <>{(summary!.tasks!.data!.unreadableLists || []).length > 0 && <p className="source-note">Couldn’t read {summary!.tasks!.data!.unreadableLists!.join(', ')}</p>}<TasksCardBody tasks={openTasks} total={summary!.tasks!.data!.total} today={taskToday} /></>;
@@ -1890,6 +1902,13 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
     const updates = homeUpdates(summary, home.dreams.data, now);
     const recoveryDelta = ready(summary?.recovery) ? recoveryChange(summary?.recovery.data ?? []) : null;
     const checked = (key: keyof DashboardSummary) => ready(summary?.[key]) ? `Checked ${freshness(summary?.[key]?.checkedAt, now)}` : undefined;
+    // The metric tiles say when they were checked only once that's worth knowing: the
+    // dashboard re-reads every five minutes, so a fresh "Checked just now" is noise.
+    const staleFor = (at: string | null | undefined, minutes: number, prefix: string) => {
+      const t = Date.parse(at || '');
+      return Number.isFinite(t) && now - t > minutes * 60_000 ? `${prefix} ${freshness(at, now)}` : undefined;
+    };
+    const staleChecked = (key: keyof DashboardSummary) => ready(summary?.[key]) ? staleFor(summary?.[key]?.checkedAt, 30, 'Checked') : undefined;
     const calendarLead = ready(summary?.calendar) ? lead : null;
     const openIssues = propertyIssues.issues.filter(i => i.status === 'open');
     // The Property card answers two things: is the house secure (the Guardian sweep's
@@ -1936,36 +1955,54 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
     const restDay = !session || session.kind === 'rest';
     const sky = home.weather.data?.weather;
     const temps = (sky?.hours || []).map(h => h.temperatureF).filter((t): t is number => t !== null);
+    // The next three days after today from the 7-day outlook, for the Weather tile.
+    const nextDays = (home.outlook.data?.outlook?.days || []).filter(d => d.date > localDay() && (d.highF != null || d.lowF != null)).slice(0, 3);
 
-    const inProgress = issues.filter(i => i.statusCategory === 'indeterminate').length;
     const dayWord = (event: CalendarEvent) => {
       const day = eventDay(event, timeZone);
       const tomorrow = zonedDay(new Date(Date.now() + 86400000), timeZone);
       return day === today ? 'Today' : day === tomorrow ? 'Tomorrow' : dateLabel(`${day}T12:00:00Z`, { timeZone: 'UTC', weekday: 'short' });
     };
+    // A week of recovery for the Recovery & sleep tile's chart (in its aside, like Nutrition's rings).
+    const recoveryWeek = ready(summary?.recovery) ? week(scoredDays, r => r.recovery_score).map(d => d.value) : [];
     const statStrip = <div className="dh-stats">
       {!working && <RightNowCard data={data.rightNow.data} loading={data.rightNow.loading} error={data.rightNow.error} onAsk={onAsk} onManage={() => setPlansOpen(true)} />}
-      <HomeStat icon="StatRecovery" label="Recovery" onClick={go('Health')} tone={whoopDown ? 'idle' : readinessTone}
+      {/* Recovery and last night's sleep share one tile: both come from WHOOP and both open Health. */}
+      <HomeStat icon="StatRecovery" className="dh-stat-recovery" label="Recovery & sleep" onClick={go('Health')} tone={whoopDown ? 'idle' : readinessTone}
+        detail={<><DashboardIcon name="StatSleep" bare />{!ready(summary?.sleep) ? (summary ? statusText[summary.sleep.status] : 'Loading…')
+          : sleep ? `Slept ${hoursMinutes(sleep.hours_asleep)}${sleep.sleep_performance_percent != null ? ` · ${sleep.sleep_performance_percent}% of need` : ''}` : 'No sleep recorded'}</>}
         value={recovery?.recovery_score != null && !whoopDown ? `${recovery.recovery_score}%` : '—'}
         chip={readiness && !whoopDown ? <span className={`readiness readiness-${readiness.level}`}>{readiness.label}</span> : undefined}
         note={!ready(summary?.recovery) ? (summary ? statusText[summary.recovery.status] : 'Loading…') : recoveryDelta ? `${recoveryDelta.delta > 0 ? '+' : ''}${recoveryDelta.delta} points vs ${recoveryDelta.previous.date}` : readiness?.headline || 'No scored result'}
-        freshness={ready(summary?.recovery) && recovery ? `Reading ${recovery.date}` : undefined}
-        spark={ready(summary?.recovery) && <Spark tone="green" values={week(scoredDays, r => r.recovery_score).map(d => d.value)} label="Recovery over the last seven calendar days" />} />
-      <HomeStat icon="StatSleep" label="Sleep" onClick={go('Health')} tone={sleep?.sleep_performance_percent != null && sleep.sleep_performance_percent >= 85 ? 'good' : 'idle'}
-        value={ready(summary?.sleep) && sleep ? hoursMinutes(sleep.hours_asleep) : '—'}
-        note={!ready(summary?.sleep) ? (summary ? statusText[summary.sleep.status] : 'Loading…')
-          : sleep?.sleep_performance_percent != null ? `${sleep.sleep_performance_percent}% of need`
-            : sleep ? 'Sleep performance unavailable' : 'No sleep recorded'} />
-      <HomeStat icon="StatCalendar" label={lead ? `Next event · ${lead.ongoing ? 'on now' : dayWord(lead.event)}` : 'Next event'} onClick={go('Calendar')} tone={lead?.ongoing ? 'warn' : 'idle'}
+        freshness={ready(summary?.recovery) && recovery && recovery.date < localDay() ? `Last reading ${recovery.date === localDay(new Date(Date.now() - 86_400_000)) ? 'yesterday' : dateLabel(`${recovery.date}T12:00:00Z`, { timeZone: 'UTC', weekday: 'short', month: 'short', day: 'numeric' })}` : undefined}
+        aside={recoveryWeek.filter(v => v != null).length >= 2 ? <Spark tone="green" values={recoveryWeek} label="Recovery over the last seven calendar days" /> : undefined} />
+      <NutritionStat food={home.plan.data?.nutrition ?? null} targets={home.plan.data?.targets ?? null} macros={MACROS} loading={home.plan.loading} onClick={() => setFoodOpen(true)} />
+      {foodOpen && <TodayFoodLog food={home.plan.data?.nutrition ?? null} targets={home.plan.data?.targets ?? null} onClose={() => setFoodOpen(false)} onChanged={home.setNutrition} />}
+      <HomeStat icon="StatCalendar" className="dh-stat-event" label={lead ? `Next event · ${lead.ongoing ? 'on now' : dayWord(lead.event)}` : 'Next event'} onClick={go('Calendar')} tone={lead?.ongoing ? 'warn' : 'idle'}
         value={lead ? eventTime(lead.event, timeZone) : ready(summary?.calendar) ? 'Clear' : '—'}
-        note={lead ? `${lead.event.title} · ${lead.ongoing ? 'on now' : `in ${untilLabel(lead.ms)}`}` : ready(summary?.calendar) ? 'Nothing timed coming up' : summary ? statusText[summary.calendar.status] : 'Loading…'} freshness={checked('calendar')} />
-      <HomeStat icon="Tasks" label="Open tasks" onClick={go('Work')} tone={ready(summary?.jira) && issues.length ? 'warn' : 'idle'}
-        value={ready(summary?.jira) ? `${issues.length}${summary?.jira.data?.capped || summary?.jira.data?.partial ? '+' : ''}` : '—'}
-        note={ready(summary?.jira) ? (inProgress ? `Jira · ${inProgress} in progress` : 'Jira issues') : summary ? statusText[summary.jira.status] : 'Loading…'} freshness={checked('jira')} />
-      <HomeStat icon="Weather" label={sky?.town || 'Weather'} onClick={go('Community')}
+        note={lead ? lead.event.title : ready(summary?.calendar) ? 'Nothing timed coming up' : summary ? statusText[summary.calendar.status] : 'Loading…'}
+        detail={lead ? (lead.ongoing ? 'On now' : `in ${untilLabel(lead.ms)}`) : undefined} freshness={staleChecked('calendar')}
+        aside={lead ? <span className="dh-event-kind" title={eventKind(lead.event).label}><DashboardIcon name={eventKind(lead.event).icon} /></span> : undefined} />
+      {/* Open tasks is Google Tasks (owner, 2026-11-17): the same list as the Tasks card, which it scrolls to. */}
+      <HomeStat icon="Tasks" className="dh-stat-tasks" label="Open tasks" onClick={showTasks} tone={overdueTasks ? 'warn' : 'idle'}
+        value={ready(summary?.tasks) ? `${summary!.tasks!.data!.total}` : '—'}
+        note={!ready(summary?.tasks) ? (summary?.tasks ? statusText[summary.tasks.status] : summary ? 'Google Tasks isn’t connected' : 'Loading…')
+          : [overdueTasks && `${overdueTasks} overdue`, dueTodayTasks && `${dueTodayTasks} due today`].filter(Boolean).join(' · ') || (openTasks.length ? 'Nothing overdue' : 'All done')}
+        freshness={staleChecked('tasks')}
+        aside={ready(summary?.tasks) && openTasks.length ? <ShareBar label={`${overdueTasks} overdue · ${dueTodayTasks} due today · ${openTasks.length - overdueTasks - dueTodayTasks} later`}
+          parts={[{ value: overdueTasks, color: '#ff8267' }, { value: dueTodayTasks, color: '#e8c35c' }, { value: openTasks.length - overdueTasks - dueTodayTasks, color: '#2f5468' }]} /> : undefined} />
+      <HomeStat icon="Weather" className="dh-stat-weather" label={sky?.town || 'Weather'} onClick={go('Community')}
         value={sky?.now.temperatureF != null ? `${Math.round(sky.now.temperatureF)}°` : '—'}
         note={sky ? `${sky.now.shortForecast || ''}${temps.length ? ` · H ${Math.round(Math.max(...temps))}° L ${Math.round(Math.min(...temps))}°` : ''}`
-          : home.weather.loading ? 'Loading…' : home.weather.data?.status === 'no_place' ? 'Add a home place' : 'Unavailable'} freshness={sky ? `Forecast checked ${freshness(sky.checkedAt, now)}` : undefined} />
+          : home.weather.loading ? 'Loading…' : home.weather.data?.status === 'no_place' ? 'Add a home place' : 'Unavailable'} freshness={sky ? staleFor(sky.checkedAt, 120, 'Forecast checked') : undefined}
+        aside={nextDays.length ? nextDays.map(d => {
+          const icon = skyIcon({ shortForecast: d.shortForecast, isDaytime: true });
+          return <span key={d.date} className="dh-forecast-day" title={[new Date(`${d.date}T12:00:00`).toLocaleDateString(undefined, { weekday: 'long' }), d.shortForecast, `High ${degrees(d.highF)} · Low ${degrees(d.lowF)}`].filter(Boolean).join(' · ')}>
+            <small>{new Date(`${d.date}T12:00:00`).toLocaleDateString(undefined, { weekday: 'short' })}</small>
+            <Icon name={icon} className={`cmp-sky-${icon}`} />
+            <span><b>{degrees(d.highF)}</b><i> / {degrees(d.lowF)}</i></span>
+          </span>;
+        }) : undefined} />
     </div>;
 
     // --- Today's schedule ---------------------------------------------------

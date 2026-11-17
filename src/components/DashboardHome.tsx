@@ -1,8 +1,9 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { dashboardApi, dreamsApi, type CommunityWeather, type Dream } from '../api/dashboard';
-import { healthPlanApi, localDay, type HealthPlan } from '../api/healthPlan';
+import { dashboardApi, dreamsApi, type CommunityWeather, type Dream, type WeatherOutlookRead } from '../api/dashboard';
+import { healthPlanApi, localDay, type HealthPlan, type NutritionDay, type NutritionTargets, type NutritionTotals } from '../api/healthPlan';
 import { propertyGuardianApi, type GuardianOverview } from '../api/propertyGuardian';
 import { DashboardIcon } from './icons';
+import { MacroRings } from './HealthPage';
 import { DASHBOARD_REFRESH_EVENT } from '../athena/useChat';
 import { freshness, type HomeUpdate } from './livingHome';
 import './home.css';
@@ -60,18 +61,33 @@ export function Spark({ values, tone = 'cyan', label }: { values: (number | null
   </span>;
 }
 
-export function HomeStat({ icon, label, value, note, chip, spark, freshness: stamp, tone = 'idle', onClick }: {
-  icon: string; label: string; value: ReactNode; note?: ReactNode; chip?: ReactNode; spark?: ReactNode; freshness?: string; tone?: Tone; onClick: () => void;
+/** One bar split into parts of a whole (Open tasks: overdue, due today, later). Empty parts take no room. */
+export function ShareBar({ parts, label }: { parts: { value: number; color: string }[]; label: string }) {
+  const total = parts.reduce((n, p) => n + p.value, 0);
+  return <span className="dh-bar" role="img" aria-label={label} title={label}>
+    {total > 0 && parts.filter(p => p.value > 0).map((p, i) => <i key={i} style={{ width: `${(p.value / total) * 100}%`, background: p.color }} />)}
+  </span>;
+}
+
+export function HomeStat({ icon, label, value, note, detail, aside, chip, freshness: stamp, tone = 'idle', className, onClick }: {
+  icon: string; label: string; value: ReactNode; note?: ReactNode; chip?: ReactNode; freshness?: string; tone?: Tone; onClick: () => void;
+  /** A second reading under the note, for a tile that carries two (Recovery & sleep). */
+  detail?: ReactNode;
+  /** A panel beside the reading: Weather's next three days, Nutrition's rings, Recovery's week. */
+  aside?: ReactNode;
+  /** A tile's own class, for the little that differs (Nutrition's amber icon). */
+  className?: string;
 }) {
-  return <button type="button" className={`dh-stat dh-stat-${tone}`} onClick={onClick}>
+  return <button type="button" className={['dh-stat', `dh-stat-${tone}`, aside ? 'dh-stat-aside' : '', className || ''].filter(Boolean).join(' ')} onClick={onClick}>
     <span className="dh-stat-icon"><DashboardIcon name={icon} bare /></span>
     <span className="dh-stat-reading">
       <small>{label}</small>
       <strong>{value}{chip}</strong>
       {note && <em title={typeof note === 'string' ? note : undefined}>{note}</em>}
-      {stamp && <small className="dh-freshness">{stamp}</small>}
+      {detail && <em className="dh-stat-detail">{detail}</em>}
+      {stamp && <small className="dh-freshness" title={stamp}>{stamp}</small>}
     </span>
-    {spark}
+    {aside && <span className="dh-aside">{aside}</span>}
   </button>;
 }
 
@@ -123,6 +139,9 @@ export function HomeChanges({ updates, now, onOpen, compact = false }: {
 export function useHomeExtras(enabled: boolean) {
   const [plan, setPlan] = useState<Read<HealthPlan>>({ data: null, loading: true });
   const [weather, setWeather] = useState<Read<CommunityWeather>>({ data: null, loading: true });
+  // The longer forecast, for the Weather tile's next three days. Read on its own so a slow
+  // or failed outlook never takes the tile's current reading with it.
+  const [outlook, setOutlook] = useState<Read<WeatherOutlookRead>>({ data: null, loading: true });
   const [dreams, setDreams] = useState<Read<Dream[]>>({ data: null, loading: true });
   // Is the property secure: the Guardian sweep's verdict and open incidents (Property card).
   const [guardian, setGuardian] = useState<Read<GuardianOverview>>({ data: null, loading: true });
@@ -137,11 +156,12 @@ export function useHomeExtras(enabled: boolean) {
         .catch(() => { if (alive && current === revision) set({ data: null, loading: false }); });
       void settle(healthPlanApi.overview(localDay()), setPlan);
       void settle(dashboardApi.communityWeather(), setWeather);
+      void settle(dashboardApi.weatherOutlook(), setOutlook);
       void settle(dreamsApi.list().then(r => r.dreams), setDreams);
       void settle(propertyGuardianApi.overview(), setGuardian);
     };
     const onPush = () => {
-      setPlan({ data: null, loading: true }); setWeather({ data: null, loading: true }); setDreams({ data: null, loading: true }); setGuardian({ data: null, loading: true });
+      setPlan({ data: null, loading: true }); setWeather({ data: null, loading: true }); setOutlook({ data: null, loading: true }); setDreams({ data: null, loading: true }); setGuardian({ data: null, loading: true });
       refresh();
     };
     const visible = () => { if (!document.hidden) refresh(); };
@@ -155,5 +175,43 @@ export function useHomeExtras(enabled: boolean) {
       document.removeEventListener('visibilitychange', visible);
     };
   }, [enabled]);
-  return { plan, weather, dreams, guardian };
+  // A food logged from the Today log answers with the day's totals; the Nutrition stat takes them straight away.
+  const setNutrition = (nutrition: NutritionDay) => setPlan(p => (p.data ? { ...p, data: { ...p.data, nutrition } } : p));
+  return { plan, weather, outlook, dreams, guardian, setNutrition };
+}
+
+/** The rings, outermost first. Calories is the tile's number, so it has no ring. */
+const RING_ORDER: (keyof NutritionTotals)[] = ['carbs_g', 'protein_g', 'fat_g'];
+
+/**
+ * Today's food against its targets, one tile like its neighbours: calories as
+ * the reading, its target under it, and rings with a legend for carbs, protein
+ * and fat. Opens the Today food log.
+ */
+export function NutritionStat({ food, targets, macros, loading, onClick }: {
+  food: NutritionDay | null; targets: NutritionTargets | null; loading: boolean; onClick: () => void;
+  macros: readonly { key: keyof NutritionTotals; target: keyof NutritionTargets; label: string; unit: string; color: string }[];
+}) {
+  const totals = food?.totals;
+  const rows = RING_ORDER.map(key => macros.find(m => m.key === key)).filter(m => !!m).map(m => {
+    const v = Math.round(totals?.[m.key] ?? 0);
+    const t = targets?.[m.target] ?? null;
+    return { ...m, share: t ? v / t : 0, text: t ? `${v.toLocaleString()} / ${t.toLocaleString()} g` : `${v.toLocaleString()} g` };
+  });
+  const value = totals ? `${Math.round(totals.calories).toLocaleString()} cal` : '—';
+  const goal = food && targets?.calories ? `${targets.calories.toLocaleString()} cal` : null;
+  const note = !food ? (loading ? 'Loading…' : 'Unavailable') : goal ? `Target: ${goal}` : 'No calorie target';
+  // The same tile as its neighbours; the rings and legend ride in HomeStat's aside.
+  return <HomeStat icon="StatNutrition" className="dh-stat-nutrition" label="Nutrition" value={value} onClick={onClick}
+    note={goal ? <>
+      {/* A finish flag stands for "Target"; screen readers and hover still get the word. */}
+      <svg className="dh-target-flag" role="img" aria-label="Target" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+        <title>Target</title><path d="M3.5 14.5V2h9v6h-9" /><path fill="currentColor" stroke="none" d="M3.5 2h3v3h-3zM9.5 2h3v3h-3zM6.5 5h3v3h-3z" />
+      </svg>{goal}</> : note}
+    aside={food ? <span className="dh-nutrition" title={rows.map(r => `${r.label} ${r.text}`).join(' · ')}>
+      <MacroRings rings={rows.map(r => ({ color: r.color, share: r.share }))} />
+      <span className="dh-nutrition-legend">{rows.map(r => <span key={r.key}>
+        <i style={{ background: r.color }} /><b>{r.label}</b><span>{r.text}</span>
+      </span>)}</span>
+    </span> : undefined} />;
 }

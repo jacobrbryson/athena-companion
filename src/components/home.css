@@ -60,7 +60,6 @@
 .dh-stat-reading strong { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 19px; font-weight: 550; color: #f4fbff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .dh-stat-reading strong .readiness { font-size: 10px; padding: 1px 7px; }
 .dh-stat-reading em { font-style: normal; color: #9bb7c9; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.dh-stat > .dh-spark { margin-left: auto; height: 34px; width: 44px; }
 
 /* --- Sparkline ---------------------------------------------------------- */
 .dh-spark { display: flex; align-items: flex-end; gap: 2px; height: 22px; flex-shrink: 0; }
@@ -195,7 +194,6 @@
   .dh-stat { min-height: 78px; padding: 10px 12px; gap: 10px; }
   .dh-stat-icon { width: 38px; height: 38px; }
   .dh-stat-reading strong { flex-wrap: wrap; gap: 4px 6px; font-size: 16px; white-space: normal; }
-  .dh-stat > .dh-spark { display: none; }
   .dh-row-three, .dh-row-four { grid-template-columns: 1fr; gap: 12px; margin-top: 12px; }
   .dh-section-title h2 { font-size: 15px; }
   .dh-metrics { grid-template-columns: 1fr 1fr; }
@@ -239,7 +237,6 @@
 .dh-stat-reading strong { font-size: 18px; flex-wrap: wrap; white-space: normal; overflow: visible; overflow-wrap: anywhere; }
 .dh-stat-reading em { white-space: normal; overflow-wrap: anywhere; }
 .dh-stat-reading .dh-freshness { color: #88aabc; font-size: 10px; line-height: 1.4; }
-.dh-stat > .dh-spark { grid-column: 1; grid-row: 2; align-self: start; width: 40px; height: 22px; margin: 0 auto; }
 .dh-work-stack { display: grid; gap: 15px; align-content: start; min-width: 0; }
 .dh-living-grid { grid-template-columns: 1.05fr 1.15fr 1fr; align-items: start; }
 .dh-living-grid > .dh-section { min-height: 420px; }
@@ -270,7 +267,8 @@
 .dashboard-home :is(button, a, summary):focus-visible { outline: 2px solid #63e6f5; outline-offset: 4px; }
 @media (max-width: 1640px) {
   .dh-hero { grid-template-columns: minmax(220px, 1fr) minmax(350px, 1.4fr); }
-  .dh-stat { align-items: center; }
+  /* Tiles stay top-aligned here as everywhere else: centring put a short tile's
+     icon lower than its neighbours'. */
 }
 @media (max-width: 1150px) {
   .dh-hero { grid-template-columns: 1fr; }
@@ -308,3 +306,111 @@
 .dashboard-home > :is(.dashboard-notice, .work-strip, .dh-change-strip, .dh-stats) { margin: 0 0 var(--dh-gap); }
 .dashboard-home > .dh-row { margin-top: var(--dh-gap); }
 @media (max-width: 700px) { .dashboard-home { --dh-gap: 12px; } }
+
+/* Nutrition: a HomeStat like its neighbours, laid out by the shared aside rules
+   below. Only what's its own lives here: the amber icon, and the rings and
+   legend inside the aside (outside in: carbs, protein, fat). */
+.dh-stat-nutrition .dh-stat-icon { color: #f6c33a; box-shadow: 0 0 12px #f6c33a33; }
+.dh-nutrition { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.dh-macro-rings { flex-shrink: 0; width: 52px; height: 52px; }
+.dh-nutrition-legend { display: grid; gap: 3px; min-width: 0; font-size: 11px; }
+.dh-nutrition-legend > span { display: grid; grid-template-columns: 8px auto; align-items: center; gap: 6px; white-space: nowrap; }
+.dh-nutrition-legend i { width: 8px; height: 8px; border-radius: 50%; }
+.dh-nutrition-legend b { display: none; font-weight: 500; color: #d5e6f0; }
+.dh-nutrition-legend span span { color: #9bb7c9; font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; }
+@container (min-width: 200px) and (max-width: 339px) { .dh-nutrition-legend { display: none; } }
+@container (min-width: 340px) {
+  .dh-macro-rings { width: 64px; height: 64px; }
+  .dh-nutrition-legend { padding-left: 10px; border-left: 1px solid #234b5e; }
+  .dh-nutrition-legend > span { grid-template-columns: 8px 44px auto; }
+  .dh-nutrition-legend b { display: block; }
+}
+.dh-stat-reading em .dh-target-flag { display: inline-block; width: 12px; height: 12px; margin-right: 5px; vertical-align: -1px; color: #f6c33a; }
+/* Recovery & sleep: the sleep reading as a second line, its moon inline. */
+.dh-stat-reading em.dh-stat-detail { display: flex; align-items: center; gap: 5px; color: #c3d6e2; }
+.dh-stat-detail svg.dashboard-icon { display: inline-block; flex: none; width: 13px; height: 13px; padding: 0; color: #39a8f8; }
+
+/* A tile with a panel beside its reading (Weather's next three days,
+   Nutrition's rings). To the right when the tile has room; a compact version
+   behind a divider on narrower tiles; under the reading in a phone's two
+   columns. */
+.dh-stat.dh-stat-aside { container-type: inline-size; grid-template-columns: 36px minmax(0, 1fr) auto; }
+.dh-aside { display: none; }
+@container (min-width: 340px) {
+  .dh-aside { display: flex; grid-column: 3; grid-row: 1 / 3; align-self: center; }
+  .dh-forecast-day + .dh-forecast-day { border-left: 1px solid #234b5e; }
+}
+@container (max-width: 199px) {
+  .dh-aside { display: flex; grid-column: 1 / -1; grid-row: 3; margin-top: 4px; padding-top: 8px; border-top: 1px solid #1d4050; }
+  .dh-forecast-day { flex: 1 1 0; min-width: 0; padding: 0; }
+  .dh-forecast-day > span { font-size: 10px; }
+}
+.dh-forecast-day { display: grid; justify-items: center; gap: 4px; padding: 0 8px; white-space: nowrap; }
+.dh-forecast-day small { color: #d5e6f0; font-size: 12px; }
+.dh-forecast-day .hp-icon { width: 22px; height: 22px; }
+.dh-forecast-day > span { color: #b9cfdb; font-size: 11px; font-variant-numeric: tabular-nums; }
+.dh-forecast-day b { color: #fff; font-weight: 500; }
+.dh-forecast-day i { font-style: normal; }
+/* Narrower tiles (six across, or a squeezed window): a compact list on the
+   right — icon, weekday and high, one line each — so the row keeps its height. */
+@container (min-width: 200px) and (max-width: 339px) {
+  .dh-aside { display: grid; align-content: center; gap: 5px; grid-column: 3; grid-row: 1 / 3; align-self: center; padding-left: 10px; border-left: 1px solid #234b5e; }
+  .dh-forecast-day { grid-template-columns: 14px 28px auto; align-items: center; justify-items: start; gap: 5px; padding: 0; }
+  .dh-forecast-day small { grid-column: 2; grid-row: 1; font-size: 11px; }
+  .dh-forecast-day .hp-icon { grid-column: 1; grid-row: 1; width: 14px; height: 14px; }
+  .dh-forecast-day > span { grid-column: 3; font-size: 11px; }
+  .dh-forecast-day i { display: none; }
+}
+/* Narrowest of those (six across with Right Now showing): icon and high only;
+   the weekday and low are in the tooltip. */
+@container (min-width: 200px) and (max-width: 269px) {
+  .dh-aside { padding-left: 8px; gap: 6px; }
+  .dh-forecast-day { grid-template-columns: 14px auto; gap: 4px; }
+  .dh-forecast-day small { display: none; }
+  .dh-forecast-day > span { grid-column: 2; }
+}
+/* Recovery's week in the aside: a bar chart the size of Nutrition's rings beside
+   the reading, smaller behind the divider on narrower tiles, a strip on a phone. */
+.dh-aside > .dh-spark { width: 72px; height: 44px; }
+/* Compact tiles: Recovery's week behind the divider like its neighbours'. */
+@container (min-width: 270px) and (max-width: 339px) { .dh-aside > .dh-spark { width: 36px; height: 30px; } }
+/* Recovery carries more text than its neighbours, so only where the tile is
+   narrowest (six across, a phone) its week sits under the icon instead, where
+   it costs the reading no width. */
+@container (max-width: 269px) {
+  .dh-stat-recovery .dh-aside { display: block; grid-column: 1; grid-row: 2; align-self: start; margin: 0; padding: 0; border: 0; }
+  .dh-stat-recovery .dh-aside > .dh-spark { width: 36px; height: 22px; margin: 0 auto; }
+  .dh-stat-recovery .dh-stat-reading { grid-column: 2 / -1; }
+}
+/* Weather's forecast line and check time stay on one line; a long NWS phrase
+   ("Chance Rain Showers") ends in an ellipsis, the whole of it on hover. */
+@container (min-width: 200px) { .dh-stat-weather .dh-stat-reading :is(em, .dh-freshness) { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; overflow-wrap: normal; } }
+/* A tile shows when it was checked only once the data is behind, so the stamp reads as a warning. */
+.dh-stat-reading .dh-freshness { color: #e8c35c; }
+/* Open tasks' bar (ShareBar) and Next event's kind-of-event tile, in the shared aside. */
+.dh-bar { display: flex; width: 110px; height: 8px; overflow: hidden; border-radius: 4px; background: #1c3442; }
+.dh-bar i { height: 100%; }
+.dh-bar i + i { margin-left: 2px; }
+.dh-event-kind .dashboard-icon { width: 42px; height: 42px; padding: 9px; }
+@container (min-width: 270px) and (max-width: 339px) {
+  .dh-aside > .dh-bar { width: 48px; }
+  .dh-event-kind .dashboard-icon { width: 34px; height: 34px; padding: 7px; }
+}
+@container (max-width: 269px) {
+  .dh-aside > .dh-bar { width: 36px; }
+  .dh-event-kind .dashboard-icon { width: 30px; height: 30px; padding: 6px; }
+}
+@container (max-width: 199px) {
+  .dh-aside > .dh-bar { width: 100%; }
+  /* On a phone the event's kind isn't worth a row of its own. */
+  .dh-stat-event .dh-aside { display: none; }
+}
+/* Scrolling to a card (Open tasks -> Tasks) stops below the sticky top bar. */
+.dashboard-home .dh-section { scroll-margin-top: 72px; }
+/* Every aside sits a little in from the tile's right edge, and Open tasks' bar
+   grows with the tile (cqi: a share of the tile's own width) instead of a fixed 110px. */
+@container (min-width: 270px) { .dh-aside { margin-right: 8px; } }
+@container (min-width: 340px) { .dh-aside > .dh-bar { width: clamp(110px, 40cqi, 180px); } }
+@container (min-width: 270px) and (max-width: 339px) { .dh-aside > .dh-bar { width: clamp(64px, 30cqi, 100px); } }
+/* The tasks bar stands on its own: no divider beside it, even where other asides get one. */
+.dh-stat-tasks .dh-aside { border-left: 0; padding-left: 0; }

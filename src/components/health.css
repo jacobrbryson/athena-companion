@@ -259,3 +259,83 @@ em.hp-tone-idle { color: var(--hp-dim); } .hp-tone-dot.hp-tone-idle { background
 .hp-sc-best .hp-sc-bar i { background: #3ec9ff; }
 .hp-sc-bands strong { font-size: 13px; font-weight: 600; }
 .hp-sc-bands small { color: var(--hp-dim); font-size: 11px; white-space: nowrap; }
+
+/* --- Today's Food sidebar (FoodLog), from the owner's 2026-11-16 mockup ------
+   The drawer shell is the Family editor's (.fme in familyEditor.css); these
+   rules dress what goes inside it, at the app's own type sizes (the mockup
+   was captured zoomed in). Portalled to <body>, so it carries the .hp colour
+   variables itself. */
+.hp-food-drawer { --hp-line: #1f3d58; --hp-text: #e8f3ff; --hp-sub: #a7bdd2; --hp-dim: #7d93aa; }
+.fme-panel.hp-food-panel { flex-direction: column; width: min(520px, 100%); }
+.hp-food-drawer .fme-head { gap: 16px; padding: 16px 18px 16px 20px; }
+.hp-food-drawer .fme-head small { font-size: 11px; }
+.hp-food-drawer .fme-head h2 { margin-top: 2px; font-size: 21px; }
+.hp-food-drawer .fme-badge { flex-basis: 48px; height: 48px; border-radius: 10px; }
+.hp-food-drawer .fme-badge .hp-icon { width: 26px; height: 26px; }
+.hp-food-drawer .fme-close { flex-basis: 34px; height: 34px; }
+.hp-food-drawer .fme-close .hp-icon { width: 15px; height: 15px; }
+.fme-scroll.hp-food-scroll { display: flex; flex-direction: column; gap: 12px; padding: 14px 18px 0; overflow: hidden; }
+.hp-food-scroll > * { flex: none; }
+.hp-food-scroll > .hp-food-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: 8px; margin: 0 -8px 0 0; padding: 0 8px 20px 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #2b5a70 transparent; }
+.hp-food-body > * { flex: none; }
+.hp-food-drawer .hp-icon { width: 16px; height: 16px; flex: none; }
+
+.hp-food-drawer .hp-day-nav { margin: 0; padding: 8px 12px; border: 1px solid #1f4a60; border-radius: 10px; background: #06192699; }
+.hp-food-drawer .hp-day-nav strong { display: inline-flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 600; color: #fff; }
+.hp-food-drawer .hp-day-nav strong .hp-icon { width: 17px; height: 17px; color: #d5e6f0; }
+.hp-food-drawer .hp-day-nav small { margin-top: 2px; color: #b9cfdb; font-size: 12px; }
+.hp-food-drawer .hp-day-nav button { width: 34px; height: 34px; border-color: #3b6070; color: #fff; }
+.hp-food-drawer .hp-day-nav button .hp-icon { width: 15px; height: 15px; }
+
+.hp-food-summary { display: flex; align-items: center; gap: 18px; padding: 12px 20px 12px 28px; border: 1px solid #1f4a60; border-radius: 10px; background: #06192699; }
+.hp-rings-stack { position: relative; flex: none; }
+.hp-rings-stack > .dh-macro-rings { width: 100%; height: 100%; }
+.hp-rings-stack > div { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; line-height: 1.1; }
+.hp-rings-stack strong { font-size: 18px; font-weight: 600; color: #fff; }
+.hp-rings-stack small { color: #d5e6f0; font-size: 12px; }
+.hp-food-summary ul { flex: 1; display: grid; gap: 9px; min-width: 0; padding-left: 18px; border-left: 1px solid #1f4a60; }
+.hp-food-summary li { display: grid; grid-template-columns: 10px minmax(60px, auto) 1fr; align-items: center; gap: 10px; font-size: 13px; color: #e6f3f9; }
+.hp-food-summary li i { width: 10px; height: 10px; border-radius: 50%; }
+.hp-food-summary li b { font-weight: 400; white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+.hp-food-drawer .hp-menu-wrap { width: 100%; }
+.hp-add-food { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; padding: 9px 14px; border: 1.5px solid #22d3ee; border-radius: 9px; background: linear-gradient(180deg, #0b3a48, #082a36); color: #fff; font-size: 15px; font-weight: 600; box-shadow: 0 0 12px #22d3ee55, inset 0 0 12px #22d3ee1f; }
+.hp-add-food:hover:not(:disabled) { background: #0e4656; box-shadow: 0 0 18px #22d3ee77, inset 0 0 12px #22d3ee33; }
+.hp-add-food .hp-icon:first-child { width: 18px; height: 18px; color: #3ddcf5; stroke-width: 2.2; }
+.hp-add-food .hp-caret { display: none; }
+.hp-food-drawer .hp-menu { width: 100%; }
+
+.hp-food-head { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 2px 12px; margin-top: 4px; }
+.hp-food-head h3 { font-size: 17px; font-weight: 600; color: #fff; }
+.hp-food-head small { color: #b9cfdb; font-size: 12px; font-variant-numeric: tabular-nums; }
+
+.hp-food-drawer .hp-food-list { gap: 5px; margin: 0; }
+.hp-food-drawer .hp-food-list li { gap: 10px; padding: 9px 10px 9px 12px; border: 1px solid #1f4a60; border-radius: 8px; background: #06192699; }
+.hp-food-drawer .hp-food-list li.hp-food-editing { padding: 12px; }
+.hp-food-drawer .hp-food-list li > div { min-width: 0; }
+.hp-food-drawer .hp-food-list strong { font-size: 13px; font-weight: 600; color: #fff; overflow-wrap: anywhere; }
+.hp-food-drawer .hp-food-list small { display: block; margin-top: 3px; color: #b9cfdb; font-size: 11px; }
+.hp-food-drawer .hp-food-list li > button { width: 30px; height: 30px; border-color: #4a6a7a; color: #fff; font-size: 12px; }
+.hp-food-drawer .hp-food-list li > button .hp-icon { width: 13px; height: 13px; }
+.hp-food-drawer .hp-food-list li > button.hp-food-star { width: 24px; border-color: transparent; color: #a9bfcc; }
+.hp-food-drawer .hp-food-list li > button.hp-food-star.hp-star-on { color: #f6c33a; }
+.hp-food-drawer .hp-food-list li > button.hp-food-star.hp-star-on .hp-icon { fill: currentColor; }
+.hp-food-drawer .hp-food-list li > button.hp-food-star .hp-icon { width: 18px; height: 18px; }
+.hp-food-drawer .hp-food-tag { margin-left: 8px; padding: 1px 8px; border-radius: 8px; background: #123a5c; color: #e6f3f9; font-size: 10px; font-weight: 400; vertical-align: 1px; }
+.hp-food-drawer .hp-food-tag-photo { background: #5a4510; color: #ffe08a; }
+.hp-food-drawer .hp-food-tag-described { background: #0f4048; color: #b8f4ff; }
+.hp-food-drawer .hp-food-manual { padding: 12px; border: 1px solid #1f4a60; border-radius: 8px; background: #06192699; }
+.hp-food-drawer .hp-empty { padding: 14px; border: 1px dashed #1f4a60; border-radius: 8px; text-align: center; }
+
+@media (max-width: 600px) {
+  .fme-scroll.hp-food-scroll { gap: 10px; padding: 12px 12px 0; }
+  .hp-food-scroll > .hp-food-body { padding-bottom: max(16px, env(safe-area-inset-bottom)); }
+  .hp-food-drawer .fme-head { padding: 14px 14px 14px 16px; }
+  .hp-food-summary { gap: 12px; padding: 10px 12px; }
+  .hp-food-summary .hp-rings-stack { width: 100px !important; height: 100px !important; }
+  .hp-rings-stack strong { font-size: 15px; }
+  .hp-rings-stack small { font-size: 11px; }
+  .hp-food-summary ul { gap: 4px; padding-left: 12px; }
+  .hp-food-summary li { grid-template-columns: 10px auto; gap: 1px 8px; line-height: 1.25; }
+  .hp-food-summary li b { grid-column: 2; color: #b9cfdb; font-size: 12px; }
+}
