@@ -19,10 +19,14 @@ import { Drawer } from './Drawer';
 import { HealthWatchModal } from './HealthWatch';
 import { familyHealthSummary } from './familyHealthSummary';
 import { DoorToDoor } from './DoorToDoor';
-import { TasksCardBody } from './TasksCard';
+import { TasksCardBody, TasksPanel, openJira } from './TasksCard';
+import { YourDayCard } from './YourDay';
+import { WorkCard, ProjectsCard } from './WorkProjectsCards';
+import { HealthCard, FamilyCard, type HealthTile } from './HealthFamilyCards';
+import { PropertyCard, DreamsCard, type PropertySecurity as SecuritySummary, type PropertyTile } from './PropertyDreamsCards';
 import { communityEvents } from './communityCalendar.ts';
 import { WorkBanner } from './WorkBanner';
-import { isInProgress, isReadyToStart, untilLabel, workStatus } from './workStatus';
+import { isInProgress, isReadyToStart, safeHttpsUrl, untilLabel, workStatus } from './workStatus';
 import { EmailPanel, CATEGORY_LABEL } from './EmailPanel';
 import { MailBundles } from './MailBundles';
 import { MailActivity } from './MailActivity';
@@ -67,13 +71,12 @@ import { BillScanDrawer } from './BillScan';
 import { useThermostats, ThermostatList } from './PropertyThermostats';
 import { PropertySecurity } from './PropertySecurity';
 import { SystemOverview, SystemTabs, SYSTEM_TAB_IDS, type SystemTab, type SystemTile } from './SystemPage';
-import { HomeHero, HomeChanges, HomeSection, HomeStat, HomeTabs, NutritionStat, ShareBar, Spark, useHomeExtras, type HeroNode, type Tone } from './DashboardHome';
+import { HomeHero, HomeChanges, HomeSection, HomeStat, NutritionStat, ShareBar, Spark, useHomeExtras, type HeroNode, type Tone } from './DashboardHome';
 import { freshness, homeUpdates, recoveryChange } from './livingHome';
-import { AREA_LABEL, STATE_LABEL } from '../api/projects';
 import { GUARDIAN_STATUS } from '../api/propertyGuardian';
 
 /** Enough for a household, so nobody sorted late in the alphabet is cut off the card. */
-const FAMILY_CARD_ROWS = 7;
+const FAMILY_CARD_ROWS = 5;
 
 /** Open a console panel; `consentFor` opens Connected apps on that provider's consent prompt. */
 export type OpenPanel = (panel: 'integrations' | 'memory' | 'actions' | 'notifications' | 'knows' | 'photo' | 'devices', options?: { consentFor?: string }) => void;
@@ -849,8 +852,6 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
   const now = useNow(30000);
   // The briefing's own reads and filters; nothing is fetched on the section pages.
   const home = useHomeExtras(section === 'Dashboard' && !compact);
-  const [workSite, setWorkSite] = useState('');
-  const [projectArea, setProjectArea] = useState<Area | 'all'>('all');
   const [collapsedMap, setCollapsedMap] = useState<Record<string, boolean>>(loadCollapsed);
   const isCollapsed = (id: string) => collapsedMap[id] ?? isPhoneWidth();
   const toggleCollapsed = (id: string) => {
@@ -1215,8 +1216,15 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
     </>;
   const openTasks = summary?.tasks?.data?.tasks || [];
   const taskToday = zonedDay(new Date(), timeZone);
-  const overdueTasks = openTasks.filter(t => t.due && t.due < taskToday).length;
-  const dueTodayTasks = openTasks.filter(t => t.due === taskToday).length;
+  // Tasks are Google Tasks and your open Jira issues together (owner, 2026-11-17):
+  // the Open tasks tile, the Tasks card and Your Day's count all read these.
+  const jiraOpen = ready(summary?.jira) ? openJira(issues) : [];
+  const jiraDay = (i: JiraIssue) => i.due ? i.due.slice(0, 10) : null;
+  const tasksReadable = ready(summary?.tasks) || ready(summary?.jira);
+  const googleOpenCount = ready(summary?.tasks) ? summary!.tasks!.data!.total : 0;
+  const openTaskCount = googleOpenCount + jiraOpen.length;
+  const overdueTasks = openTasks.filter(t => t.due && t.due < taskToday).length + jiraOpen.filter(i => { const d = jiraDay(i); return !!d && d < taskToday; }).length;
+  const dueTodayTasks = openTasks.filter(t => t.due === taskToday).length + jiraOpen.filter(i => jiraDay(i) === taskToday).length;
   // The Open tasks tile goes to the Tasks card on this page, or Google Tasks where there's no card.
   const showTasks = () => { const card = document.getElementById('dashboard-tasks'); if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' }); else openGoogleTasks(); };
   /** What kind of thing the next event is, for the Next event tile's icon. */
@@ -1244,7 +1252,7 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
       : ready(summary?.calendar) ? say('Clear', 'nothing timed coming up') : sayStatus(summary?.calendar, 'Google Calendar'),
     tasks: !ready(summary?.tasks) ? sayStatus(summary?.tasks, 'Google Tasks')
       : !openTasks.length ? say('All clear', 'nothing open')
-        : overdueTasks ? say(`${overdueTasks} overdue`, openTasks[0].title) : say(openTasks[0].title, openTasks[0].due ? `due ${openTasks[0].due}` : `${openTasks.length} open`),
+        : openTasks.some(t => t.due && t.due < taskToday) ? say(`${openTasks.filter(t => t.due && t.due < taskToday).length} overdue`, openTasks[0].title) : say(openTasks[0].title, openTasks[0].due ? `due ${openTasks[0].due}` : `${openTasks.length} open`),
     mail: ready(summary?.emailTriage) ? say(openMail, needReply ? `open · ${needReply} need you` : 'open') : sayStatus(summary?.emailTriage, 'Gmail'),
     work: workSprint.data?.me && workSprint.data.target ? say(`${workSprint.data.me.done} / ${workSprint.data.target} SP`, `${SPRINT_STATUS[workSprint.data.me.status].label.toLowerCase()} · ${workSprint.data.team?.atRisk.length || 0} teammate${workSprint.data.team?.atRisk.length === 1 ? '' : 's'} at risk`)
       : ready(summary?.jira) ? say(issues.length, 'open issues assigned to you') : sayStatus(summary?.jira, 'Jira'),
@@ -1983,14 +1991,15 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
         note={lead ? lead.event.title : ready(summary?.calendar) ? 'Nothing timed coming up' : summary ? statusText[summary.calendar.status] : 'Loading…'}
         detail={lead ? (lead.ongoing ? 'On now' : `in ${untilLabel(lead.ms)}`) : undefined} freshness={staleChecked('calendar')}
         aside={lead ? <span className="dh-event-kind" title={eventKind(lead.event).label}><DashboardIcon name={eventKind(lead.event).icon} /></span> : undefined} />
-      {/* Open tasks is Google Tasks (owner, 2026-11-17): the same list as the Tasks card, which it scrolls to. */}
+      {/* Open tasks is Google Tasks plus open Jira issues (owner, 2026-11-17): the same list as the Tasks card, which it scrolls to. */}
       <HomeStat icon="Tasks" className="dh-stat-tasks" label="Open tasks" onClick={showTasks} tone={overdueTasks ? 'warn' : 'idle'}
-        value={ready(summary?.tasks) ? `${summary!.tasks!.data!.total}` : '—'}
-        note={!ready(summary?.tasks) ? (summary?.tasks ? statusText[summary.tasks.status] : summary ? 'Google Tasks isn’t connected' : 'Loading…')
-          : [overdueTasks && `${overdueTasks} overdue`, dueTodayTasks && `${dueTodayTasks} due today`].filter(Boolean).join(' · ') || (openTasks.length ? 'Nothing overdue' : 'All done')}
-        freshness={staleChecked('tasks')}
-        aside={ready(summary?.tasks) && openTasks.length ? <ShareBar label={`${overdueTasks} overdue · ${dueTodayTasks} due today · ${openTasks.length - overdueTasks - dueTodayTasks} later`}
-          parts={[{ value: overdueTasks, color: '#ff8267' }, { value: dueTodayTasks, color: '#e8c35c' }, { value: openTasks.length - overdueTasks - dueTodayTasks, color: '#2f5468' }]} /> : undefined} />
+        value={tasksReadable ? `${openTaskCount}` : '—'}
+        note={!tasksReadable ? (summary?.tasks ? statusText[summary.tasks.status] : summary ? 'Google Tasks and Jira aren’t connected' : 'Loading…')
+          : [overdueTasks && `${overdueTasks} overdue`, dueTodayTasks && `${dueTodayTasks} due today`].filter(Boolean).join(' · ') || (openTaskCount ? 'Nothing overdue' : 'All done')}
+        detail={tasksReadable && jiraOpen.length && ready(summary?.tasks) ? `${googleOpenCount} Google Tasks · ${jiraOpen.length} Jira` : undefined}
+        freshness={staleChecked('tasks') || staleChecked('jira')}
+        aside={tasksReadable && openTasks.length + jiraOpen.length ? <ShareBar label={`${overdueTasks} overdue · ${dueTodayTasks} due today · ${openTasks.length + jiraOpen.length - overdueTasks - dueTodayTasks} later or undated`}
+          parts={[{ value: overdueTasks, color: '#ff8267' }, { value: dueTodayTasks, color: '#e8c35c' }, { value: openTasks.length + jiraOpen.length - overdueTasks - dueTodayTasks, color: '#2f5468' }]} /> : undefined} />
       <HomeStat icon="Weather" className="dh-stat-weather" label={sky?.town || 'Weather'} onClick={go('Community')}
         value={sky?.now.temperatureF != null ? `${Math.round(sky.now.temperatureF)}°` : '—'}
         note={sky ? `${sky.now.shortForecast || ''}${temps.length ? ` · H ${Math.round(Math.max(...temps))}° L ${Math.round(Math.min(...temps))}°` : ''}`
@@ -2005,154 +2014,91 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
         }) : undefined} />
     </div>;
 
-    // --- Today's schedule ---------------------------------------------------
-    const CAL_TONES = ['#f5a524', '#2fd4a7', '#a77bff', '#39c2ff', '#ff7a90'];
-    const calTone = (event: CalendarEvent) => CAL_TONES[[...(event.calendar || 'primary')].reduce((n, c) => n + c.charCodeAt(0), 0) % CAL_TONES.length];
-    const upcoming = events.filter(e => eventDay(e, timeZone) >= today)
-      .sort((a, b) => eventDay(a, timeZone).localeCompare(eventDay(b, timeZone)) || Number(b.allDay) - Number(a.allDay) || a.start.localeCompare(b.start));
-    const scheduleDays = [...new Set(upcoming.map(e => eventDay(e, timeZone)))].slice(0, 3);
-    let budget = 7;
-    const schedule = <HomeSection id="schedule" icon="Calendar" title="Your day" action="View calendar" onAction={go('Calendar')}>
-      {ready(summary?.calendar) && <p className="dh-section-caption">Google Calendar · {checked('calendar')}</p>}
-      {!ready(summary?.calendar) ? <SourceNote source={summary?.calendar} name="Google Calendar" fix={fixFor('calendar')} />
-        : !scheduleDays.length ? <p className="dashboard-empty">Nothing on the calendar for the next few days.</p>
-          : scheduleDays.map(day => {
-            const dayEvents = upcoming.filter(e => eventDay(e, timeZone) === day);
-            const allDay = dayEvents.filter(e => e.allDay);
-            const timed = dayEvents.filter(e => !e.allDay);
-            const past = timed.filter(e => Date.parse(e.end) <= now);
-            const remaining = timed.filter(e => !(Date.parse(e.end) <= now));
-            const list = [...past.slice(-2), ...remaining].slice(0, Math.max(0, budget));
-            budget -= list.length;
-            if (!list.length && !allDay.length) return null;
-            const nowIndex = list.findIndex(e => !(Date.parse(e.end) <= now));
-            const marker = <li className="dh-now"><time>{new Date(now).toLocaleTimeString(undefined, { timeZone, hour: 'numeric', minute: '2-digit' })}</time><i /><span>Now</span></li>;
-            const d = new Date(`${day}T12:00:00Z`);
-            return <div className="dh-day" key={day}>
-              <div className="dh-day-label"><small>{d.toLocaleDateString(undefined, { timeZone: 'UTC', weekday: 'short' }).toUpperCase()}</small><strong>{d.toLocaleDateString(undefined, { timeZone: 'UTC', month: 'short', day: 'numeric' }).toUpperCase()}</strong></div>
-              <div className="dh-day-events">
-                {!!allDay.length && <details className="dh-allday"><summary>All day · {allDay.length === 1 ? allDay[0].title : `${allDay.length} events`}</summary>
-                  {allDay.map((e, i) => <button key={`${e.id}-${i}`} type="button" onClick={go('Calendar')}>{e.title}</button>)}</details>}
-                <ul>{list.map((e, i) => <Fragment key={`${e.id}-${i}`}>
-                  {day === today && i === nowIndex && marker}
-                  <li className={Date.parse(e.end) <= now ? 'dh-event-past' : e === calendarLead?.event ? 'dh-event-next' : undefined}>
-                    <time>{eventTime(e, timeZone)}</time><i style={{ background: calTone(e) }} />
-                    <button type="button" className="dh-event" onClick={go('Calendar')}><strong>{e.title}</strong>
-                      {e.location && <small>{e.location}</small>}
-                      {e === calendarLead?.event && <em>{calendarLead.ongoing ? 'On your calendar now' : `In ${untilLabel(calendarLead.ms)}`}</em>}
-                      {Date.parse(e.end) <= now && <small>Ended on calendar</small>}
-                    </button>
-                  </li>
-                </Fragment>)}{day === today && nowIndex === -1 && marker}</ul>
-                {timed.length > list.length && <button type="button" className="dh-more" onClick={go('Calendar')}>View all {timed.length} timed events →</button>}
-              </div>
-            </div>;
-          })}
-    </HomeSection>;
+    // --- Your Day and Tasks (owner mockup, 2026-11-17) ------------------------
+    // The Tasks card is Google Tasks and your open Jira issues together (owner, 2026-11-17).
+    const tasksDue = tasksReadable ? overdueTasks + dueTodayTasks : null;
+    const openIssue = (issue: JiraIssue) => { const url = safeHttpsUrl(issue.url); if (!url) return; if (isAndroidCompanion()) void androidCall('openExternal', { url }); else window.open(url, '_blank', 'noopener,noreferrer'); };
+    const schedule = <YourDayCard events={events} today={today} dayOf={e => eventDay(e, timeZone)} timeZone={timeZone} now={now}
+      sourceNote={ready(summary?.calendar) ? undefined : <SourceNote source={summary?.calendar} name="Google Calendar" fix={fixFor('calendar')} />}
+      caption={ready(summary?.calendar) ? `Google Calendar · ${checked('calendar')}` : undefined}
+      tasksDue={tasksDue} weather={temps.length ? { high: Math.round(Math.max(...temps)), low: Math.round(Math.min(...temps)) } : null}
+      onCalendar={go('Calendar')} onTasks={showTasks} onWeather={go('Community')}
+      onRemind={e => onAsk(`Remind me 15 minutes before "${e.title}" (${dateLabel(e.start, { timeZone, weekday: 'short' })} at ${eventTime(e, timeZone)}).`)} />;
+    const tasksCard = <TasksPanel tasks={ready(summary?.tasks) ? openTasks : []} total={ready(summary?.tasks) ? summary!.tasks!.data!.total : 0} jira={jiraOpen}
+      today={taskToday} onOpen={openGoogleTasks} onOpenIssue={openIssue} googleReady={ready(summary?.tasks)}
+      notes={<>
+        {!ready(summary?.tasks) && <SourceNote source={summary?.tasks} name="Google Tasks" fix={fixFor('tasks')} />}
+        {ready(summary?.tasks) && (summary!.tasks!.data!.unreadableLists || []).length > 0 && <p className="source-note">Couldn’t read {summary!.tasks!.data!.unreadableLists!.join(', ')}</p>}
+        {summary?.jira && !ready(summary.jira) && summary.jira.status !== 'not_connected' && <SourceNote source={summary.jira} name="Jira" fix={fixFor('jira')} />}
+        {ready(summary?.jira) && summary!.jira.data?.partial && <p className="source-note">Some Jira sites couldn’t be included.</p>}
+      </>} />;
 
     // --- Work ---------------------------------------------------------------
     const actionableIssues = issues.filter(i => isInProgress(i) || isReadyToStart(i));
-    const sites = [...new Set(actionableIssues.map(i => i.site))];
-    const siteName = (site: string) => site.replace(/^https?:\/\//, '').replace(/\.atlassian\.net.*$/, '').split(/[-_.]/).map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-    const activeSite = sites.includes(workSite) ? workSite : sites[0];
-    const siteIssues = actionableIssues.filter(i => i.site === activeSite).sort((a, b) => Number(isInProgress(b)) - Number(isInProgress(a)));
-    const pill = (i: JiraIssue) => i.statusCategory === 'indeterminate' ? 'progress' : i.statusCategory === 'done' ? 'done' : /review/i.test(i.status) ? 'review' : 'todo';
-    const work = <HomeSection id="work" icon="Work" title="Work" onAction={go('Work')}
-      tabs={ready(summary?.jira) && <HomeTabs label="Jira sites" tabs={sites.map(s => ({ id: s, label: siteName(s), count: actionableIssues.filter(i => i.site === s).length }))} active={activeSite} onChange={setWorkSite} />}>
-      {workSprint.data && !workSprint.data.error && <SprintSummary data={workSprint.data} onOpen={() => navigate(`${dashboardPath('Work')}/${encodeURIComponent(workSprint.data!.workplace.uuid)}`)} />}
-      {!ready(summary?.jira) ? <SourceNote source={summary?.jira} name="Jira" fix={fixFor('jira')} />
-        : !actionableIssues.length ? <p className="dashboard-empty">Nothing In Progress or Ready to Start.</p>
-          : <>
-            <ul className="dh-issues">{siteIssues.slice(0, 3).map(i => <li key={i.key}><ExternalLink url={i.url}>
-              <b className="dh-issue-badge">{i.project.charAt(0)}</b><code>{i.key}</code><span>{i.title}</span><em className={`dh-pill dh-pill-${pill(i)}`}>{i.status}</em>
-            </ExternalLink></li>)}</ul>
-          </>}
-    </HomeSection>;
-
-    // --- Projects (never work ones: those live on Work, owner 2026-10-13) ----
-    const projectAreas = [...new Set(dashProjects.map(p => p.primaryArea))];
-    const areaFilter = projectArea !== 'all' && projectAreas.includes(projectArea) ? projectArea : 'all';
-    const shownProjects = dashProjects.filter(p => areaFilter === 'all' || p.primaryArea === areaFilter);
-    const projects = <HomeSection id="projects" icon="Projects" title="Projects" onAction={go('Projects')}
-      tabs={<HomeTabs<Area | 'all'> label="Project areas" tabs={[{ id: 'all', label: 'All' }, ...projectAreas.map(a => ({ id: a, label: AREA_LABEL[a] }))]} active={areaFilter} onChange={setProjectArea} />}>
-      {proj.error && !proj.snap.projects.length ? <EmptyCta text="Projects couldn’t load." action="Retry" onClick={proj.reload} />
-        : proj.loading && !proj.snap.projects.length ? <p className="dashboard-empty">Loading…</p>
-          : !shownProjects.length ? <EmptyCta text="No projects yet." action="Start one" onClick={() => newProject()} />
-            : <ul className="dh-projects">{shownProjects.slice(0, 3).map(p => {
-              const { done, total } = p.progress.steps;
-              return <li key={p.uuid}><button type="button" onClick={() => openProject(p.uuid)}>
-                <i className={`dh-area dh-area-${p.primaryArea}`} />
-                <span><strong title={p.title}>{p.title}</strong><small>{AREA_LABEL[p.primaryArea]} · {STATE_LABEL[p.effectiveStatus]}</small></span>
-                {total ? <><span className="dh-progress" aria-label={`${done} of ${total} steps done`}><span style={{ width: `${(done / total) * 100}%` }} /></span><em>{done}/{total}</em></>
-                  : <small className="dh-no-steps">No steps set</small>}
-              </button></li>;
-            })}</ul>}
-    </HomeSection>;
+    // Work and Projects (owner mockup, 2026-11-17): the sprint, then the Red team's epics by due date.
+    const openUrl = (raw: string) => { const url = safeHttpsUrl(raw); if (!url) return; if (isAndroidCompanion()) void androidCall('openExternal', { url }); else window.open(url, '_blank', 'noopener,noreferrer'); };
+    const work = <WorkCard sprint={workSprint.data} sprintLoading={!workSprint.data && !workSprint.error} today={taskToday}
+      issues={ready(summary?.jira) ? [...actionableIssues].sort((x, y) => Number(isInProgress(y)) - Number(isInProgress(x))) : []}
+      jiraNote={!ready(summary?.jira) ? <SourceNote source={summary?.jira} name="Jira" fix={fixFor('jira')} /> : undefined}
+      onOpen={go('Work')} onOpenUrl={openUrl}
+      onOpenSprint={() => workSprint.data && navigate(`${dashboardPath('Work')}/${encodeURIComponent(workSprint.data.workplace.uuid)}`)} />;
+    const projects = <ProjectsCard projects={dashProjects} loading={proj.loading} error={!!proj.error} onOpen={go('Projects')}
+      onOpenProject={openProject} onNew={() => newProject()} onRetry={proj.reload} />;
 
     // --- Health -------------------------------------------------------------
     const run = <T,>(rows: T[], pick: (row: T) => number | null | undefined) => rows.slice(0, 14).reverse().map(r => pick(r) ?? null);
     const whoopUnlinked = (['recovery', 'sleep', 'strain'] as const).every(key => summary?.[key]?.status === 'not_connected');
-    const health = <HomeSection id="health" icon="Health" title="Health & Performance" action="View details" onAction={go('Health')}>
-      {!whoopUnlinked && <div className="dh-readiness"><RecoveryRing score={recovery?.recovery_score} />
-        <div className="dh-readiness-label">{readiness && <span className={`readiness readiness-${readiness.level}`}>{readiness.label}</span>}<small>{recovery ? dateLabel(`${recovery.date}T12:00:00Z`, { timeZone: 'UTC' }) : 'No scored result'}</small></div>
-        {readiness && <p>{readiness.reason}</p>}</div>}
-      {whoopNotes()}
-      <div className="dh-metrics">
-        {!whoopUnlinked && <>
-          <HeartMetric label="Resting HR" value={recovery?.resting_heart_rate} unit="bpm" goal={HEART_GOALS.restingHeartRate} better="lower" trend={rhrTrend}
-            spark={<Spark tone="green" values={run(scoredDays, r => r.resting_heart_rate)} />} />
-          <HeartMetric label="HRV" value={recovery?.hrv_ms} unit="ms" goal={HEART_GOALS.hrvMs} better="higher" trend={hrvTrend}
-            spark={<Spark tone="green" values={run(scoredDays, r => r.hrv_ms)} />} />
-          <HeartMetric label="Sleep" value={sleep?.hours_asleep} display={sleep ? hoursMinutes(sleep.hours_asleep) : undefined} unit="h" better="higher" trend={sleepTrend} decimals={1}
-            spark={<Spark tone="violet" values={run(sleepDays, s => s.hours_asleep)} />} />
-        </>}
-        {weighIn && <HeartMetric label="Weight" value={lbOf(weighIn.weight_kg)} unit="lb" better="flat" trend={weightTrend} decimals={1}
-          spark={<Spark tone="green" values={run(weighDays, w => lbOf(w.weight_kg))} />} />}
-      </div>
-    </HomeSection>;
+    // Health & Performance and Family (owner mockup, 2026-11-17).
+    const shortDay = (d: string) => dateLabel(`${d.slice(0, 10)}T12:00:00Z`, { timeZone: 'UTC' });
+    const heartTiles: HealthTile[] = [
+      ...(!whoopUnlinked ? [
+        { key: 'rhr' as const, label: 'Resting HR', value: recovery?.resting_heart_rate != null ? `${Math.round(recovery.resting_heart_rate)}` : null, unit: 'bpm', trend: rhrTrend, better: 'lower' as const, decimals: 0, deltaUnit: 'bpm', bars: run(scoredDays, r => r.resting_heart_rate) },
+        { key: 'hrv' as const, label: 'HRV', value: recovery?.hrv_ms != null ? `${Math.round(recovery.hrv_ms)}` : null, unit: 'ms', trend: hrvTrend, better: 'higher' as const, decimals: 0, deltaUnit: 'ms', bars: run(scoredDays, r => r.hrv_ms) },
+        { key: 'sleep' as const, label: 'Sleep', value: sleep ? hoursMinutes(sleep.hours_asleep) : null, unit: '', trend: sleepTrend, better: 'higher' as const, decimals: 1, deltaUnit: 'h', bars: run(sleepDays, d => d.hours_asleep) },
+      ] : []),
+      ...(weighIn ? [{ key: 'weight' as const, label: 'Weight', value: lbOf(weighIn.weight_kg).toFixed(1), unit: 'lb', trend: weightTrend, better: 'flat' as const, decimals: 1, deltaUnit: 'lb', bars: run(weighDays, w => lbOf(w.weight_kg)) }] : []),
+    ];
+    const health = <HealthCard unlinked={whoopUnlinked} notes={whoopNotes()} score={recovery?.recovery_score ?? null}
+      date={recovery ? shortDay(recovery.date) : null} readiness={readiness}
+      change={recoveryDelta ? { delta: recoveryDelta.delta, previous: shortDay(recoveryDelta.previous.date) } : null}
+      recoveryBars={run(scoredDays, r => r.recovery_score)} sleepPercent={sleep?.sleep_performance_percent ?? null}
+      hrv={hrvTrend} rhr={rhrTrend} tiles={heartTiles} onOpen={go('Health')} />;
+    const familyCard = <FamilyCard roster={roster} limit={FAMILY_CARD_ROWS} loading={data.facts.loading} error={!!data.facts.error} groceries={outOf}
+      resolving={healthResolving} notice={healthError || undefined} onOpen={go('Family')} onAsk={onAsk} onRetry={retryData}
+      onRow={r => r.signal.healthUuid ? void resolveHealthStatus(r.signal.healthUuid) : onAsk(r.signal.ask)} />;
 
-    // --- Property -----------------------------------------------------------
-    const banner = property.property?.headerImage;
-    const propertyCard = <HomeSection id="property" icon="Home" title="Property" onAction={go('Property')}>
-      {banner && <div className="dh-property-banner" style={{ backgroundImage: `url("${banner}")` }} role="img" aria-label={property.property?.name || 'The property'} />}
-      {propertyIssues.loading ? <p className="dashboard-empty">Loading…</p>
-        : propertyIssues.error ? <EmptyCta text="Issues couldn’t load." action="Retry" onClick={propertyIssues.retry} />
-          : proj.error ? <EmptyCta text="Property projects and concerns couldn’t load." action="Retry" onClick={proj.reload} />
-          : <ul className="dh-status-list">
-            {home.guardian.loading ? null : !guard ? <li><button type="button" onClick={() => setPropertyTab('property-security')}><i>?</i><span><strong>Security status unavailable</strong><small>Open Security to check</small></span></button></li>
-              : guardOpen.length ? guardOpen.slice(0, 2).map(i => <li key={i.id} className={i.severity === 'urgent' ? 'dh-status-alert' : 'dh-status-warn'}>
-                <button type="button" onClick={() => setPropertyTab('property-security')}><i>!</i><span><strong>{incidentText(i)}</strong><small>Security · since {reportedWhen(i.firstDetectedAt)}</small></span></button>
-              </li>)
-              : <li className={guard.status === 'secure' ? 'dh-status-good' : guard.status === 'unverified' ? 'dh-status-warn' : ''}>
-                <button type="button" onClick={() => setPropertyTab('property-security')}><i>{guard.status === 'secure' ? '✓' : '?'}</i><span><strong>{GUARDIAN_STATUS[guard.status].label}</strong><small>{guard.lastSweep?.finishedAt ? `Last checked ${reportedWhen(guard.lastSweep.finishedAt)}` : GUARDIAN_STATUS[guard.status].note}</small></span></button>
-              </li>}
-            {openIssues.slice(0, 2).map(i => <li key={i.uuid} className={`dh-status-${i.severity === 'high' || i.severity === 'emergency' ? 'alert' : 'warn'}`}>
-              <button type="button" onClick={go('Property')}><i>!</i><span><strong>{i.description}</strong><small>{i.location} · reported {reportedWhen(i.createdAt)}</small></span></button>
-            </li>)}
-            {!openIssues.length && <li className="dh-status-good"><button type="button" onClick={go('Property')}><i>✓</i><span><strong>No open issues</strong><small>{homeOpen.length ? `${homeOpen.length} house project${homeOpen.length === 1 ? '' : 's'} open` : 'Nothing reported'}</small></span></button></li>}
-          </ul>}
-    </HomeSection>;
+    // --- Property and Dreams (owner mockup, 2026-11-17) -------------------------
+    const quietCameras = (guard?.cameras || []).filter(c => c.watched && (!c.lastSeenAt || now - Date.parse(c.lastSeenAt) > 86_400_000)).length;
+    const security: SecuritySummary | null = !guard ? null : {
+      tone: guardOpen.length ? (guardOpen.some(i => i.severity === 'urgent') ? 'alert' : 'warn') : guard.status === 'secure' ? 'good' : guard.status === 'unverified' || guard.status === 'attention' ? 'warn' : 'idle',
+      label: GUARDIAN_STATUS[guard.status].label,
+      note: guardOpen.length ? `Security · since ${reportedWhen(guardOpen[0].firstDetectedAt)}` : guard.lastSweep?.finishedAt ? `Last checked ${reportedWhen(guard.lastSweep.finishedAt)}` : GUARDIAN_STATUS[guard.status].note,
+      incidents: guardOpen.map(incidentText).map(t => t.charAt(0).toUpperCase() + t.slice(1)),
+      cameras: { watched: (guard.cameras || []).filter(c => c.watched).length, quiet: quietCameras },
+      checked: guard.lastSweep?.results.length ?? 0,
+    };
+    const houseProjects = homeOpen.filter(p => p.kind !== 'program');
+    const soon = zonedDay(new Date(now + 7 * 86_400_000), timeZone);
+    const dueBy = (p: (typeof homeOpen)[number]) => p.hardDeadline || p.endsOn;
+    const dueSoon = houseProjects.filter(p => { const d = dueBy(p); return !!d && d <= soon; });
+    const overdue = dueSoon.some(p => dueBy(p)! < today);
+    const sweepTrouble = (guard?.health.failed || 0) + (guard?.health.missed || 0);
+    const propertyTiles: PropertyTile[] = [
+      { key: 'issues', label: 'Issues', value: `${openIssues.length} open`, tone: seriousIssues ? 'alert' : openIssues.length ? 'warn' : 'good', onClick: () => setPropertyTab('property-issues') },
+      { key: 'due', label: 'Due this week', value: `${dueSoon.length} due`, tone: overdue ? 'alert' : dueSoon.length ? 'warn' : 'plain', onClick: () => setPropertyTab('property-projects') },
+      { key: 'outdoor', label: 'Yard & outdoor', value: `${houseProjects.filter(p => p.indoor === false).length} active`, tone: 'plain', onClick: () => setPropertyTab('property-projects') },
+      { key: 'systems', label: 'Systems', value: !guard ? '—' : sweepTrouble || quietCameras ? [sweepTrouble && `${sweepTrouble} sweep${sweepTrouble === 1 ? '' : 's'} missed`, quietCameras && `${quietCameras} camera${quietCameras === 1 ? '' : 's'} quiet`].filter(Boolean).join(' · ') : 'All good', tone: !guard ? 'plain' : sweepTrouble || quietCameras ? 'warn' : 'good', onClick: () => setPropertyTab('property-security') },
+    ];
+    const propertyCard = <PropertyCard name={property.property?.name || null} banner={property.property?.headerImage || null}
+      security={security} securityLoading={home.guardian.loading} lead={houseProjects[0] || null} openCount={houseProjects.length} tiles={propertyTiles}
+      notice={propertyIssues.error ? <EmptyCta text="Issues couldn’t load." action="Retry" onClick={propertyIssues.retry} /> : proj.error ? <EmptyCta text="Property projects couldn’t load." action="Retry" onClick={proj.reload} /> : undefined}
+      onOpen={go('Property')} onSecurity={() => setPropertyTab('property-security')} onProjects={() => setPropertyTab('property-projects')} onProject={openProject} />;
 
-    // --- Dreams -------------------------------------------------------------
     const nights = Array.from({ length: 30 }, (_, i) => zonedDay(new Date(Date.now() - (29 - i) * 86400000), timeZone));
     const byNight = new Map(dreams.map(d => [d.date, d]));
-    const excerpt = (text: string) => { const plain = text.replace(/`/g, '').replace(/\s+/g, ' ').trim(); return plain.length > 150 ? `${plain.slice(0, 150).replace(/\s+\S*$/, '')}…` : plain; };
-    const dreamsCard = <HomeSection id="dreams" icon="Dreams" title="Dreams" onAction={go('Dreams')}>
-      {home.dreams.loading ? <p className="dashboard-empty">Loading…</p>
-        : !home.dreams.data ? <p className="dashboard-empty">Dreams couldn’t load.</p>
-          : <>
-            <div className="dh-dream-count"><p><strong>{dreamt.length}</strong> night{dreamt.length === 1 ? '' : 's'}<small>in the last 30 days</small></p>
-              <Spark tone="violet" values={nights.map(n => { const d = byNight.get(n); if (!d || d.status === 'skipped') return null; const s = d.stats || {}; return Math.max(1, (s.steps_ok ?? 0) + (s.steps_failed ?? 0)); })} label={`${dreamt.length} nights dreamt in the last 30 days`} /></div>
-            {!lastDream ? <p className="dashboard-empty">I haven’t dreamed yet. Once I do, I’ll tell you about it here.</p>
-              : <div className="dh-dream">
-                <header><strong>Most recent dream</strong><span>{STATUS_LINE[lastDream.status]}</span></header>
-                <small>{nightLabel(lastDream.date)}</small>
-                {lastDream.hasImage && <DreamImage uuid={lastDream.uuid} className="dh-dream-image" />}
-                <p>{excerpt(lastDream.narrative || lastDream.summary || 'I looked things over and left them as they were.')}</p>
-                <button type="button" className="source-fix" onClick={() => onAsk('Tell me about what you dreamed last night.')}>Ask her about it <span>↗</span></button>
-              </div>}
-          </>}
-    </HomeSection>;
+    const dreamsCard = <DreamsCard loading={home.dreams.loading} failed={!home.dreams.loading && !home.dreams.data} count={dreamt.length} last={lastDream || null}
+      nights={nights.map(n => { const d = byNight.get(n); if (!d || d.status === 'skipped' || d.status === 'running') return null; const st = d.stats || {}; return Math.max(1, (st.steps_ok ?? 0) + (st.steps_failed ?? 0)); })}
+      onOpen={go('Dreams')} onAsk={onAsk} />;
 
     return <>
       <HomeHero greeting={greeting} firstName={firstName} blurb={blurb} nodes={nodes} />
@@ -2164,16 +2110,12 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
       {statStrip}
 
       {/* Tasks beside the day it is planned against (owner, 2026-11-13). */}
-      <div className="dh-row dh-row-four dh-row-first">{schedule}
-        <HomeSection id="tasks" icon="Tasks" title="Tasks" action="Open Google Tasks" onAction={openGoogleTasks}>
-          {ready(summary?.tasks) && <p className="dh-section-caption">Google Tasks · {checked('tasks')}</p>}
-          {!ready(summary?.tasks) ? <SourceNote source={summary?.tasks} name="Google Tasks" fix={fixFor('tasks')} /> : tasksCardBody()}
-        </HomeSection>
-        {work}{projects}</div>
+      {/* Your Day and Tasks get a row of their own so each has the width its summary needs. */}
+      <div className="dh-row dt-row dt-row-fit">{schedule}{tasksCard}</div>
+      <div className="dh-row dt-row dt-row-fit">{work}{projects}</div>
       {/* Health, then Family: the owner's order for the areas of a life. */}
-      <div className="dh-row dh-row-four">{health}
-        <HomeSection id="family" icon="Family" title="Family" onAction={go('Family')}>{familyCardBody()}</HomeSection>
-        {propertyCard}{dreamsCard}</div>
+      <div className="dh-row dt-row dt-row-fit">{health}{familyCard}</div>
+      <div className="dh-row dt-row dt-row-fit">{propertyCard}{dreamsCard}</div>
     </>;
   }
 

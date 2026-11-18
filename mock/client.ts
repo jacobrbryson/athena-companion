@@ -1599,6 +1599,12 @@ async function route(method: string, path: string, body?: any): Promise<any> {
       me: people[0],
       team: { size: team.length, average: { done: avg('done'), inProgress: avg('inProgress'), notStarted: avg('notStarted'), status: 'behind', created: 3.8, reviewed: 3.8 }, atRisk: [{ name: 'Emily Reese', status: 'behind' }, { name: 'Joseph Savage-Addams', status: 'behind' }, { name: 'Ronald Coello', status: 'at_risk' }, { name: 'Scott Gasparick', status: 'at_risk' }] },
       people, unassigned: 8, otherSprints: [], teamFilter: 'Red', github: { error: null },
+      epics: { error: null, items: [
+        { key: 'DRM-11047', title: 'People Details – ID flag gate – role permissions', status: 'In Progress', statusCategory: 'indeterminate', project: 'Dream', due: '2026-11-14', owner: null, url: 'https://viv.atlassian.net/browse/DRM-11047', done: 6, inProgress: 3, total: 10, pointsDone: 21, points: 34, percent: 62, by: 'points', via: 'team' },
+        { key: 'DRM-6626', title: 'Backorder handling for consolidated orders', status: 'In Progress', statusCategory: 'indeterminate', project: 'Dream', due: '2026-11-21', owner: null, url: 'https://viv.atlassian.net/browse/DRM-6626', done: 9, inProgress: 1, total: 10, pointsDone: 0, points: 0, percent: 90, by: 'issues', via: 'team' },
+        { key: 'DRM-10988', title: 'Dashboard priority ordering', status: 'To Do', statusCategory: 'new', project: 'Dream', due: '2026-12-05', owner: null, url: 'https://viv.atlassian.net/browse/DRM-10988', done: 1, inProgress: 2, total: 8, pointsDone: 3, points: 26, percent: 12, by: 'points', via: 'sprint' },
+        { key: 'DRM-9120', title: 'Carrier rate shopping v2', status: 'In Progress', statusCategory: 'indeterminate', project: 'Dream', due: null, owner: null, url: 'https://viv.atlassian.net/browse/DRM-9120', done: 4, inProgress: 1, total: 12, pointsDone: 0, points: 0, percent: 33, by: 'issues', via: 'team' },
+      ] },
     };
   }
   if (p.startsWith('/api/v1/dashboard/workplaces')) {

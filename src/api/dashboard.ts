@@ -277,6 +277,19 @@ export interface WorkspaceSprint {
   teamFilter?: string | null;
   /** note: no_org (the key sees no organization) or no_team (it can't see teammates' pull requests). */
   github?: { error: string | null; note?: string | null };
+  /** The Red team's open epics, soonest due first. Absent on older servers. */
+  epics?: { items: RedEpic[]; error: string | null };
+}
+/**
+ * One of the Red team's open epics. `percent` is story points done of total when the
+ * children are pointed (`by: 'points'`), else children done of total; null with no children.
+ * `via`: 'team' when Jira marks it Red, 'sprint' when the Red team's sprint work rolls up to it.
+ */
+export interface RedEpic {
+  key: string; title: string; status: string; statusCategory: string | null; project: string | null;
+  due: string | null; owner: string | null; url: string;
+  done: number; inProgress: number; total: number; pointsDone: number; points: number;
+  percent: number | null; by: 'points' | 'issues'; via: 'team' | 'sprint';
 }
 export type WorkplaceInput = { name: string; role?: string | null; domain?: string | null; primary?: boolean; notes?: string | null };
 /** What Google says the person can see, to pick from. `linked: false` means Websites isn't connected. */
