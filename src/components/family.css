@@ -1,6 +1,6 @@
-/* Family page (FamilyPage.tsx) — the 2026-10-14 concept. Built on the Health
-   page's panels (.hp) and the Calendar page's head, tiles and bottom row
-   (.cp); only what the family adds is here. */
+/* Family page (FamilyPage.tsx) — the 2026-11-18 concept. Built on the Health
+   page's panels and badges (.hp) and the Calendar page's buttons (.cp); only
+   what the family adds is here. Provisions (FamilyProvisions.tsx) shares it. */
 
 /* Tiles that open something read as buttons, left-aligned like the rest. */
 button.cp-stat { text-align: left; color: inherit; }
@@ -11,11 +11,9 @@ button.cp-stat { text-align: left; color: inherit; }
 .fp-health-low, .fp-health-alert { color: #ff5d6c; }
 .fp-health-idle { color: var(--hp-sub); }
 
-/* --- Main grid -------------------------------------------------------------- */
-.fp-grid { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(300px, 1fr); gap: 16px; margin-top: 18px; align-items: stretch; }
-.fp-grid h2 span { margin-left: 6px; color: #c8d7e6; font-size: 16px; font-weight: 400; }
-/* Grocery list: full width under the two-by-two grid. */
-.fp-groceries { grid-column: 1 / -1; }
+/* Grocery list (Provisions tab) and its summary on the Family page's card. */
+.fp-groceries { margin-top: 0; }
+.fp-groceries h2 span { margin-left: 6px; color: #c8d7e6; font-size: 16px; font-weight: 400; }
 .fp-groceries-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(220px, 300px); gap: 18px; align-items: start; }
 .fp-groceries-label { display: block; margin-bottom: 8px; color: #8fa6bf; font-size: 13px; letter-spacing: .04em; text-transform: uppercase; }
 .fp-groceries-items { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 0; list-style: none; }
@@ -24,7 +22,6 @@ button.cp-stat { text-align: left; color: inherit; }
 .fp-groceries-side { display: flex; flex-direction: column; gap: 12px; color: #c8d7e6; font-size: 14px; }
 .fp-groceries-side p { margin: 0; }
 .fp-groceries-side strong { color: #e8f3ff; }
-.fp-wide { justify-content: center; width: 100%; margin-top: 14px; padding: 11px 14px; }
 
 /* Chores */
 .fp-empty-hero { display: grid; justify-items: center; gap: 8px; padding: 34px 16px; border-radius: 12px; background: #0a1a2e; text-align: center; }
@@ -33,10 +30,14 @@ button.cp-stat { text-align: left; color: inherit; }
 .fp-empty-hero p { max-width: 36ch; color: var(--hp-sub); font-size: 14px; line-height: 1.5; }
 .fp-empty-hero .cp-outline { margin-top: 8px; }
 /* Long lists scroll inside the panel instead of stretching the page. */
-.fp-chore-list { display: grid; gap: 6px; margin-top: 14px; max-height: 360px; overflow-y: auto; overscroll-behavior: contain; padding-right: 4px; scrollbar-width: thin; scrollbar-color: #1d3550 transparent; }
-.fp-chore-list li { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid #1d3550; border-radius: 10px; background: #0a1a2e; }
-.fp-chore-list strong { display: block; font-size: 15px; font-weight: 500; }
-.fp-chore-list small { color: var(--hp-sub); font-size: 12px; }
+.fp-chore-list { display: grid; margin-top: 10px; max-height: 360px; overflow-y: auto; overscroll-behavior: contain; padding-right: 4px; scrollbar-width: thin; scrollbar-color: #1d3550 transparent; }
+.fp-chore-list li { display: flex; align-items: center; gap: 12px; padding: 9px 4px; border-top: 1px solid #1d3550; }
+.fp-chore-list strong { flex: 1; min-width: 0; overflow: hidden; font-size: 14px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.fp-chore-list small { flex-shrink: 0; color: var(--hp-sub); font-size: 12px; }
+.fp-chore-icon { width: 20px; height: 20px; flex-shrink: 0; }
+.fp-chore-home { color: #4fc3ff; }
+.fp-chore-sprout { color: #33e0a1; }
+.fp-chore-paw { color: #f6b23a; }
 .fp-done strong { color: var(--hp-sub); text-decoration: line-through; }
 .fp-check { display: grid; place-items: center; width: 22px; height: 22px; flex-shrink: 0; border: 1.5px solid #3a6688; border-radius: 6px; }
 .fp-check.fp-on { border-color: #33e0a1; background: #33e0a1; color: #071222; }
@@ -57,14 +58,6 @@ button.cp-stat { text-align: left; color: inherit; }
 .fp-snack .fp-snack-x { color: #7d93aa; font-size: 18px; font-weight: 400; line-height: 1; }
 @keyframes fp-snack-in { from { transform: translate(-50%, 8px); } to { transform: translate(-50%, 0); } }
 @media (prefers-reduced-motion: reduce) { .fp-chore-list li, .fp-snack { transition: none; animation: none; } }
-
-/* Family today */
-.fp-day { display: grid; gap: 4px; }
-.fp-day li { display: grid; grid-template-columns: 70px 3px 22px minmax(0, 1fr); align-items: center; gap: 10px; padding: 7px 8px 7px 0; border-radius: 8px; }
-.fp-day li::before { content: ''; grid-column: 2; grid-row: 1; height: 24px; border-radius: 3px; background: var(--cp-tone); }
-.fp-day time { grid-column: 1; grid-row: 1; color: #c8d7e6; font-size: 14px; text-align: right; }
-.fp-day .hp-icon { grid-column: 3; grid-row: 1; width: 20px; height: 20px; color: var(--cp-tone); }
-.fp-day span { grid-column: 4; grid-row: 1; overflow: hidden; font-size: 15px; text-overflow: ellipsis; white-space: nowrap; }
 
 /* Members */
 .fp-members { display: flex; flex-direction: column; }
@@ -120,11 +113,6 @@ button.cp-stat { text-align: left; color: inherit; }
 .fp-pill.fp-bad { background: #3d1720; }
 .fp-pill .hp-icon { width: 14px; height: 14px; }
 
-/* The detailed memories stay out of the page until requested. */
-.fp-memories-link { display: flex; align-items: center; gap: 6px; width: max-content; margin: auto 0 0 auto; padding: 14px 0 2px; border: 0; background: none; color: #8fcce9; font-size: 12px; cursor: pointer; }
-.fp-memories-link:hover { color: #c9eaff; text-decoration: underline; }
-.fp-memories-link:focus-visible { outline: 2px solid #4fb5ff; outline-offset: 3px; }
-.fp-memories-link .hp-icon { width: 13px; height: 13px; }
 .fp-memories-drawer .dashboard-memory-list { margin: 0; padding: 0; list-style: none; }
 .fp-memories-drawer .dashboard-memory-list li { min-width: 0; }
 .family-portrait-control { display: flex; align-items: center; gap: 14px; padding: 12px; border: 1px solid #1d3550; border-radius: 10px; }
@@ -135,18 +123,90 @@ button.cp-stat { text-align: left; color: inherit; }
 .family-remove-control { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding-top: 12px; border-top: 1px solid #1d3550; }
 .family-remove-control span { flex-basis: 100%; color: var(--hp-sub); font-size: 13px; }
 
+/* --- Layout ------------------------------------------------------------------ */
+/* The tabs lead the page, then the head, then three rows of panels. */
+.fp > .property-nav { margin-bottom: 16px; }
+.fp-row { display: grid; gap: 16px; margin-top: 16px; align-items: stretch; }
+.fp-row-1 { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.fp-row-2 { grid-template-columns: minmax(0, 1.6fr) minmax(300px, 1fr); }
+.fp-row-3 { grid-template-columns: minmax(0, .9fr) minmax(0, 1fr) minmax(0, 1.1fr); }
+.fp-row > .hp-panel { display: flex; flex-direction: column; min-width: 0; }
+.fp-wide { justify-content: center; width: 100%; margin-top: auto; padding: 10px 14px; }
+.fp-row .fp-wide { margin-top: 14px; }
+.fp-today .fp-wide, .fp-provisions .fp-wide { margin-top: auto; }
+
+/* Panel heads: a round icon, the title and a line under it, the link. */
+.hp-panel>header.fp-panel-head { gap: 12px; }
+.fp-titles { display: grid; gap: 2px; min-width: 0; margin-right: auto; }
+.hp-panel>header.fp-panel-head h2 { margin: 0; font-size: 18px; }
+.fp-titles h2 span { margin-left: 2px; color: #c8d7e6; font-size: 14px; font-weight: 400; }
+.fp-titles small { overflow: hidden; color: var(--hp-sub); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.fp-badge-pink { color: #ff7ab8; background: #3a1428; }
+
+/* The head: the page's name, then today's three numbers. */
+.fp-top { display: grid; grid-template-columns: minmax(220px, 1fr) repeat(3, auto); align-items: center; gap: 0; padding: 16px 20px; background: radial-gradient(ellipse 40% 90% at 38% 120%, #1d8cff26, transparent 70%), var(--hp-panel); }
+.fp-top-title { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.fp-top-badge { width: 58px; height: 58px; }
+.fp-top-badge .hp-icon { width: 28px; height: 28px; }
+.fp-top h1 { margin: 0; font-size: 28px; font-weight: 700; line-height: 1.1; }
+.fp-top p { margin: 3px 0 0; color: var(--hp-sub); font-size: 14px; }
+.fp-top-stat { display: flex; align-items: center; gap: 12px; min-width: 0; padding: 4px 20px; border: 0; border-left: 1px solid var(--hp-line); background: none; color: inherit; text-align: left; text-decoration: none; cursor: pointer; }
+.fp-top-stat[aria-disabled] { cursor: default; }
+.fp-top-stat>span:last-child { display: grid; gap: 2px; min-width: 0; }
+.fp-top-stat strong { font-size: 16px; font-weight: 600; white-space: nowrap; }
+.fp-top-stat small { max-width: 22ch; overflow: hidden; color: var(--hp-sub); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.fp-top-stat:hover strong { color: #9fd4ff; }
+.fp-top-stat:focus-visible { outline: 2px solid #4fb5ff; outline-offset: 2px; border-radius: 8px; }
+
+/* Family today: a timeline, what's on now (or next) framed. */
+.fp-timeline { position: relative; display: grid; gap: 6px; margin: 0 0 4px; padding: 0; list-style: none; }
+.fp-timeline::before { content: ''; position: absolute; top: 18px; bottom: 18px; left: 89px; width: 1.5px; background: #24486a; }
+.fp-timeline li { position: relative; display: grid; grid-template-columns: 70px 16px 22px minmax(0, 1fr); align-items: center; gap: 12px; padding: 10px 12px 10px 0; border: 1px solid transparent; border-radius: 12px; }
+.fp-timeline time { color: #c8d7e6; font-size: 14px; text-align: right; }
+.fp-dot { width: 12px; height: 12px; justify-self: center; border: 2px solid var(--cp-tone); border-radius: 50%; background: #071222; }
+.fp-timeline .hp-icon { width: 22px; height: 22px; color: var(--cp-tone); }
+.fp-timeline div { min-width: 0; }
+.fp-timeline strong { display: block; overflow: hidden; font-size: 15px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.fp-timeline small { display: block; overflow: hidden; color: var(--hp-sub); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.fp-timeline li.fp-now { border-color: #2fd3e0; background: #0b2a3a; box-shadow: 0 0 16px #2fd3e033, inset 0 0 12px #2fd3e014; }
+
+/* Chores: the count beside its bar. */
+.fp-progress { display: flex; align-items: center; gap: 14px; color: #e8f3ff; font-size: 14px; font-weight: 500; white-space: nowrap; }
+.fp-progress .hp-bar { margin-top: 0; height: 7px; }
+
+/* Provisions card */
+.fp-provisions-body { flex: 1; }
+.fp-provisions .fp-groceries-items li { font-size: 13px; padding: 5px 10px; }
+
+/* Birthdays: date tiles in a row. */
+.fp-bdays { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 0; padding: 0; list-style: none; }
+.fp-bdays button { display: grid; justify-items: center; gap: 4px; width: 100%; padding: 12px 4px; border: 1px solid #1d3550; border-radius: 12px; background: #0a1a2e; color: inherit; }
+.fp-bdays button:hover { border-color: #d0457a; }
+.fp-bdays small { color: #c8d7e6; font-size: 11px; font-weight: 600; letter-spacing: .04em; }
+.fp-bdays strong { font-size: 22px; font-weight: 600; line-height: 1; }
+.fp-bdays .hp-icon { width: 22px; height: 22px; margin: 2px 0; }
+.fp-bdays span { max-width: 100%; overflow: hidden; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+
 @media (max-width: 1250px) {
   .fp-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .fp-chips { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .fp-row-3 { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .fp-birthdays { grid-column: 1 / -1; }
 }
 @media (max-width: 1100px) {
-  .fp-grid { grid-template-columns: minmax(0, 1fr); }
+  .fp-row-1, .fp-row-2 { grid-template-columns: minmax(0, 1fr); }
+  .fp-top { grid-template-columns: repeat(3, minmax(0, 1fr)); row-gap: 14px; }
+  .fp-top-title { grid-column: 1 / -1; }
+  .fp-top-stat:nth-child(2) { border-left: 0; padding-left: 0; }
 }
 @media (max-width: 760px) {
   .fp-groceries-body { grid-template-columns: minmax(0, 1fr); }
   .fp-avatar-lg { width: 72px; height: 72px; font-size: 26px; }
-  .fp-day li { grid-template-columns: 58px 3px 20px minmax(0, 1fr); gap: 8px; }
-  .fp-day time { font-size: 12px; }
+  .fp-row-3 { grid-template-columns: minmax(0, 1fr); }
+  .fp-top { grid-template-columns: minmax(0, 1fr); }
+  .fp-top-stat { border-left: 0; padding: 0; }
+  .fp-timeline::before { left: 77px; }
+  .fp-timeline li { grid-template-columns: 58px 16px 20px minmax(0, 1fr); gap: 8px; }
+  .fp-timeline time { font-size: 12px; }
+  .fp-bdays { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
-/* The tabs sit between the header and the metrics; space them off the metrics like every other section gap. */
-.fp > .property-nav { margin-bottom: 16px; }

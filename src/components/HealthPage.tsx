@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { RecoveryDay, WeighIn } from '../api/dashboard';
-import { healthPlanApi, localDay, type HealthPlan, type EntrySource, type NutritionDay, type NutritionEntry, type NutritionFavorite, type ScanResult, type NutritionTargets, type ProgramDraft, type ProgramSession, type SessionKind, type TrainingProgram } from '../api/healthPlan';
+import { healthPlanApi, localDay, type HealthPlan, type EntrySource, type EntryDraft, type NutritionDay, type NutritionEntry, type NutritionFavorite, type ScanResult, type NutritionTargets, type ProgramDraft, type ProgramSession, type SessionKind, type TrainingProgram } from '../api/healthPlan';
 import { workoutsApi, type Workout } from '../api/workouts';
 import { PageHeader } from './PageHeader';
 import { downscale } from './photoStore';
@@ -105,6 +105,22 @@ const PATHS: Record<string, ReactNode> = {
   // The Community page (CommunityPage.tsx).
   bell: <path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 2h-15ZM10 20.5a2 2 0 0 0 4 0" />,
   home: <path d="M4 11.5 12 5l8 6.5M6.5 10v9.5h4.5v-5h2v5h4.5V10" />,
+  // Provisions (2026-11-18): the pantry and its kinds, meals, restock.
+  box: <><rect x="3.5" y="7" width="17" height="13" rx="2" /><path d="M3.5 11h17M10 14.5h4M5 7l1.5-3h11L19 7" /></>,
+  meat: <><path d="M14.5 4.5c3.5 0 5.5 2.5 5 5.8-.5 3.4-4 6.2-7.6 6.2-1 0-1.7.4-2.3 1l-2.1 2.1a1.6 1.6 0 1 1-2.3-2.2 1.6 1.6 0 1 1-1.9-2.4l2.2-2.1c.6-.6 1-1.4 1-2.4 0-3.7 3.3-6 8-6Z" /><circle cx="14.5" cy="10" r="1.6" /></>,
+  wheat: <path d="M12 21V9M12 9c-2.2 0-3.5-1.6-3.5-4 2.2 0 3.5 1.6 3.5 4Zm0 0c2.2 0 3.5-1.6 3.5-4-2.2 0-3.5 1.6-3.5 4Zm0 4c-2.2 0-3.5-1.6-3.5-4 2.2 0 3.5 1.6 3.5 4Zm0 0c2.2 0 3.5-1.6 3.5-4-2.2 0-3.5 1.6-3.5 4Zm0 4c-2.2 0-3.5-1.6-3.5-4 2.2 0 3.5 1.6 3.5 4Zm0 0c2.2 0 3.5-1.6 3.5-4-2.2 0-3.5 1.6-3.5 4Z" />,
+  can: <><ellipse cx="12" cy="5.5" rx="6" ry="2" /><path d="M6 5.5v13c0 1.1 2.7 2 6 2s6-.9 6-2v-13M6 10c0 1.1 2.7 2 6 2s6-.9 6-2" /></>,
+  apple: <><path d="M12 7.5c-1.5-1-5.5-1.2-6.5 2.5-.9 3.6 1.4 9.5 4 9.5 1 0 1.5-.5 2.5-.5s1.5.5 2.5.5c2.6 0 4.9-5.9 4-9.5-1-3.7-5-3.5-6.5-2.5Z" /><path d="M12 7.5c0-2 .8-3.5 2.5-4" /></>,
+  milk: <><path d="M8.5 3.5h7M9 3.5v3L7 9.5v11h10v-11l-2-3v-3" /><path d="M7 13h10" /></>,
+  cookie: <><circle cx="12" cy="12" r="8.5" /><circle cx="9" cy="9.5" r=".9" /><circle cx="14.5" cy="9" r=".9" /><circle cx="10" cy="14.5" r=".9" /><circle cx="15" cy="14" r=".9" /></>,
+  cup: <><path d="M5 8h11v6a5 5 0 0 1-5 5h-1a5 5 0 0 1-5-5V8Z" /><path d="M16 10h1.5a2.5 2.5 0 0 1 0 5H16M9 3.5v2M12 3v2.5" /></>,
+  chef: <><path d="M7 14.5a4 4 0 0 1-.7-7.9A5 5 0 0 1 15.9 6a4 4 0 0 1 1.1 8.5V20H7v-5.5Z" /><path d="M7 17h10" /></>,
+  bowl: <><path d="M3.5 11h17a8.5 8.5 0 0 1-17 0Z" /><path d="M9 7.5c0-1.5 1.5-1.5 1.5-3M13.5 7.5c0-1.5 1.5-1.5 1.5-3" /></>,
+  chart: <path d="M5 20v-6M9.5 20v-9M14 20v-4M18.5 20V6M3.5 20h17" />,
+  refresh: <><path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3" /><path d="M19.5 4.5v4h-4" /></>,
+  cart: <><path d="M3 4h2.5l2.2 10.5h10.6L20.5 7.5H6.4" /><circle cx="9" cy="19" r="1.4" /><circle cx="17" cy="19" r="1.4" /></>,
+  sprout: <path d="M12 20v-8M12 12c0-3.5-2.5-6-6.5-6 0 3.5 2.5 6 6.5 6ZM12 12c0-3 2.2-5.5 6.5-5.5 0 3-2.2 5.5-6.5 5.5Z" />,
+  paw: <><circle cx="7" cy="10" r="1.6" /><circle cx="10.5" cy="6.5" r="1.6" /><circle cx="14.5" cy="6.5" r="1.6" /><circle cx="17.5" cy="10.5" r="1.6" /><path d="M12 12c-2.5 0-5 3.3-5 5.5 0 1.6 1.4 2.3 2.7 2 1.3-.3 1.7-.7 2.3-.7s1 .4 2.3.7c1.3.3 2.7-.4 2.7-2 0-2.2-2.5-5.5-5-5.5Z" /></>,
   map: <path d="M3.5 6.5 9 4.5l6 2 5.5-2v13l-5.5 2-6-2-5.5 2ZM9 4.5v13M15 6.5v13" />,
   cloud: <path d="M7 18.5h10.5a4 4 0 0 0 .4-8A6 6 0 0 0 6.4 9.6 4.5 4.5 0 0 0 7 18.5Z" />,
   partly: <><path d="M9 6.2A4 4 0 0 1 14.6 9M9 2.5v1.5M3.5 8H5M4.9 3.9 6 5M13.1 3.9 12 5" /><path d="M8 20h9a3.5 3.5 0 0 0 .3-7A5 5 0 0 0 7.8 12 4 4 0 0 0 8 20Z" /></>,
@@ -479,32 +495,32 @@ async function readBarcode(file: Blob): Promise<string | null> {
 const kcalOf = (f: { calories: number | null }) => (f.calories != null ? `${f.calories} kcal` : '');
 
 /**
- * The Log food menu: favorites (where given), Tell Athena, Take a picture and
- * Manual entry. Shared by the Nutrition card and the food log's New record so
- * the two can't drift apart; what each choice does is the caller's.
+ * The Log food dialog (owner's 2026-11-18 mockup): Favorites and Recent tabs,
+ * then Tell Athena, Take a picture and Manual entry as three tiles. Shared by
+ * the Nutrition card and the food log's Add Food so the two can't drift apart;
+ * what each choice does is the caller's. Portalled to <body> as a centred
+ * dialog, so a glass panel's backdrop-filter can't trap or clip it.
  */
-function LogFoodMenu({ label, busy, disabled, down, buttonClass, favorites, onFavorite, onTell, onPhoto, onManual }: {
+function LogFoodMenu({ label, busy, disabled, down, buttonClass, favorites, recent, onFavorite, onRecent, onTell, onPhoto, onManual }: {
   label: ReactNode; busy: string | null; disabled?: boolean; down?: boolean; buttonClass?: string;
   favorites?: NutritionFavorite[]; onFavorite?: (uuid: string) => void;
+  /** The last distinct foods logged that aren't starred; tapping one logs it again. */
+  recent?: NutritionFavorite[]; onRecent?: (food: NutritionFavorite) => void;
   /** Resolves true when it logged, so the box can clear. */
   onTell: (text: string) => Promise<boolean>; onPhoto: (file: File) => void; onManual: () => void;
 }) {
   const [menu, setMenu] = useState(false);
-  // "Tell Athena" turns the menu into a one-line box: what you ate, in your words.
+  const [tab, setTab] = useState<'favorites' | 'recent'>('favorites');
+  // "Tell Athena" turns the dialog's body into a one-line box: what you ate, in your words.
   const [telling, setTelling] = useState(false);
   const [told, setTold] = useState('');
-  const menuRef = useRef<HTMLDivElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
     if (!menu) { setTelling(false); return; }
-    // Opening downward inside a scrolling dialog: bring the menu into view.
-    if (down) menuRef.current?.querySelector('.hp-menu')?.scrollIntoView({ block: 'nearest' });
-    const away = (e: Event) => { if (!menuRef.current?.contains(e.target as Node)) setMenu(false); };
-    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') setMenu(false); };
-    document.addEventListener('pointerdown', away);
-    window.addEventListener('keydown', esc);
-    return () => { document.removeEventListener('pointerdown', away); window.removeEventListener('keydown', esc); };
-  }, [menu, down]);
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopImmediatePropagation(); setMenu(false); } };
+    window.addEventListener('keydown', esc, true);
+    return () => window.removeEventListener('keydown', esc, true);
+  }, [menu]);
   const tell = async (e: React.FormEvent) => {
     e.preventDefault();
     const text = told.trim();
@@ -512,30 +528,62 @@ function LogFoodMenu({ label, busy, disabled, down, buttonClass, favorites, onFa
     setMenu(false);
     if (await onTell(text)) setTold('');
   };
-  const place = down ? 'hp-menu hp-menu-down' : 'hp-menu';
-  return <div className="hp-menu-wrap" ref={menuRef}>
-    <button type="button" className={buttonClass ?? (down ? 'hp-new-record' : undefined)} aria-haspopup="menu" aria-expanded={menu} disabled={!!busy || disabled} onClick={() => setMenu(m => !m)}><Icon name="plus" /> {busy || label} <Icon name="down" className="hp-caret" /></button>
-    {menu && telling && <form className={`${place} hp-tell`} onSubmit={tell}>
-      <label htmlFor="hp-tell-input">Tell Athena what you ate</label>
-      <input id="hp-tell-input" autoFocus value={told} onChange={e => setTold(e.target.value)} placeholder="Big Mac from McDonald’s" maxLength={200} enterKeyHint="send" />
-      <div><button type="button" className="hp-link" onClick={() => setTelling(false)}>Back</button><button type="submit" className="dashboard-chat-cta" disabled={!told.trim()}>Log it <span>↗</span></button></div>
-    </form>}
-    {menu && !telling && <div className={place} role="menu">
-      {favorites && onFavorite && <>
-        <small className="hp-menu-head">Favorites</small>
-        {/* Only the favorites scroll; the three ways to log below stay put. */}
-        {favorites.length ? <div className="hp-menu-favs">{favorites.map(f => <button key={f.uuid} type="button" role="menuitem" onClick={() => { setMenu(false); onFavorite(f.uuid); }}>
-          <Icon name="star" className="hp-star-on" /><span>{f.label}</span><em>{kcalOf(f)}</em>
-        </button>)}</div> : <p className="hp-menu-empty">Star a food in Today’s list to keep it here.</p>}
-        <hr />
-      </>}
-      <button type="button" role="menuitem" onClick={() => setTelling(true)}><Icon name="speech" /><span>Tell Athena<small>“Big Mac from McDonald’s”</small></span></button>
-      <button type="button" role="menuitem" onClick={() => { setMenu(false); cameraRef.current?.click(); }}><Icon name="camera" /><span>Take a picture<small>The food or its barcode</small></span></button>
-      <button type="button" role="menuitem" onClick={() => { setMenu(false); onManual(); }}><Icon name="pencil" /><span>Manual entry</span></button>
-    </div>}
+  const lists = !!(favorites && onFavorite);
+  const rows = tab === 'favorites' ? favorites || [] : recent || [];
+  const pick = (f: NutritionFavorite) => {
+    setMenu(false);
+    if (tab === 'favorites') onFavorite?.(f.uuid); else onRecent?.(f);
+  };
+  return <div className="hp-menu-wrap">
+    <button type="button" className={buttonClass ?? (down ? 'hp-new-record' : undefined)} aria-haspopup="dialog" aria-expanded={menu} disabled={!!busy || disabled} onClick={() => setMenu(m => !m)}><Icon name="plus" /> {busy || label} <Icon name="down" className="hp-caret" /></button>
+    {menu && createPortal(<div className="hp-lf" role="dialog" aria-modal="true" aria-labelledby="hp-lf-title">
+      <button type="button" className="hp-lf-scrim" aria-label="Close" onClick={() => setMenu(false)} />
+      <div className="hp-lf-card">
+        <header className="hp-lf-head">
+          <span className="hp-lf-badge"><Icon name="food" /></span>
+          <div><h2 id="hp-lf-title">Log Food</h2><small>Add a meal, snack, or drink</small></div>
+          <button type="button" className="hp-lf-close" aria-label="Close" onClick={() => setMenu(false)}><Icon name="close" /></button>
+          <svg className="fme-wave" viewBox="0 0 400 110" preserveAspectRatio="none" aria-hidden="true">
+            <path d="M0 96 C90 92 160 70 230 62 S340 40 400 18" />
+            <path d="M40 104 C130 98 200 80 270 72 S360 52 400 36" />
+          </svg>
+        </header>
+        {telling ? <form className="hp-lf-tell" onSubmit={tell}>
+          <label htmlFor="hp-tell-input">Tell Athena what you ate</label>
+          <input id="hp-tell-input" autoFocus value={told} onChange={e => setTold(e.target.value)} placeholder="Big Mac from McDonald’s" maxLength={200} enterKeyHint="send" />
+          <div><button type="button" className="hp-link" onClick={() => setTelling(false)}>Back</button><button type="submit" className="dashboard-chat-cta" disabled={!told.trim()}>Log it <span>↗</span></button></div>
+        </form> : <>
+          {lists && <>
+            <div className="hp-lf-tabs" role="tablist" aria-label="Foods">
+              <button type="button" role="tab" aria-selected={tab === 'favorites'} onClick={() => setTab('favorites')}><Icon name="star" />Favorites</button>
+              <button type="button" role="tab" aria-selected={tab === 'recent'} onClick={() => setTab('recent')}><Icon name="clock" />Recent</button>
+            </div>
+            {/* Only the list scrolls; the three ways to log below stay put. */}
+            <div className="hp-lf-list" role="tabpanel">
+              {rows.length ? rows.map(f => <button key={f.uuid} type="button" className="hp-lf-row" onClick={() => pick(f)} aria-label={`Log ${f.label}${f.calories != null ? `, ${f.calories} kcal` : ''}`}>
+                <Icon name={tab === 'favorites' ? 'star' : 'clock'} className={tab === 'favorites' ? 'hp-lf-star' : 'hp-lf-clock'} />
+                <span>{f.label}{f.serving && <small>{f.serving}</small>}</span>
+                <em>{kcalOf(f)}</em>
+                <i className="hp-lf-add"><Icon name="plus" /></i>
+              </button>) : <p className="hp-lf-empty">{tab === 'favorites' ? 'Star a food in Today’s list to keep it here.' : 'Foods you log show up here.'}</p>}
+            </div>
+          </>}
+          <div className="hp-lf-ways">
+            <button type="button" className="hp-lf-way hp-lf-tellway" onClick={() => setTelling(true)}><Icon name="speech" /><strong>Tell Athena</strong><small>“Big Mac from McDonald’s”</small></button>
+            <button type="button" className="hp-lf-way hp-lf-photo" onClick={() => { setMenu(false); cameraRef.current?.click(); }}><Icon name="camera" /><strong>Take a picture</strong><small>The food or its barcode</small></button>
+            <button type="button" className="hp-lf-way hp-lf-manual" onClick={() => { setMenu(false); onManual(); }}><Icon name="pencil" /><strong>Manual entry</strong><small>Enter food, calories, and nutrition</small></button>
+          </div>
+        </>}
+      </div>
+    </div>, document.body)}
     <input ref={cameraRef} type="file" accept="image/*" capture="environment" hidden onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) onPhoto(f); }} />
   </div>;
 }
+
+/** A recent food, logged again as a plain entry. */
+const recentEntry = (f: NutritionFavorite, eatenOn?: string): EntryDraft => ({
+  label: f.label, serving: f.serving, calories: f.calories, protein_g: f.protein_g, carbs_g: f.carbs_g, fat_g: f.fat_g, water_oz: f.water_oz, barcode: f.barcode, source: 'manual', ...(eatenOn ? { eaten_on: eatenOn } : {}),
+});
 
 /** Downscale a food photo and read any barcode on the phone first: what the scan endpoint takes. */
 async function photoBody(file: File) {
@@ -549,6 +597,10 @@ function NutritionPanel({ food, targets, loading, onOpen, onTargets, onChanged }
   const logFavorite = async (uuid: string) => {
     setBusy('Logging…'); setError('');
     try { onChanged((await healthPlanApi.logFavorite(uuid)).nutrition); } catch (e) { setError((e as Error).message || 'Couldn’t log that.'); } finally { setBusy(null); }
+  };
+  const logRecent = async (f: NutritionFavorite) => {
+    setBusy('Logging…'); setError('');
+    try { onChanged((await healthPlanApi.addEntry(recentEntry(f))).nutrition); } catch (e) { setError((e as Error).message || 'Couldn’t log that.'); } finally { setBusy(null); }
   };
   // A photo or a few words: logged by Athena, then the food log opens on the entry to check.
   const logged = async (how: string, fn: () => Promise<ScanResult>, fallback: string) => {
@@ -575,6 +627,7 @@ function NutritionPanel({ food, targets, loading, onOpen, onTargets, onChanged }
       })}</div>
       <div className="hp-nutrition-actions">
         <LogFoodMenu label="Log food" busy={busy} favorites={food?.favorites || []} onFavorite={uuid => void logFavorite(uuid)}
+          recent={food?.recent || []} onRecent={f => void logRecent(f)}
           onTell={text => logged('Athena is looking it up…', () => healthPlanApi.describe(text), 'Athena couldn’t look that up.')}
           onPhoto={file => void logged('Athena is looking…', async () => healthPlanApi.scan(await photoBody(file)), 'Athena couldn’t read that photo.')}
           onManual={() => onOpen({ mode: 'manual' })} />
@@ -631,7 +684,7 @@ export function TodayFoodLog({ food, targets, onClose, onChanged }: { food: Nutr
 function FoodLog({ food, targets, open, onClose, onChanged }: { food: NutritionDay | null; targets: NutritionTargets | null; open: FoodLogOpen; onClose: () => void; onChanged: (n: NutritionDay) => void }) {
   // Escape closes the sidebar — unless the Add Food menu is open, which Escape closes first.
   useEffect(() => {
-    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape' && !document.querySelector('.hp-food-panel .hp-menu')) onClose(); };
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape' && !document.querySelector('.hp-lf')) onClose(); };
     window.addEventListener('keydown', esc);
     return () => window.removeEventListener('keydown', esc);
   }, [onClose]);
@@ -751,6 +804,7 @@ function FoodLog({ food, targets, open, onClose, onChanged }: { food: NutritionD
     </section>
     {!editing && !adding && <LogFoodMenu down buttonClass="hp-add-food" label={isToday ? 'Add Food' : `Add Food for ${noon(date).toLocaleDateString(undefined, { timeZone: 'UTC', month: 'short', day: 'numeric' })}`} busy={busy === 'favorite' ? 'Logging…' : logging} disabled={loadingDay || !!busy}
       favorites={food?.favorites || []} onFavorite={uuid => void run('favorite', () => healthPlanApi.logFavorite(uuid, date), 'Couldn’t log that.')}
+      recent={food?.recent || []} onRecent={f => void run('favorite', () => healthPlanApi.addEntry(recentEntry(f, date)), 'Couldn’t log that.')}
       onTell={text => logged('Athena is looking it up…', () => healthPlanApi.describe(text, date), 'Athena couldn’t look that up.')}
       onPhoto={file => void logged('Athena is looking…', async () => healthPlanApi.scan({ ...(await photoBody(file)), eaten_on: date }), 'Athena couldn’t read that photo.')}
       onManual={openManual} />}

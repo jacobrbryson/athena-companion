@@ -3,64 +3,23 @@ import type { CalendarEvent, FamilyChild, FamilyHealthStatus, GroceryList } from
 import { actionsApi } from '../api/companion';
 import type { ApiError } from '../api/client';
 import { Icon } from './HealthPage';
-import { AREA, SPORTS, areaOf, clock, iconOf, zonedDay } from './CalendarPage';
+import { AREA, areaOf, clock, iconOf, zonedDay } from './CalendarPage';
 import type { RosterRow } from './familyRoster';
-import { formatBrokerageMoney } from '../api/finance';
-import { useBrokerage } from './useBrokerage';
-import { Stat } from './SectionMetric';
-import { PageHeader } from './PageHeader';
 import './health.css';
 import './calendar.css';
 import './family.css';
 
 /**
- * The Family page (redesigned 2026-10-14 from the owner's concept): a hero
- * with Athena's take on the family's week, four numbers, today's chores and
- * the family's day, the people as cards, what's coming up, then kids, pets
- * and birthdays. The editable memory list opens in a drawer (Dashboard.tsx).
- *
- * Athena's take is written here, in code, from what's on the page — never by
- * a model — so it can only say what the calendar, the health reports and the
- * birthdays already say.
+ * The Family page (reworked 2026-11-18 from the owner's concept): the family
+ * tabs, a compact head with today's three numbers (events, chores, health
+ * alerts), the family's day beside the chores, the people beside what's coming
+ * up, then Provisions, pets and birthdays. The grocery list moved to its own
+ * Provisions tab (FamilyProvisions.tsx). The editable memory list opens in a
+ * drawer (Dashboard.tsx).
  */
 
 type Chore = { id?: string | null; title: string; completed: boolean; status: string | null; dueDate: string | null };
 
-/**
- * The family's shared Google Keep grocery list (2026-10-18), full width under
- * the grid. Read-only: Keep stays where things get added and ticked. It shows
- * what the family is out of; the ticked regulars are only counted — on a list
- * kept since 2018 there are hundreds, and they are what Athena plans meals
- * from, not something to read through here.
- */
-function GroceriesPanel({ lists, url, note, onAsk }: { lists: GroceryList[]; url?: string | null; note: ReactNode; onAsk: (text: string) => void }) {
-  const outOf = lists.flatMap(l => l.toBuy);
-  const usual = lists.reduce((n, l) => n + l.usualCount, 0);
-  const title = lists.length === 1 ? lists[0].title : '';
-  return <section className="hp-panel fp-groceries">
-    <header><h2>Grocery list <span>{title}</span></h2>{url && !note
-      ? <a className="hp-link" href={url} target="_blank" rel="noopener noreferrer">Open in Keep <Icon name="arrowRight" /></a>
-      : <span>Google Keep</span>}</header>
-    {note ? note
-      : !lists.length ? <div className="fp-empty-hero">
-        <strong>No grocery list shared yet</strong>
-        <p>Share your Google Keep grocery list with Athena and it shows up here.</p>
-        <button type="button" className="cp-outline" onClick={() => onAsk('How do I share our Google Keep grocery list with you?')}>Ask Athena how <Icon name="arrowRight" /></button>
-      </div>
-        : <div className="fp-groceries-body">
-          <div>
-            <small className="fp-groceries-label">{outOf.length ? `Out of ${outOf.length === 1 ? '1 thing' : `${outOf.length} things`}` : 'Nothing on the list'}</small>
-            {outOf.length ? <ul className="fp-groceries-items">{outOf.slice(0, 24).map((item, i) => <li key={`${item}-${i}`}>{item}</li>)}
-              {outOf.length > 24 && <li className="fp-groceries-more">+{outOf.length - 24} more</li>}</ul>
-              : <p className="hp-empty">You’re stocked up — nothing waiting to be bought.</p>}
-          </div>
-          <div className="fp-groceries-side">
-            {usual > 0 && <p><strong>{usual}</strong> regulars on the list — Athena plans meals around what you usually buy.</p>}
-            <button type="button" className="cp-outline" onClick={() => onAsk('What can we make for dinner tonight with what we usually have? Keep it easy.')}>What can we make tonight? <Icon name="arrowRight" /></button>
-          </div>
-        </div>}
-  </section>;
-}
 interface Props {
   tabs?: ReactNode;
   roster: RosterRow[];
@@ -80,23 +39,22 @@ interface Props {
   choresNote: ReactNode;
   /** Why the calendar can't be read; null when it can. */
   calendarNote: ReactNode;
-  /** Shared Google Keep food lists (connectors/googleKeep). */
+  /** Shared Google Keep food lists (connectors/googleKeep), summed up on the Provisions card. */
   groceries: GroceryList[];
-  groceriesUrl?: string | null;
-  /** Why the list can't be read, with its fix; null when it can. */
+  /** Why the list can't be read; the card then just says so. */
   groceriesNote: ReactNode;
   health: { label: string; tone: string; note: string };
   sick: FamilyHealthStatus[];
   onAsk: (text: string) => void;
   onCalendar: () => void;
-  onFinance: () => void;
+  /** Family → Provisions, where the grocery list lives now. */
+  onProvisions: () => void;
   /** Open the editable family memories drawer. */
   onDetails: () => void;
   onMember: (row: RosterRow) => void;
 }
 
 const CORE = /^(spouse|wife|husband|partner|son|daughter|child|pet)$/i;
-const KIDS = /^(son|daughter|child)$/i;
 const DAY = 86400000;
 const monthDay = (d: Date) => ({ mon: d.toLocaleDateString(undefined, { month: 'short' }).toUpperCase(), day: d.getDate() });
 const firstWord = (name: string) => name.trim().split(/\s+/)[0].toLowerCase();
@@ -107,10 +65,6 @@ function ageOf(birthday: string | null, now: number) {
   const d = new Date(now), age = d.getFullYear() - Number(m[1]) - (d.getMonth() + 1 < Number(m[2]) || (d.getMonth() + 1 === Number(m[2]) && d.getDate() < Number(m[3])) ? 1 : 0);
   return age >= 0 && age < 120 ? age : null;
 }
-function joinWords(words: string[]) {
-  return words.length <= 1 ? words.join('') : `${words.slice(0, -1).join(', ')} and ${words[words.length - 1]}`;
-}
-
 /** How long the snackbar (and its Undo) stays up before a ticked chore leaves the list. */
 const SNACK_MS = 6000;
 type Snack = { id: string; title: string; kind: 'done' | 'undone' | 'error'; text: string; reconnect?: boolean };
@@ -231,8 +185,27 @@ function Avatar({ name, photoUrl, size }: { name: string; photoUrl?: string | nu
   </span>;
 }
 
-export function FamilyOverview({ tabs, roster, children, events, timeZone, now, chores: choresIn, household, choresUrl, canCompleteChores, choresReconnectUrl, choresNote, calendarNote, groceries, groceriesUrl, groceriesNote, health, sick, onAsk, onCalendar, onFinance, onDetails, onMember }: Props) {
-  const brokerage = useBrokerage();
+
+/** A panel's head in the concept: a round icon, the title (and a line under it), its link. */
+function PanelHead({ icon, tone, title, sub, children }: { icon: string; tone: string; title: ReactNode; sub?: ReactNode; children?: ReactNode }) {
+  return <header className="fp-panel-head">
+    <span className={`hp-badge hp-badge-lg ${tone}`}><Icon name={icon} /></span>
+    <div className="fp-titles"><h2>{title}</h2>{sub && <small>{sub}</small>}</div>
+    {children}
+  </header>;
+}
+
+/** Pet chores get a paw, garden chores a sprout, the rest the house. */
+const choreIcon = (title: string) => /(walk|feed|dog|cat|pet|litter|vet)/i.test(title) ? 'paw' : /water|plant|herb|garden|flower|hibiscus|lawn|mow|weed|seed|prune/i.test(title) ? 'sprout' : 'home';
+const due = (date: string) => new Date(`${date}T00:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+function lengthOf(e: CalendarEvent) {
+  const min = Math.round((Date.parse(e.end) - Date.parse(e.start)) / 60000);
+  if (!(min > 0) || min >= 12 * 60) return null;
+  const h = Math.floor(min / 60), m = min % 60;
+  return [h ? `${h} hr` : '', m ? `${m} min` : ''].filter(Boolean).join(' ');
+}
+
+export function FamilyOverview({ tabs, roster, children, events, timeZone, now, chores: choresIn, household, choresUrl, canCompleteChores, choresReconnectUrl, choresNote, calendarNote, groceries, groceriesNote, health, sick, onAsk, onCalendar, onProvisions, onDetails, onMember }: Props) {
   const ticks = useChoreTicks(choresIn);
   const chores = ticks.live;
   const today = zonedDay(new Date(now), timeZone);
@@ -240,29 +213,13 @@ export function FamilyOverview({ tabs, roster, children, events, timeZone, now, 
   const namesPattern = names.length ? new RegExp(`\\b(${names.map(firstWord).filter(w => w.length > 2).join('|')})\\b`, 'i') : null;
   const timed = (e: CalendarEvent) => !e.allDay;
   const dayOf = (e: CalendarEvent) => (e.allDay ? e.start.slice(0, 10) : zonedDay(new Date(e.start), timeZone));
-  const withArea = events.map(e => ({ e, area: areaOf(e, namesPattern) }));
-  const family = withArea.filter(r => r.area !== 'work');
-  const todayRows = withArea.filter(r => dayOf(r.e) === today).sort((a, b) => Number(b.e.allDay) - Number(a.e.allDay) || a.e.start.localeCompare(b.e.start));
-  const nextFamily = family.filter(r => timed(r.e) && Date.parse(r.e.end) > now).sort((a, b) => a.e.start.localeCompare(b.e.start))[0];
+  const family = events.map(e => ({ e, area: areaOf(e, namesPattern) })).filter(r => r.area !== 'work');
+  const todayRows = family.filter(r => dayOf(r.e) === today).sort((a, b) => Number(b.e.allDay) - Number(a.e.allDay) || a.e.start.localeCompare(b.e.start));
+  // The one to look at: what's on now, or next today.
+  const current = todayRows.find(r => timed(r.e) && Date.parse(r.e.end) > now);
   const upcoming = family.filter(r => dayOf(r.e) > today).sort((a, b) => a.e.start.localeCompare(b.e.start));
   const choresDone = chores.filter(c => c.completed).length;
-
-  // --- Athena's take: only what the page already shows ----------------------
-  const activities = [...new Set(family.flatMap(r => (r.e.title.match(new RegExp(SPORTS.source, 'gi')) || []).map(w => w.toLowerCase())).filter(w => !/^(practice|game|race)$/.test(w)))];
-  const school = family.some(r => /\bschool\b/i.test(r.e.title));
-  const busy = [...activities, ...(school ? ['school'] : [])].slice(0, 3).map(w => w.replace(/^(\d+)k$/, '$1K'));
-  const clash = (() => {
-    const list = family.filter(r => timed(r.e)).sort((a, b) => a.e.start.localeCompare(b.e.start));
-    for (let i = 1; i < list.length; i++) if (Date.parse(list[i].e.start) < Date.parse(list[i - 1].e.end)) return [list[i - 1].e, list[i].e];
-    return null;
-  })();
-  const birthdaySoon = roster.filter(r => r.birthday != null && r.birthday <= 14).sort((a, b) => a.birthday! - b.birthday!)[0];
-  const take = [
-    family.length ? `${family.length} family thing${family.length === 1 ? '' : 's'} on the calendar this week${busy.length ? ` — ${joinWords(busy)}` : ''}.` : 'A quiet week on the family calendar.',
-    sick.length ? `${joinWords(sick.map(s => s.personName))} ${sick.length === 1 ? 'is' : 'are'} under the weather.` : 'No one’s reported unwell.',
-    birthdaySoon ? `${birthdaySoon.name}’s birthday is ${birthdaySoon.birthday === 0 ? 'today' : birthdaySoon.birthday === 1 ? 'tomorrow' : `in ${birthdaySoon.birthday} days`}.` : null,
-    clash ? `${clash[0].title} and ${clash[1].title} overlap on ${new Date(clash[1].start).toLocaleDateString(undefined, { timeZone, weekday: 'long' })}.` : family.length ? 'No clashes that I can see.' : null,
-  ].filter(Boolean) as string[];
+  const choresOpen = chores.length - choresDone;
 
   // --- People ---------------------------------------------------------------
   const isCore = (r: RosterRow) => CORE.test(r.relation || '') || children.some(c => firstWord(c.name) === firstWord(r.name));
@@ -270,7 +227,6 @@ export function FamilyOverview({ tabs, roster, children, events, timeZone, now, 
   const big = (core.length ? core : roster).slice(0, 4);
   const rest = roster.filter(r => !big.includes(r));
   const kidOf = (r: RosterRow) => children.find(c => firstWord(c.name) === firstWord(r.name));
-  const tagsOf = (name: string) => [...new Set(events.filter(e => mentions(e.title, name)).flatMap(e => (e.title.match(new RegExp(SPORTS.source, 'gi')) || [])).map(w => w.toLowerCase()).filter(w => !/^(practice|game|race)$/.test(w)))].map(w => w[0].toUpperCase() + w.slice(1));
   const todayFor = (name: string) => todayRows.find(r => !r.e.allDay && mentions(r.e.title, name));
   const lineOf = (r: RosterRow) => {
     const kid = kidOf(r);
@@ -289,7 +245,6 @@ export function FamilyOverview({ tabs, roster, children, events, timeZone, now, 
   };
   const press = (r: RosterRow) => onMember(r);
 
-  const kids = roster.filter(r => KIDS.test(r.relation || '') || kidOf(r));
   const pets = roster.filter(r => r.isPet || r.relation === 'Pet');
   // Birthdays: remembered people with a known date, then calendar events that are birthdays.
   const birthdays = [
@@ -300,37 +255,59 @@ export function FamilyOverview({ tabs, roster, children, events, timeZone, now, 
   ].sort((a, b) => a.at.getTime() - b.at.getTime());
 
   const tone = (area: keyof typeof AREA) => ({ '--cp-tone': AREA[area].color } as CSSProperties);
-  const portfolio = brokerage.data?.status === 'ready' ? brokerage.data : null;
-  const financeNote = portfolio
-    ? portfolio.totals ? `${portfolio.accounts.length} Webull account${portfolio.accounts.length === 1 ? '' : 's'} · read-only`
-      : portfolio.accounts.length ? 'Accounts use different currencies' : 'No Webull accounts listed'
-    : brokerage.loading ? 'Reading Webull'
-      : brokerage.data?.status === 'needs_reauth' ? 'Webull needs relinking'
-        : brokerage.data?.status === 'not_connected' ? 'Webull not linked' : 'Webull unavailable';
+  const outOf = groceries.flatMap(l => l.toBuy);
+  const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? '' : 's'}`;
 
   return <div className="hp cp fp">
-    <PageHeader eyebrow="THE PEOPLE IN YOUR CORNER" title="Family" blurb="People, plans, chores, and the moments that matter most."
-      backdrop="/assets/family.png" backdropBeside
-      take={{ lines: [take.join(' ')], ask: 'Help me think about my family this week — what should I be paying attention to?', onAsk }} />
-
     {tabs}
 
-    <section className="stat-row family-metrics" aria-label="Your family at a glance">
-      <Stat label="People remembered" value={roster.length} note="from your memories" icon="Family" onClick={onDetails} />
-      <Stat label="Chores today" value={chores.length ? `${choresDone}/${chores.length}` : '—'}
-        note={choresNote ? 'Family Chores unavailable' : chores.length ? (choresDone === chores.length ? 'All done' : `${chores.length - choresDone} still open`) : 'Nothing for today'} icon="Completed" tone={chores.length && choresDone === chores.length ? 'good' : undefined} />
-      <Stat label="Next family event" value={nextFamily ? clock(nextFamily.e.start, timeZone) : '—'}
-        note={nextFamily ? `${nextFamily.e.title}${dayOf(nextFamily.e) !== today ? ` · ${new Date(nextFamily.e.start).toLocaleDateString(undefined, { timeZone, weekday: 'short' })}` : ''}` : calendarNote ? 'Calendar unavailable' : 'Nothing coming up'} icon="Calendar" onClick={onCalendar} nowrap />
-      <Stat label="Family health" value={health.label} note={health.note} icon="Home"
-        tone={health.tone === 'good' ? 'good' : health.tone === 'ok' ? 'ok' : health.tone === 'low' ? 'low' : health.tone === 'alert' ? 'alert' : 'idle'} onClick={onDetails} />
-      <Stat label="Portfolio value" value={formatBrokerageMoney(portfolio?.totals?.net_value, portfolio?.totals?.currency || 'USD')} note={financeNote} icon="Finance" onClick={onFinance} />
+    <section className="hp-panel fp-top" aria-label="Your family today">
+      <div className="fp-top-title">
+        <span className="hp-badge fp-top-badge hp-green"><Icon name="people" /></span>
+        <div><h1>Family</h1><p>People · Plans · Home · Care</p></div>
+      </div>
+      <button type="button" className="fp-top-stat" onClick={onCalendar}>
+        <span className="hp-badge hp-badge-lg hp-blue"><Icon name="calendar" /></span>
+        <span><strong>{calendarNote ? 'Calendar' : `${plural(todayRows.length, 'Event')} Today`}</strong>
+          <small>{calendarNote ? 'Unavailable' : current ? `${current.e.title} • ${clock(current.e.start, timeZone)}` : todayRows.length ? 'All done for today' : 'Nothing on the calendar'}</small></span>
+      </button>
+      <a className="fp-top-stat" href={choresUrl || undefined} target="_blank" rel="noopener noreferrer" aria-disabled={!choresUrl || undefined}>
+        <span className="hp-badge hp-badge-lg hp-green"><Icon name="check" /></span>
+        <span><strong>{choresNote ? 'Chores' : `${choresDone} / ${chores.length} Chores`}</strong>
+          <small>{choresNote ? 'Family Chores unavailable' : !chores.length ? 'Nothing for today' : choresOpen ? `${choresOpen} still open` : 'All done'}</small></span>
+      </a>
+      <button type="button" className="fp-top-stat" onClick={onDetails}>
+        <span className={`hp-badge hp-badge-lg ${sick.length ? 'hp-red' : 'hp-green'}`}><Icon name="heart" /></span>
+        <span><strong>{plural(sick.length, 'Alert')}</strong>
+          <small>{sick.length ? 'Health watch' : health.note || 'Everyone’s well'}</small></span>
+      </button>
     </section>
 
-    <div className="fp-grid">
+    <div className="fp-row fp-row-1">
+      <section className="hp-panel fp-today">
+        <PanelHead icon="calendar" tone="hp-blue" title="Family Today" sub="Today’s plan for the family">
+          <button type="button" className="hp-link" onClick={onCalendar}>View calendar <Icon name="arrowRight" /></button>
+        </PanelHead>
+        {calendarNote ? calendarNote
+          : !todayRows.length ? <p className="hp-empty">Nothing on the family calendar today.</p>
+            : <><ol className="fp-timeline">{todayRows.slice(0, 6).map(({ e, area }, i) => {
+              const length = timed(e) ? lengthOf(e) : null;
+              const sub = [e.location, length].filter(Boolean).join(' • ');
+              const cls = [current?.e === e ? 'fp-now' : '', timed(e) && Date.parse(e.end) <= now ? 'cp-past' : ''].filter(Boolean).join(' ');
+              return <li key={`${e.id}-${i}`} style={tone(area)} className={cls || undefined}>
+                <time>{e.allDay ? 'All day' : clock(e.start, timeZone)}</time>
+                <i className="fp-dot" aria-hidden="true" />
+                <Icon name={iconOf(e, area)} />
+                <div><strong>{e.title}</strong>{sub && <small>{sub}</small>}</div>
+              </li>;
+            })}</ol>
+              <button type="button" className="cp-outline fp-wide" onClick={onCalendar}><Icon name="calendar" /> View full day ({plural(todayRows.length, 'event')}) <Icon name="arrowRight" /></button></>}
+      </section>
+
       <section className="hp-panel fp-chores">
-        <header><h2>Chores <span>{household || ''}</span></h2>{choresUrl
-          ? <a className="hp-link" href={choresUrl} target="_blank" rel="noopener noreferrer">View all <Icon name="arrowRight" /></a>
-          : <span>Today</span>}</header>
+        <PanelHead icon="check" tone="hp-green" title="Chores" sub={household || undefined}>
+          {choresUrl && <a className="hp-link" href={choresUrl} target="_blank" rel="noopener noreferrer">View all <Icon name="arrowRight" /></a>}
+        </PanelHead>
         {choresNote ? choresNote
           : !chores.length ? <div className="fp-empty-hero">
             <Icon name="check" className="fp-empty-icon" />
@@ -338,7 +315,7 @@ export function FamilyOverview({ tabs, roster, children, events, timeZone, now, 
             <p>Enjoy the day. Chores set in Family Chores show up here.</p>
           </div>
             : <>
-              <div className="hp-bar"><i style={{ width: `${(choresDone / chores.length) * 100}%` }} /></div>
+              <div className="fp-progress"><span>{choresDone} of {chores.length} complete</span><div className="hp-bar"><i style={{ width: `${(choresDone / chores.length) * 100}%` }} /></div></div>
               {!canCompleteChores && choresReconnectUrl && choresDone < chores.length && <p className="fp-chore-reconnect">
                 To tick chores off here, <a href={choresReconnectUrl} target="_blank" rel="noopener noreferrer">reconnect Athena in Family Chores</a>. The current link can only read.
               </p>}
@@ -346,31 +323,27 @@ export function FamilyOverview({ tabs, roster, children, events, timeZone, now, 
                 : <ul className="fp-chore-list">{ticks.listed.map((c, i) => {
                   const leaving = !!(c.id && ticks.lingering[c.id] === 'leaving');
                   const busy = !!(c.id && ticks.busy[c.id]);
+                  const icon = choreIcon(c.title);
                   return <li key={c.id || i} className={[c.completed ? 'fp-done' : '', leaving ? 'fp-leaving' : ''].filter(Boolean).join(' ') || undefined}>
                     {canCompleteChores && c.id
                       ? <button type="button" role="checkbox" aria-checked={c.completed} aria-label={`Mark “${c.title}” done`} disabled={c.completed || busy}
                         className={`fp-check fp-check-btn${c.completed ? ' fp-on' : ''}`} onClick={() => ticks.tick(c)}>{c.completed && <Icon name="check" />}</button>
                       : <span className={`fp-check${c.completed ? ' fp-on' : ''}`} aria-hidden="true">{c.completed && <Icon name="check" />}</span>}
-                    <div><strong>{c.title}</strong><small>{c.completed ? 'Completed' : c.status || 'Open'}{c.dueDate ? ` · due ${new Date(`${c.dueDate}T00:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}` : ''}</small></div>
+                    <Icon name={icon} className={`fp-chore-icon fp-chore-${icon}`} />
+                    <strong>{c.title}</strong>
+                    <small>{c.completed ? 'Completed' : c.dueDate ? `Due ${due(c.dueDate)}` : c.status || 'Open'}</small>
                   </li>;
                 })}</ul>}
               <ChoreSnackbar snack={ticks.snack} reconnectUrl={choresReconnectUrl} onUndo={ticks.undo} onDismiss={ticks.dismiss} />
             </>}
       </section>
+    </div>
 
-      <section className="hp-panel fp-today">
-        <header><h2>Family Today</h2><button type="button" className="hp-link" onClick={onCalendar}>View calendar <Icon name="arrowRight" /></button></header>
-        {calendarNote ? calendarNote
-          : !todayRows.length ? <p className="hp-empty">Nothing on the calendar today.</p>
-            : <><ul className="fp-day">{todayRows.slice(0, 9).map(({ e, area }, i) => <li key={`${e.id}-${i}`} style={tone(area)} className={timed(e) && Date.parse(e.end) <= now ? 'cp-past' : undefined}>
-              <time>{e.allDay ? 'All day' : clock(e.start, timeZone)}</time>
-              <Icon name={iconOf(e, area)} /><span>{e.title}</span>
-            </li>)}</ul>
-              <button type="button" className="cp-outline fp-wide" onClick={onCalendar}>View full day ({todayRows.length} event{todayRows.length === 1 ? '' : 's'}) <Icon name="arrowRight" /></button></>}
-      </section>
-
+    <div className="fp-row fp-row-2">
       <section className="hp-panel fp-members">
-        <header><h2>Family Members</h2></header>
+        <PanelHead icon="people" tone="hp-blue" title="Family Members">
+          {roster.length > 0 && <button type="button" className="hp-link" onClick={onDetails}>View all ({roster.length}) <Icon name="arrowRight" /></button>}
+        </PanelHead>
         {!roster.length ? <div className="fp-empty-hero"><strong>No one here yet</strong><p>Tell me about your family and I’ll keep them in mind.</p><button type="button" className="cp-outline" onClick={() => onAsk('Let me tell you about my family.')}>Tell Athena <Icon name="arrowRight" /></button></div>
           : <>
             <ul className="fp-cards">{big.map(r => {
@@ -378,8 +351,7 @@ export function FamilyOverview({ tabs, roster, children, events, timeZone, now, 
               return <li key={r.id}><button type="button" onClick={() => press(r)}>
                 <Avatar name={r.name} photoUrl={r.photoUrl} size="lg" />
                 <strong>{r.name}<Icon name="chevron" className="hp-chev" /></strong>
-                <small>{r.relation || 'Family'}</small>
-                <small>{lineOf(r) || ' '}</small>
+                <small>{[r.relation || 'Family', lineOf(r)].filter(Boolean).join(' · ')}</small>
                 <em className={s.tone}><Icon name={s.icon} />{s.text}</em>
               </button></li>;
             })}</ul>
@@ -389,11 +361,12 @@ export function FamilyOverview({ tabs, roster, children, events, timeZone, now, 
               {rest.length > 5 && <li><button type="button" onClick={onDetails}><span className="fp-avatar fp-avatar-sm fp-more"><Icon name="people" /></span><span className="fp-link">+{rest.length - 5} more</span></button></li>}
             </ul>}
           </>}
-        <button type="button" className="fp-memories-link" onClick={onDetails}>Memories <Icon name="arrowRight" /></button>
       </section>
 
       <section className="hp-panel fp-upcoming">
-        <header><h2>Upcoming <span>(Family)</span></h2><button type="button" className="hp-link" onClick={onCalendar}>View all <Icon name="arrowRight" /></button></header>
+        <PanelHead icon="calendar" tone="hp-blue" title={<>Upcoming <span>(Family)</span></>}>
+          <button type="button" className="hp-link" onClick={onCalendar}>View all <Icon name="arrowRight" /></button>
+        </PanelHead>
         {calendarNote ? calendarNote
           : !upcoming.length ? <p className="hp-empty">Nothing else for the family this week.</p>
             : <ul className="fp-dated">{upcoming.slice(0, 4).map(({ e, area }, i) => {
@@ -406,27 +379,24 @@ export function FamilyOverview({ tabs, roster, children, events, timeZone, now, 
             })}</ul>}
         {upcoming.length > 4 && <button type="button" className="cp-outline fp-wide" onClick={onCalendar}>{upcoming.length - 4} more this week <Icon name="arrowRight" /></button>}
       </section>
-
-      <GroceriesPanel lists={groceries} url={groceriesUrl} note={groceriesNote} onAsk={onAsk} />
     </div>
 
-    <div className="cp-bottom">
-      <section className="hp-panel fp-list">
-        <header><h2>Kids</h2></header>
-        {!kids.length ? <p className="hp-empty">No children on file yet.</p>
-          : <ul>{kids.map(r => {
-            const tags = tagsOf(r.name);
-            return <li key={r.id}><button type="button" onClick={() => press(r)}>
-              <Avatar name={r.name} photoUrl={r.photoUrl} size="sm" />
-              <div><strong>{r.name}</strong><small>{lineOf(r) || r.relation}</small></div>
-              <span className="fp-tags">{tags.slice(0, 2).map((t, i) => <i key={t} className={i ? 'fp-tag-alt' : undefined}>{t}</i>)}</span>
-              <Icon name="chevron" className="hp-chev" />
-            </button></li>;
-          })}</ul>}
+    <div className="fp-row fp-row-3">
+      <section className="hp-panel fp-provisions">
+        <PanelHead icon="cart" tone="hp-green" title="Provisions" sub="Groceries · Meals · Supplies" />
+        <div className="fp-provisions-body">
+          {groceriesNote ? <p className="hp-empty">The grocery list can’t be read right now.</p>
+            : !groceries.length ? <p className="hp-empty">No grocery list shared yet.</p>
+              : outOf.length ? <><small className="fp-groceries-label">Out of {outOf.length === 1 ? '1 thing' : `${outOf.length} things`}</small>
+                <ul className="fp-groceries-items">{outOf.slice(0, 6).map((item, i) => <li key={`${item}-${i}`}>{item}</li>)}
+                  {outOf.length > 6 && <li className="fp-groceries-more">+{outOf.length - 6} more</li>}</ul></>
+                : <p className="hp-empty">Stocked up — nothing waiting to be bought.</p>}
+        </div>
+        <button type="button" className="cp-outline fp-wide" onClick={onProvisions}>Open Provisions <Icon name="arrowRight" /></button>
       </section>
 
-      <section className="hp-panel fp-list">
-        <header><h2>Pets</h2></header>
+      <section className="hp-panel fp-list fp-pets">
+        <PanelHead icon="paw" tone="hp-green" title="Pets" />
         {!pets.length ? <p className="hp-empty">No pets on file.</p>
           : <ul>{pets.map(r => {
             const unwell = r.signal.kind === 'sick';
@@ -438,16 +408,17 @@ export function FamilyOverview({ tabs, roster, children, events, timeZone, now, 
           })}</ul>}
       </section>
 
-      <section className="hp-panel fp-list">
-        <header><h2>Birthdays</h2></header>
+      <section className="hp-panel fp-birthdays">
+        <PanelHead icon="cake" tone="fp-badge-pink" title="Birthdays">
+          {birthdays.length > 4 && <button type="button" className="hp-link" onClick={onDetails}>View all <Icon name="arrowRight" /></button>}
+        </PanelHead>
         {!birthdays.length ? <p className="hp-empty">No birthdays on file. Tell me one and I’ll remember it.</p>
-          : <ul className="fp-dated">{birthdays.slice(0, 4).map(b => {
+          : <ul className="fp-bdays">{birthdays.slice(0, 4).map(b => {
             const d = monthDay(b.at);
-            return <li key={b.key}><button type="button" onClick={() => onAsk(b.ask)}>
-              <span className="fp-date"><small>{d.mon}</small>{d.day}</span>
-              <Icon name="cake" className="fp-dated-icon fp-pink" />
-              <div><strong>{b.name}</strong></div>
-              <Icon name="chevron" className="hp-chev" />
+            return <li key={b.key}><button type="button" onClick={() => onAsk(b.ask)} title={`Plan for ${b.name}’s birthday`}>
+              <small>{d.mon}</small><strong>{d.day}</strong>
+              <Icon name="cake" className="fp-pink" />
+              <span>{b.name}</span>
             </button></li>;
           })}</ul>}
       </section>

@@ -12,6 +12,7 @@ import { mockModelLab, mockOutage } from './modelLab';
 import type { NewsSource } from '../src/api/dashboard';
 import { mockProjectsRoute, mockVehicles, mockApplyBill } from './projects';
 import { mockWorkItems } from './workItems';
+import { mockProvisions, mockMealImage } from './provisions';
 import { mockReviewRuns, mockWorkspaceReviews } from './workspaceReviews';
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -1087,7 +1088,12 @@ function mockNutrition(state: MockPlanState, today: string) {
   const totals = (rows: MockPlanState['entries']) => Object.fromEntries(fields.map(f => [f, rows.reduce((n, e) => n + (e[f] || 0), 0)]));
   const favorites = state.favorites || [];
   const todays = state.entries.filter(e => e.eaten_on === today).map(e => ({ source: 'manual', serving: null, barcode: null, ...e, favorite: favorites.find(f => f.label.toLowerCase() === e.label.toLowerCase())?.uuid || null }));
-  return { date: today, favorites, entries: todays, totals: totals(todays), days: Array.from({ length: 7 }, (_, i) => { const date = planAdd(today, i - 6); const rows = state.entries.filter(e => e.eaten_on === date); return { date, logged: rows.length > 0, totals: totals(rows) }; }) };
+  // Recent: the last 25 distinct non-favorite foods, newest first (core_api healthPlan.recentFoods).
+  const seen = new Set(favorites.map(f => f.label.trim().toLowerCase()));
+  const recent = [...state.entries].sort((a, b) => (a.eaten_on === b.eaten_on ? b.created_at.localeCompare(a.created_at) : b.eaten_on.localeCompare(a.eaten_on)))
+    .filter(e => { const k = e.label.trim().toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; }).slice(0, 25)
+    .map(e => ({ uuid: e.uuid, label: e.label, calories: e.calories, protein_g: e.protein_g, carbs_g: e.carbs_g, fat_g: e.fat_g, water_oz: e.water_oz, serving: e.serving || null, barcode: e.barcode || null }));
+  return { date: today, favorites, recent, entries: todays, totals: totals(todays), days: Array.from({ length: 7 }, (_, i) => { const date = planAdd(today, i - 6); const rows = state.entries.filter(e => e.eaten_on === date); return { date, logged: rows.length > 0, totals: totals(rows) }; }) };
 }
 
 /** A cooling week in Troutman with the first frost on the third night, in local time. */
@@ -1150,6 +1156,8 @@ async function route(method: string, path: string, body?: any): Promise<any> {
     if (linkDown()) fail(503, 'mock: API unreachable');
     if (ipDrift) fail(401, 'IP mismatch for provided token.', 'IP_MISMATCH');
   }
+  // Family → Provisions (mock/provisions.ts).
+  { const v = await mockProvisions(method, p, body); if (v !== undefined) return v; }
   if (p === '/api/v1/workouts') return { days: 3650, workouts: mockWorkouts() };
   // Family → Trading: illustrative desk data (mock/trading.ts).
   { const t = mockTrading(method, p); if (t !== undefined) return t; }
@@ -2619,7 +2627,7 @@ export const api = {
   cachedGet: <T>(path: string) => request<T>('GET', path),
   text: (path: string) => request<string>('GET', path),
   // A painted-looking placeholder for the dream picture.
-  blob: async (_path: string) => new Blob([`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1536 1024"><defs><radialGradient id="g" cx="70%" cy="25%" r="80%"><stop offset="0" stop-color="#f3c98b"/><stop offset=".25" stop-color="#6b4fc2"/><stop offset=".7" stop-color="#1a1147"/><stop offset="1" stop-color="#07061a"/></radialGradient></defs><rect width="1536" height="1024" fill="url(#g)"/><g fill="#d9ccff" opacity=".7"><circle cx="200" cy="140" r="3"/><circle cx="420" cy="90" r="2"/><circle cx="1300" cy="200" r="3"/><circle cx="900" cy="60" r="2"/></g><g fill="#2a1f66" stroke="#b9a6ff" stroke-opacity=".5"><rect x="250" y="520" width="220" height="380" rx="8"/><rect x="520" y="460" width="260" height="440" rx="8"/><rect x="830" y="560" width="200" height="340" rx="8"/></g><path d="M0 900 Q 768 800 1536 900 L1536 1024 L0 1024Z" fill="#120c33"/></svg>`], { type: 'image/svg+xml' }),
+  blob: async (_path: string) => _path.includes('/provisions/ideas/') ? mockMealImage(_path) : new Blob([`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1536 1024"><defs><radialGradient id="g" cx="70%" cy="25%" r="80%"><stop offset="0" stop-color="#f3c98b"/><stop offset=".25" stop-color="#6b4fc2"/><stop offset=".7" stop-color="#1a1147"/><stop offset="1" stop-color="#07061a"/></radialGradient></defs><rect width="1536" height="1024" fill="url(#g)"/><g fill="#d9ccff" opacity=".7"><circle cx="200" cy="140" r="3"/><circle cx="420" cy="90" r="2"/><circle cx="1300" cy="200" r="3"/><circle cx="900" cy="60" r="2"/></g><g fill="#2a1f66" stroke="#b9a6ff" stroke-opacity=".5"><rect x="250" y="520" width="220" height="380" rx="8"/><rect x="520" y="460" width="260" height="440" rx="8"/><rect x="830" y="560" width="200" height="340" rx="8"/></g><path d="M0 900 Q 768 800 1536 900 L1536 1024 L0 1024Z" fill="#120c33"/></svg>`], { type: 'image/svg+xml' }),
   post: <T>(path: string, data?: unknown) => request<T>('POST', path, data),
   put: <T>(path: string, data?: unknown) => request<T>('PUT', path, data),
   patch: <T>(path: string, data?: unknown) => request<T>('PATCH', path, data),

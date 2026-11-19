@@ -50,6 +50,8 @@ export interface NutritionDay {
   /** Seven days ending today, oldest first. */
   days: { date: string; logged: boolean; totals: NutritionTotals }[];
   favorites?: NutritionFavorite[];
+  /** The last 25 distinct foods logged that aren't starred, newest first (uuid = the latest entry's). */
+  recent?: NutritionFavorite[];
 }
 export interface ScanResult { entry: NutritionEntry; how: 'barcode' | 'photo' | 'described'; note: string; nutrition: NutritionDay }
 export interface HealthPlan { program: TrainingProgram | null; targets: NutritionTargets | null; nutrition: NutritionDay | null }

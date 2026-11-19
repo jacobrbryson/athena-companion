@@ -48,6 +48,11 @@ const DRAWN: Record<string, { tone: Tone; art: ReactNode }> = {
   SystemCalendar: { tone: 'blue', art: <><rect x="4" y="5" width="16" height="15" rx="2" /><path d="M4 10h16M8.5 3v4M15.5 3v4M10 15h4M12 13v4" /></> },
   SystemProjects: { tone: 'blue', art: <><rect x="4" y="4" width="16" height="16" rx="2" /><path d="m8 12 3 3 5-6" /></> },
   SystemNews: { tone: 'blue', art: <><path d="M6 3.5h8.5L19 8v12.5H6Z" /><path d="M14 3.5V8h5M9 12h7M9 15.5h7M9 8.5h3" /></> },
+  // Family → Provisions: a shopping cart.
+  Provisions: { tone: 'blue', art: <><path d="M3 4h2.5l2.2 10.5h10.6L20.5 7.5H6.4" /><circle cx="9" cy="19" r="1.4" /><circle cx="17" cy="19" r="1.4" /></> },
+  // Provisions' metric tiles: the pantry (a storage box) and meal ideas (a chef's hat).
+  Pantry: { tone: 'blue', art: <><rect x="3.5" y="7" width="17" height="13" rx="2" /><path d="M3.5 11h17M10 14.5h4M5 7l1.5-3h11L19 7" /></> },
+  Chef: { tone: 'blue', art: <><path d="M7 14.5a4 4 0 0 1-.7-7.9A5 5 0 0 1 15.9 6a4 4 0 0 1 1.1 8.5V20H7v-5.5Z" /><path d="M7 17h10" /></> },
   Finance: { tone: 'blue', art: <path d="M5 20v-6M10 20V9M15 20v-4M20 20V5M3.5 20h17" /> },
   // System → Models: a chip with its pins.
   SystemModels: { tone: 'violet', art: <><rect x="7" y="7" width="10" height="10" rx="2" /><path d="M10 7V4M14 7V4M10 20v-3M14 20v-3M7 10H4M7 14H4M20 10h-3M20 14h-3" /><path className="icon-fill" d="M10.5 10.5h3v3h-3Z" /></> },

@@ -44,6 +44,7 @@ import { PageHeader } from './PageHeader';
 import { CalendarOverview } from './CalendarPage';
 import { FamilyOverview } from './FamilyPage';
 import { FamilyFinance } from './FamilyFinance';
+import { FamilyProvisions } from './FamilyProvisions';
 import { FamilyTrading } from './FamilyTrading';
 import { ResearchPage } from './ResearchPage';
 import { GuardiansPage } from './GuardiansPage';
@@ -80,7 +81,7 @@ const FAMILY_CARD_ROWS = 5;
 
 /** Open a console panel; `consentFor` opens Connected apps on that provider's consent prompt. */
 export type OpenPanel = (panel: 'integrations' | 'memory' | 'actions' | 'notifications' | 'knows' | 'photo' | 'devices', options?: { consentFor?: string }) => void;
-export type DashboardSection = 'Dashboard' | 'Property' | 'Today' | 'Calendar' | 'Health' | 'Family' | 'Community' | 'Mail' | 'Work' | 'Projects' | 'News' | 'Dreams' | 'System' | 'Finance' | 'Models' | 'Workouts' | 'FamilyFinance' | 'FamilyTrading' | 'CommunityPlaces' | 'Research' | 'Guardians';
+export type DashboardSection = 'Dashboard' | 'Property' | 'Today' | 'Calendar' | 'Health' | 'Family' | 'Community' | 'Mail' | 'Work' | 'Projects' | 'News' | 'Dreams' | 'System' | 'Finance' | 'Models' | 'Workouts' | 'FamilyProvisions' | 'FamilyFinance' | 'FamilyTrading' | 'CommunityPlaces' | 'Research' | 'Guardians';
 // Icons live in ./icons — one registry, so a drawn icon looks the same in
 // the nav, on its card and in the phone's bottom bar.
 export { DashboardIcon } from './icons';
@@ -96,10 +97,12 @@ export { DashboardIcon } from './icons';
 export const dashboardSections: DashboardSection[] = ['Dashboard', 'Health', 'Family', 'Community', 'Guardians', 'Property', 'Work', 'Research', 'System'];
 /** The nav entry a page lights up: a System tab lights System, a workout lights Health. */
 export const navSectionOf = (section: DashboardSection): DashboardSection =>
-  section === 'Workouts' ? 'Health' : section === 'CommunityPlaces' ? 'Community' : section === 'FamilyFinance' || section === 'FamilyTrading' ? 'Family' : SYSTEM_TAB_IDS.includes(section) ? 'System' : section;
+  section === 'Workouts' ? 'Health' : section === 'CommunityPlaces' ? 'Community' : section === 'FamilyProvisions' || section === 'FamilyFinance' || section === 'FamilyTrading' ? 'Family' : SYSTEM_TAB_IDS.includes(section) ? 'System' : section;
 /** Family's tabs (2026-10-20): the family itself, and the household's money (Webull, read-only). Not System's Finance, which is Athena's own costs. */
 const FAMILY_TABS = [
-  { id: 'Family', label: 'Overview', icon: 'Family' },
+  { id: 'Family', label: 'Family', icon: 'Family' },
+  // Groceries, meals and supplies (2026-11-18): the Keep list moved here off the family page.
+  { id: 'FamilyProvisions', label: 'Provisions', icon: 'Provisions' },
   { id: 'FamilyFinance', label: 'Finance', icon: 'Finance' },
   // Day-trading research desk (2026-10-23): analysis and records only; Athena places no orders.
   { id: 'FamilyTrading', label: 'Trading', icon: 'Finance' },
@@ -1461,12 +1464,12 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
     return <SectionPage ctx={ctx}
       eyebrow="" title="Family" blurb=""
       ask="Help me think about my family — what should I be paying attention to?"
-      hero={<FamilyOverview tabs={familyTabs('Family')} onFinance={go('FamilyFinance')} roster={roster} children={familyPeople?.children || []} events={events} timeZone={timeZone} now={now}
+      hero={<FamilyOverview tabs={familyTabs('Family')} onProvisions={go('FamilyProvisions')} roster={roster} children={familyPeople?.children || []} events={events} timeZone={timeZone} now={now}
         chores={chores} household={summary?.familyChores.data?.name} choresUrl={summary?.familyChores.data?.appUrl}
         canCompleteChores={!!summary?.familyChores.data?.canComplete} choresReconnectUrl={summary?.familyChores.data?.reconnectUrl}
         choresNote={ready(summary?.familyChores) ? null : unavailable('familyChores', 'Family Chores')}
         calendarNote={ready(summary?.calendar) ? null : unavailable('calendar', 'Google Calendar')}
-        groceries={summary?.groceries?.data?.lists || []} groceriesUrl={summary?.groceries?.data?.appUrl}
+        groceries={summary?.groceries?.data?.lists || []}
         groceriesNote={ready(summary?.groceries) ? null : groceriesUnavailable()}
         health={!summary && data.summary.loading ? { label: 'Loading…', tone: 'idle', note: 'Reading health reports' } : health}
         sick={sickFamily} onAsk={onAsk} onCalendar={go('Calendar')} onDetails={toDetails} onMember={setFamilyEdit} />}
@@ -1482,6 +1485,17 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
       {familyEdit && (selectedFact || newFact) && <FamilyPersonEditor key={familyEdit.id} fact={(selectedFact || newFact)!} facts={family} name={familyEdit.name} relation={familyEdit.relation} links={familyPeople?.links || []} photoUrl={familyPeople?.photos?.[familyEdit.id]} isNew={!!newFact} onClose={() => setFamilyEdit(null)} onSaved={retryData} onChange={next => data.setFamilyPeople({ data: next, loading: false, error: null })} onConnect={() => onPanel('integrations')} onHealth={() => { setFamilyHealthEdit({ name: familyEdit.name, watch: sickFamily.find(w => w.uuid === familyEdit.signal.healthUuid) }); setFamilyEdit(null); }} onRemoved={gone => { data.dropFact(gone); retryData(); }} />}
       {familyHealthEdit && <HealthWatchModal personName={familyHealthEdit.name} watch={familyHealthEdit.watch} onClose={() => setFamilyHealthEdit(null)} onSaved={retryData} />}
       {areaStrip('family', 'Family')}
+      {drawers}
+    </SectionPage>;
+  }
+
+  function FamilyProvisionsPage() {
+    return <SectionPage ctx={ctx}
+      eyebrow="" title="Provisions" blurb=""
+      ask="What can we make for dinner tonight with what we usually have? Keep it easy."
+      hero={<FamilyProvisions tabs={familyTabs('FamilyProvisions')} onAsk={onAsk} roster={roster}
+        note={!summary || ready(summary?.groceries) ? null : groceriesUnavailable()} />}
+    >
       {drawers}
     </SectionPage>;
   }
@@ -2128,6 +2142,7 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
     if (section === 'Health') return HealthPage();
     if (section === 'Workouts') return WorkoutsPage();
     if (section === 'Family') return FamilyPage();
+    if (section === 'FamilyProvisions') return FamilyProvisionsPage();
     if (section === 'FamilyFinance') return FamilyFinancePage();
     if (section === 'FamilyTrading') return FamilyTradingPage();
     if (section === 'Community') return CommunityPage();
