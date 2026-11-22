@@ -59,11 +59,27 @@ function coverage() {
   });
 }
 
+// Add item's direct action writes here, so a reload keeps what was added.
+const mockToBuy = ['Ribs from Food Lion', 'Cool ranch doritos', "Children's tylenol", 'Oatmeal'];
+
+export function mockGroceryBought(item: string): boolean {
+  const i = mockToBuy.findIndex(t => t.toLowerCase() === item.toLowerCase());
+  if (i < 0) return false;
+  mockToBuy.splice(i, 1);
+  return true;
+}
+
+export function mockGroceryAdd(item: string): 'ok' | 'dup' {
+  if (mockToBuy.some(t => t.toLowerCase() === item.toLowerCase())) return 'dup';
+  mockToBuy.push(item);
+  return 'ok';
+}
+
 function summary(): Provisions {
   if (localStorage.getItem('mock_keep') === 'off') return { status: 'not_connected', reason: 'Google Keep is not connected' };
   return {
     status: 'ready',
-    grocery: { appUrl: 'https://keep.google.com/', lists: [{ title: 'Groceries', toBuy: ['Ribs from Food Lion', 'Cool ranch doritos', "Children's tylenol", 'Oatmeal'], usualCount: 400, recentlyBought: [{ text: 'Apples', day: ago(1).slice(0, 10) }, { text: 'Bananas', day: ago(6).slice(0, 10) }] }] },
+    grocery: { appUrl: 'https://keep.google.com/', lists: [{ title: 'Groceries', toBuy: [...mockToBuy], usualCount: 400, usuallyBuys: ['Milk', 'Bananas', 'Bread', 'Eggs', 'Butter', 'Apples', 'Strawberries', 'Chicken breasts', 'Cheddar cheese', 'Shredded cheese', 'Coffee', 'Creamer', 'Paper towels', 'Toilet paper', 'Dog food', 'Oatmeal', 'Blueberries', 'Broccoli', 'Bacon', 'Black beans'], recentlyBought: [{ text: 'Apples', day: ago(1).slice(0, 10) }, { text: 'Bananas', day: ago(6).slice(0, 10) }] }] },
     stock: {
       total: 166 + places.reduce((n, p) => n + p.items.length, 0), household: 90, seen: places.reduce((n, p) => n + p.items.length, 0),
       kinds: { proteins: 14, grains: 19, canned: 27, produce: 18, dairy: 34, frozen: 11, snacks: 23, drinks: 20, other: 0, household: 90 },

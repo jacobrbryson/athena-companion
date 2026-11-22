@@ -10,15 +10,10 @@ import type { CutOff } from '../athena/useSpeech';
 import { useSpeech, type PreparedSpeech } from '../athena/useSpeech';
 import { UnityAthena, type AthenaBridge } from '../athena/UnityAthena';
 import { SequenceOverlay } from '../components/SequenceOverlay';
-import { MemoryPanel } from '../components/MemoryPanel';
-import { PhotoMemory } from '../components/PhotoMemory';
-import { CameraPanel } from '../components/CameraPanel';
+import { MemoryPanel, PhotoMemory, CameraPanel, DevicesPanel, ActionsPanel, InitiativePanel, KnowsPanel, warmLazyPages } from '../lazyPages';
 import { useSight, LOOK_BEFORE_SEND_MS } from '../athena/useSight';
 import { BrainPanel, BrainPill, useBrainStatus } from '../components/BrainStatus';
 import { ModelOutageBanner } from '../components/ModelOutageBanner';
-import { DevicesPanel } from '../components/DevicesPanel';
-import { ActionsPanel } from '../components/ActionsPanel';
-import { InitiativePanel } from '../components/InitiativePanel';
 import { EmergencyBanner } from '../components/EmergencyBanner';
 import { SystemBanner } from '../components/SystemBanner';
 import { MiniMap } from '../components/MiniMap';
@@ -28,7 +23,6 @@ import { useActions } from '../athena/useActions';
 import { useDreamQuestions } from '../athena/useDreamQuestions';
 import { useInbox } from '../athena/useInbox';
 import { NotificationsPanel } from '../components/NotificationsPanel';
-import { KnowsPanel } from '../components/KnowsPanel';
 import { LocalServerPanel } from '../components/LocalServerPanel';
 import {
   IntegrationsPanel,
@@ -67,6 +61,8 @@ export function CompanionConsole() {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, profile, arrival, consumeArrival, signOut } = useAuth();
+  // Pages split out of the main bundle (lazyPages) load in the background once Home is up.
+  useEffect(() => warmLazyPages(), []);
   const tts = useSpeech();
   const ttsRef = useRef(tts);
   ttsRef.current = tts;

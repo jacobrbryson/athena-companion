@@ -500,7 +500,14 @@ export const inboxApi = {
   ack: (uuid: string) => api.post<{ cleared: number }>(`/api/v1/dashboard/inbox/${encodeURIComponent(uuid)}/ack`, {}),
   ackAll: () => api.post<{ cleared: number }>('/api/v1/dashboard/inbox/ack-all', {}),
 };
+/** Where the Tasks card's Add task drawer can put a task. Each side fails on its own. */
+export type TaskTargets = {
+  google: { lists: { id: string; title: string }[] } | { error: 'not_connected' | 'unavailable' };
+  /** `read_only`: Jira is linked by Atlassian sign-in, which can't create issues. */
+  jira: { projects: { key: string; name: string }[]; site: string } | { error: 'not_connected' | 'read_only' | 'unavailable' };
+};
 export const dashboardApi = {
+  taskTargets: () => api.get<TaskTargets>('/api/v1/dashboard/task-targets'),
   summary: async () => {
     const value = await api.cachedGet<DashboardSummary>('/api/v1/dashboard');
     if (!value.calendar || !value.jira) throw new Error('Dashboard API needs updating.');

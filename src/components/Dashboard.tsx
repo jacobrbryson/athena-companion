@@ -16,10 +16,11 @@ import { buildFamilyRoster, type RosterRow } from './familyRoster';
 import { FamilyPeopleList } from './FamilyPeople';
 import { FamilyPersonEditor } from './FamilyPersonEditor';
 import { Drawer } from './Drawer';
+import { DoorToDoor, ModelsPage, EmergencyAlertSetup, Workplaces, WorkoutsPanel, FamilyFinance, FamilyProvisions, FamilyTrading, ResearchPage, GuardiansPage, WorkspacePage, PropertySecurity } from '../lazyPages';
 import { HealthWatchModal } from './HealthWatch';
 import { familyHealthSummary } from './familyHealthSummary';
-import { DoorToDoor } from './DoorToDoor';
 import { TasksCardBody, TasksPanel, openJira } from './TasksCard';
+import { AddTaskDrawer } from './AddTaskDrawer';
 import { YourDayCard } from './YourDay';
 import { WorkCard, ProjectsCard } from './WorkProjectsCards';
 import { HealthCard, FamilyCard, type HealthTile } from './HealthFamilyCards';
@@ -32,25 +33,15 @@ import { MailBundles } from './MailBundles';
 import { MailActivity } from './MailActivity';
 import { MailHero } from './MailHero';
 import { DreamCard, DreamsPage, DreamImage, STATUS_LINE, nightLabel } from './Dreams';
-import { ModelsPage } from './ModelsPage';
 import { DashboardIcon } from './icons';
 import { PointsOfInterest, Neighbors, LocalEvents, PlaceReminders, ContactAvatar, eventWhen, isPastEvent } from './Community';
-import { EmergencyAlertSetup } from './EmergencyAlertSetup';
 import { Websites } from './Websites';
-import { Workplaces } from './Workplaces';
-import { WorkoutsPanel } from './Workouts';
 import { HealthOverview, Icon, MACROS, TodayFoodLog } from './HealthPage';
 import { PageHeader } from './PageHeader';
 import { CalendarOverview } from './CalendarPage';
 import { FamilyOverview } from './FamilyPage';
-import { FamilyFinance } from './FamilyFinance';
-import { FamilyProvisions } from './FamilyProvisions';
-import { FamilyTrading } from './FamilyTrading';
-import { ResearchPage } from './ResearchPage';
-import { GuardiansPage } from './GuardiansPage';
 import { CommunityOverview, degrees, skyIcon } from './CommunityPage';
 import { WorkOverview } from './WorkPage';
-import { WorkspacePage } from './WorkspacePage';
 import { WorkItems } from './WorkItems';
 import { SPRINT_STATUS, SprintSummary, useSprint } from './SprintCard';
 import { NavigationLink, DrawerButton } from './ActionControls';
@@ -70,7 +61,6 @@ import { useVehicles, VehicleList, VehicleDrawer, VehicleDetailsDrawer, vehicleP
 import { useTaxes, TaxList } from './PropertyTaxes';
 import { BillScanDrawer } from './BillScan';
 import { useThermostats, ThermostatList } from './PropertyThermostats';
-import { PropertySecurity } from './PropertySecurity';
 import { SystemOverview, SystemTabs, SYSTEM_TAB_IDS, type SystemTab, type SystemTile } from './SystemPage';
 import { HomeHero, HomeChanges, HomeSection, HomeStat, NutritionStat, ShareBar, Spark, useHomeExtras, type HeroNode, type Tone } from './DashboardHome';
 import { freshness, homeUpdates, recoveryChange } from './livingHome';
@@ -835,7 +825,9 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
   };
   const editProject = (uuid: string) => setDrawer({ kind: 'project', uuid });
   const newProject = (area?: Area) => setDrawer({ kind: 'project', uuid: null, area: area ?? 'home' });
-  const drawers = <ProjectsDrawers state={proj} drawer={drawer} setDrawer={setDrawer} />;
+  // The folded Tasks card's Add task (owner, 2026-11-20); Home's Tasks card has its own.
+  const [addingTask, setAddingTask] = useState(false);
+  const drawers = <><ProjectsDrawers state={proj} drawer={drawer} setDrawer={setDrawer} />{addingTask && <AddTaskDrawer onClose={() => setAddingTask(false)} />}</>;
   // A Health project reading the scale draws its plan on the Weight panel (in lb, the panel's unit).
   const weightGoal = (() => {
     const p = openProjects(proj.snap, 'health', { anyArea: true }).find(x => x.bindings?.some(b => b.sourceType === 'health_metric') && x.metric?.target != null);
@@ -1183,7 +1175,7 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
    * Calendar). The title toggles it; the headline opens the page. Wider than a
    * phone the fold has no effect and every card is open, as before.
    */
-  function card(id: string, name: string, title: string, body: ReactNode, action: string, click: () => void, count?: number, headline?: ReactNode) {
+  function card(id: string, name: string, title: string, body: ReactNode, action: string, click: () => void, count?: number, headline?: ReactNode, arrow = '↗') {
     const folded = isCollapsed(id);
     return <article className={`dashboard-card card-${id}${folded ? ' is-collapsed' : ''}`} id={`dashboard-${name.toLowerCase()}`} key={id}>
       <div className="dashboard-card-head">
@@ -1193,7 +1185,7 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
       </div>
       {headline && <button className="dashboard-card-headline" onClick={click} aria-label={`Open ${title}`}>{headline}</button>}
       <div className="dashboard-card-body">{body}</div>
-      <button className="dashboard-card-action" onClick={click}>{action}<span>↗</span></button>
+      <button className="dashboard-card-action" onClick={click}>{action}<span>{arrow}</span></button>
     </article>;
   }
   // The one datum each card leads with when it is folded. Never invented: a
@@ -1229,7 +1221,8 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
   const overdueTasks = openTasks.filter(t => t.due && t.due < taskToday).length + jiraOpen.filter(i => { const d = jiraDay(i); return !!d && d < taskToday; }).length;
   const dueTodayTasks = openTasks.filter(t => t.due === taskToday).length + jiraOpen.filter(i => jiraDay(i) === taskToday).length;
   // The Open tasks tile goes to the Tasks card on this page, or Google Tasks where there's no card.
-  const showTasks = () => { const card = document.getElementById('dashboard-tasks'); if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' }); else openGoogleTasks(); };
+  // The Open tasks tile goes to the Tasks card on this page; nothing links out to Google Tasks (owner, 2026-11-20).
+  const showTasks = () => document.getElementById('dashboard-tasks')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   /** What kind of thing the next event is, for the Next event tile's icon. */
   const eventKind = (e: CalendarEvent): { icon: string; label: string } => {
     if (/\bzoom\b|google meet|meet\.google|\bteams\b|webex|https?:\/\//i.test(e.location || '')) return { icon: 'EventVideo', label: 'Video call' };
@@ -1237,7 +1230,6 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
     if (e.location) return { icon: 'EventPlace', label: e.location };
     return { icon: 'EventBlock', label: 'On your calendar' };
   };
-  const openGoogleTasks = () => { const url = summary?.tasks?.data?.appUrl || 'https://tasks.google.com/'; if (isAndroidCompanion()) void androidCall('openExternal', { url }); else window.open(url, '_blank', 'noopener,noreferrer'); };
   const tasksCardBody = () => !ready(summary?.tasks) ? unavailable('tasks', 'Google Tasks')
     : <>{(summary!.tasks!.data!.unreadableLists || []).length > 0 && <p className="source-note">Couldn’t read {summary!.tasks!.data!.unreadableLists!.join(', ')}</p>}<TasksCardBody tasks={openTasks} total={summary!.tasks!.data!.total} today={taskToday} /></>;
   const headlines: Record<string, ReactNode> = {
@@ -1282,7 +1274,7 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
       {nextLocalEvent && <><p className="source-note">Coming up locally</p><ul className="dashboard-data-list calendar-events"><li><span className="event-dot" /><div><small>{eventWhen(nextLocalEvent)}</small><strong>{nextLocalEvent.title}</strong></div></li></ul></>}
       {community && !community.places.length && onPlaces && <button type="button" className="source-fix" onClick={onPlaces}>Add a point of interest <span>↗</span></button>}
     </>, 'View community', go('Community'), nearbyCalls.length + nearbyWeather.length || undefined, headlines.community),
-    tasks: card('tasks', 'Tasks', 'Tasks', tasksCardBody(), 'Open Google Tasks', openGoogleTasks, summary?.tasks?.data?.total || undefined, headlines.tasks),
+    tasks: card('tasks', 'Tasks', 'Tasks', tasksCardBody(), 'Add task', () => setAddingTask(true), summary?.tasks?.data?.total || undefined, headlines.tasks, '＋'),
     mail: card('mail', 'Mail', 'Mail', mailBody(3), 'Review inbox', go('Mail'), summary?.emailTriage.data?.newCount, headlines.mail),
     work: card('work', 'Work', 'Work', workBody(1), 'View work', go('Work'), undefined, headlines.work),
     news: card('news', 'News', 'News & Updates', newsBody(3), 'View news', go('News'), news.length || undefined, headlines.news),
@@ -1790,7 +1782,7 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
     const contributorsOf = (uuid: string) => proj.snap.links.filter(l => l.relation === 'contributes_to' && l.to === uuid)
       .map(l => proj.snap.projects.find(p => p.uuid === l.from)).filter((p): p is NonNullable<typeof p> => !!p && p.status !== 'dropped');
     return <SectionPage ctx={ctx}
-      eyebrow="HOUSE & LAND" title={property.property?.name || 'Our Property'} backdrop="/assets/e9e9086f-a18a-43d4-8b99-789f10dcc7cf.png"
+      eyebrow="HOUSE & LAND" title={property.property?.name || 'Our Property'} backdrop="/assets/e9e9086f-a18a-43d4-8b99-789f10dcc7cf.webp"
       headerAside={<PropertyWeather address={property.property?.address || ''} />}
       tabs={<PropertyNavigation active={propertyTab} onChange={setPropertyTab} />} tabsPlacement="after-header"
       blurb={property.property?.description || 'The house and the land around it: what needs doing, what’s worrying you, and the rules you decide by.'}
@@ -2031,7 +2023,6 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
     // --- Your Day and Tasks (owner mockup, 2026-11-17) ------------------------
     // The Tasks card is Google Tasks and your open Jira issues together (owner, 2026-11-17).
     const tasksDue = tasksReadable ? overdueTasks + dueTodayTasks : null;
-    const openIssue = (issue: JiraIssue) => { const url = safeHttpsUrl(issue.url); if (!url) return; if (isAndroidCompanion()) void androidCall('openExternal', { url }); else window.open(url, '_blank', 'noopener,noreferrer'); };
     const schedule = <YourDayCard events={events} today={today} dayOf={e => eventDay(e, timeZone)} timeZone={timeZone} now={now}
       sourceNote={ready(summary?.calendar) ? undefined : <SourceNote source={summary?.calendar} name="Google Calendar" fix={fixFor('calendar')} />}
       caption={ready(summary?.calendar) ? `Google Calendar · ${checked('calendar')}` : undefined}
@@ -2039,7 +2030,7 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
       onCalendar={go('Calendar')} onTasks={showTasks} onWeather={go('Community')}
       onRemind={e => onAsk(`Remind me 15 minutes before "${e.title}" (${dateLabel(e.start, { timeZone, weekday: 'short' })} at ${eventTime(e, timeZone)}).`)} />;
     const tasksCard = <TasksPanel tasks={ready(summary?.tasks) ? openTasks : []} total={ready(summary?.tasks) ? summary!.tasks!.data!.total : 0} jira={jiraOpen}
-      today={taskToday} onOpen={openGoogleTasks} onOpenIssue={openIssue} googleReady={ready(summary?.tasks)}
+      today={taskToday} googleReady={ready(summary?.tasks)}
       notes={<>
         {!ready(summary?.tasks) && <SourceNote source={summary?.tasks} name="Google Tasks" fix={fixFor('tasks')} />}
         {ready(summary?.tasks) && (summary!.tasks!.data!.unreadableLists || []).length > 0 && <p className="source-note">Couldn’t read {summary!.tasks!.data!.unreadableLists!.join(', ')}</p>}
@@ -2050,11 +2041,10 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
     // --- Work ---------------------------------------------------------------
     const actionableIssues = issues.filter(i => isInProgress(i) || isReadyToStart(i));
     // Work and Projects (owner mockup, 2026-11-17): the sprint, then the Red team's epics by due date.
-    const openUrl = (raw: string) => { const url = safeHttpsUrl(raw); if (!url) return; if (isAndroidCompanion()) void androidCall('openExternal', { url }); else window.open(url, '_blank', 'noopener,noreferrer'); };
     const work = <WorkCard sprint={workSprint.data} sprintLoading={!workSprint.data && !workSprint.error} today={taskToday}
       issues={ready(summary?.jira) ? [...actionableIssues].sort((x, y) => Number(isInProgress(y)) - Number(isInProgress(x))) : []}
       jiraNote={!ready(summary?.jira) ? <SourceNote source={summary?.jira} name="Jira" fix={fixFor('jira')} /> : undefined}
-      onOpen={go('Work')} onOpenUrl={openUrl}
+      onOpen={go('Work')}
       onOpenSprint={() => workSprint.data && navigate(`${dashboardPath('Work')}/${encodeURIComponent(workSprint.data.workplace.uuid)}`)} />;
     const projects = <ProjectsCard projects={dashProjects} loading={proj.loading} error={!!proj.error} onOpen={go('Projects')}
       onOpenProject={openProject} onNew={() => newProject()} onRetry={proj.reload} />;

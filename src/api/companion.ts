@@ -470,7 +470,9 @@ export const actionsApi = {
    * (complete_chore) or its Undo (undo_complete_chore). Only actions core_api
    * marks direct are accepted; the result is the executed, audited row.
    */
-  perform: (actionId: 'complete_chore' | 'undo_complete_chore' | 'put_project_session_on_calendar' | 'complete_google_task' | 'reopen_google_task', params: { chore_id: string } | { session_uuid: string } | { task_id: string; task_list?: string }) =>
+  perform: (actionId: 'complete_chore' | 'undo_complete_chore' | 'put_project_session_on_calendar' | 'complete_google_task' | 'reopen_google_task' | 'create_google_task' | 'create_jira_issue' | 'add_grocery_item' | 'mark_grocery_bought', params: { chore_id: string } | { item: string } | { session_uuid: string } | { task_id: string; task_list?: string }
+    | { title: string; task_list: string; task_due?: string; task_notes?: string }
+    | { summary: string; project_key: string; task_due?: string; description?: string; in_sprint?: boolean }) =>
     api.post<{ success: true; action: AthenaAction }>(`/api/v1/actions/direct/${actionId}`, { params }),
   revokeAuthority: (actionId: string) =>
     api.del<{ success: true; authorities: ActionAuthority[] }>(

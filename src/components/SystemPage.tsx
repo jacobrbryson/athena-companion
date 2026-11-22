@@ -171,7 +171,7 @@ export function SystemOverview({ tiles, integrations, onTab, onAsk, onPanel, onN
   return <div className="sys">
     <PageHeader eyebrow="SYSTEM OVERVIEW" title="System"
       blurb="Everything at a glance. Athena keeps it all running so you can focus on what matters most."
-      art="/assets/43721b93-7535-4ade-82e0-ed9db90d2f12.png"
+      art="/assets/43721b93-7535-4ade-82e0-ed9db90d2f12.webp"
       controls={<div className="sys-status">
         <i className={`sys-dot sys-dot-${overall.tone}`} />
         <span>{integrations.connected} service{integrations.connected === 1 ? '' : 's'} connected</span>

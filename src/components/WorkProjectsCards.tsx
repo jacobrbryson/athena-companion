@@ -4,6 +4,8 @@ import { AREA_LABEL, STATE_LABEL, type Area, type Project, type ProjectEntry } f
 import { Picture } from './ProjectJournal';
 import { SPRINT_STATUS } from './SprintCard';
 import { CardHeader } from './YourDay';
+import { createPortal } from 'react-dom';
+import { JiraIssueDrawer, type JiraIssueRef } from './JiraIssueDrawer';
 import './dayTasks.css';
 
 /**
@@ -35,11 +37,11 @@ const fmt = (n: number) => (Math.round(n * 10) / 10).toString();
 
 // --- Work --------------------------------------------------------------------
 
-function EpicRow({ epic: e, today, onOpen }: { epic: RedEpic; today: string; onOpen: (url: string) => void }) {
+function EpicRow({ epic: e, today, onOpen }: { epic: RedEpic; today: string; onOpen: (epic: RedEpic) => void }) {
   const late = !!e.due && e.due < today;
   const pct = e.percent;
   const measure = e.by === 'points' ? `${fmt(e.pointsDone)}/${fmt(e.points)} SP` : e.total ? `${e.done}/${e.total} issues` : 'No child issues';
-  return <li><button type="button" className="dt-epic" onClick={() => onOpen(e.url)} title={e.via === 'sprint' ? 'The Red team’s sprint work rolls up to this epic' : 'Marked Red team in Jira'}>
+  return <li><button type="button" className="dt-epic" onClick={() => onOpen(e)} title={e.via === 'sprint' ? 'The Red team’s sprint work rolls up to this epic' : 'Marked Red team in Jira'}>
     <b className="dt-epic-badge">{(e.project || e.key).charAt(0).toUpperCase()}</b>
     <span className="dt-epic-main">
       <span className="dt-epic-title"><code>{e.key}</code><strong>{e.title}</strong></span>
@@ -61,14 +63,16 @@ const EPIC_ERROR: Record<string, string> = {
   unavailable: 'Jira didn’t answer for epics just now.',
 };
 
-export function WorkCard({ sprint, sprintLoading, issues, jiraNote, today, onOpen, onOpenSprint, onOpenUrl }: {
+export function WorkCard({ sprint, sprintLoading, issues, jiraNote, today, onOpen, onOpenSprint }: {
   sprint: WorkspaceSprint | null; sprintLoading: boolean;
   /** Your In Progress / Ready to Start issues — shown only when there are no epics to show. */
   issues: JiraIssue[];
   jiraNote?: ReactNode;
   today: string;
-  onOpen: () => void; onOpenSprint: () => void; onOpenUrl: (url: string) => void;
+  onOpen: () => void; onOpenSprint: () => void;
 }) {
+  // Epics and issues open in the app, read-only (owner, 2026-11-20) — never out to Jira.
+  const [reading, setReading] = useState<JiraIssueRef | null>(null);
   const s = sprint && !sprint.error ? sprint : null;
   const target = s?.target || 64;
   const me = s?.me;
@@ -96,18 +100,19 @@ export function WorkCard({ sprint, sprintLoading, issues, jiraNote, today, onOpe
       {sprintLoading && !sprint && <p className="dashboard-empty">Reading the sprint…</p>}
 
       <h3 className="dt-subhead">{svg(LAYERS)}Active Work <small>Red team epics · by due date</small></h3>
-      {epics?.items.length ? <><ul className="dt-epics">{epics.items.slice(0, 5).map(e => <EpicRow key={e.key} epic={e} today={today} onOpen={onOpenUrl} />)}</ul>
+      {epics?.items.length ? <><ul className="dt-epics">{epics.items.slice(0, 5).map(e => <EpicRow key={e.key} epic={e} today={today} onOpen={setReading} />)}</ul>
         {epics.items.length > 5 && <p className="dt-more-note">+{epics.items.length - 5} more Red team epics</p>}</>
         : <>
           <p className="dt-caption">{epics?.error ? EPIC_ERROR[epics.error] || 'Epics couldn’t be read.' : sprint?.error === 'not_connected' ? EPIC_ERROR.not_connected : epics ? 'No open epics for the Red team in Jira.' : sprintLoading ? 'Reading epics…' : 'Epics aren’t available yet.'}</p>
           {jiraNote}
-          {issues.length > 0 && <ul className="dt-epics">{issues.slice(0, 3).map(i => <li key={`${i.site}-${i.key}`}><button type="button" className="dt-epic" onClick={() => onOpenUrl(i.url)}>
+          {issues.length > 0 && <ul className="dt-epics">{issues.slice(0, 3).map(i => <li key={`${i.site}-${i.key}`}><button type="button" className="dt-epic" onClick={() => setReading(i)}>
             <b className="dt-epic-badge">{i.project.charAt(0)}</b>
             <span className="dt-epic-main"><span className="dt-epic-title"><code>{i.key}</code><strong>{i.title}</strong></span><small className="dt-epic-status-active">{i.status}</small></span>
             <span />{svg(CHEVRON, 'dt-chevron')}
           </button></li>)}</ul>}
         </>}
     </div>
+    {reading && createPortal(<JiraIssueDrawer issue={reading} onClose={() => setReading(null)} />, document.body)}
   </section>;
 }
 

@@ -188,7 +188,7 @@ export function WorkspacePage(props: Props) {
     </div>
     <PageHeader eyebrow="WORKSPACE" title={<>{space.name}<DrawerButton className="wsd-edit" title="Edit workspace" aria-label={`Edit ${space.name}`} onClick={() => { setReturnTo(null); setDrawer({ kind: 'keys' }); }}><Icon name="pencil" /></DrawerButton></>}
       blurb={<>{space.role}{space.role && space.domain && <span className="wsd-separator">·</span>}{space.domain && <a href={`https://${space.domain}`} target="_blank" rel="noopener noreferrer">{space.domain}</a>}</>}
-      backdrop="/assets/9305d092-84c7-431d-a55d-ebd4de02c079.png"
+      backdrop="/assets/9305d092-84c7-431d-a55d-ebd4de02c079.webp"
       aside={/vivacity/i.test(`${space.name} ${space.domain}`) ? <div className="wsd-business">
         {[['people', '5,321', 'Customers'], ['barcode', '2.9M', 'Devices'], ['cloud', '1.6M', 'Google Synced'], ['task', '248K', 'Repair Tickets']].map(([icon, value, label]) => <div key={label}><Icon name={icon} /><span><strong>{value}</strong><small>{label}</small></span></div>)}
         <button type="button" onClick={() => setTab('monitoring')}><i className="wp-live" /> All Systems Operational <Icon name="chevron" /></button><small className="wsd-preview">Preview data</small>

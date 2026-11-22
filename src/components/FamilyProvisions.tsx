@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { provisionsApi, type MealIdea, type MealKind, type Provisions, type StockKind } from '../api/provisions';
-import { memoryApi } from '../api/companion';
+import { actionsApi, memoryApi } from '../api/companion';
+import { GroceryAddField } from './GroceryAddField';
 import { Icon, Ring } from './HealthPage';
 import { PageHeader } from './PageHeader';
 import { HomeStat } from './DashboardHome';
@@ -19,8 +20,9 @@ import './provisions.css';
  * services/provisions). What the family "has" is what they usually buy minus
  * what's on the list; Keep can't see the kitchen, and the page says so.
  *
- * Changing the list goes through Athena: ticking or adding an item asks her,
- * and she proposes it on an approval card (update_grocery_list). Meal ideas
+ * Ticking or adding an item writes straight to Keep (direct actions
+ * mark_grocery_bought / add_grocery_item — the click is the approval), shown
+ * at once with a Saving… → Saved pill; asking Athena still uses her card. Meal ideas
  * are hers; whether you have their ingredients is worked out in code.
  */
 
@@ -100,7 +102,16 @@ export function FamilyProvisions({ tabs, roster, note, onAsk }: {
   const [meal, setMeal] = useState<MealKind | 'any'>('dinner');
   const [writing, setWriting] = useState(false);
   const [writeError, setWriteError] = useState<string | null>(null);
-  const [adding, setAdding] = useState('');
+  // Add item and the checkbox write straight to Keep (owner, 2026-11-20): the click is the
+  // approval. An add shows at once and saves behind a per-row "Saving…" → 3 s "Saved" pill
+  // (owner: "make it look like it adds right away"); a failure puts the row back.
+  const [saving, setSaving] = useState<Record<string, 'saving' | 'saved'>>({});
+  const [addNote, setAddNote] = useState<{ ok: boolean; text: string; undo?: string } | null>(null);
+  // A tick strikes the row through in place over 1.5 s, like Home's Tasks card (owner,
+  // 2026-11-21); it leaves once both the strike and Keep's save are done.
+  const [striking, setStriking] = useState<Record<string, boolean>>({});
+  const timers = useRef<Record<string, number>>({});
+  useEffect(() => () => Object.values(timers.current).forEach(t => window.clearTimeout(t)), []);
   const [kind, setKind] = useState<StockKind | null>(null);
   const [allRestock, setAllRestock] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
@@ -137,13 +148,83 @@ export function FamilyProvisions({ tabs, roster, note, onAsk }: {
     patch(d => ({ ...d, ideas: d.ideas.map(x => (x.uuid === i.uuid ? { ...x, saved: on, tags: { ...x.tags, favorite: on || x.lovedBy.length > 0 } } : x)) }));
     try { await provisionsApi.save(i.uuid, on); } catch { patch(d => ({ ...d, ideas: d.ideas.map(x => (x.uuid === i.uuid ? i : x)) })); }
   }
-  function add(e: FormEvent) {
-    e.preventDefault();
-    const item = adding.trim();
-    if (!item) return;
-    onAsk(`Add "${item}" to the grocery list.`);
-    setAdding('');
+  const lc = (s: string) => s.toLowerCase().trim();
+  const mark = (item: string, state: 'saving' | 'saved' | null) => {
+    const k = lc(item);
+    window.clearTimeout(timers.current[k]);
+    setSaving(m => { const n = { ...m }; if (state) n[k] = state; else delete n[k]; return n; });
+    if (state === 'saved') timers.current[k] = window.setTimeout(() => mark(item, null), 3000);
+  };
+  const setToBuy = (fn: (toBuy: string[]) => string[]) =>
+    patch(d => ({ ...d, grocery: { ...d.grocery, lists: d.grocery.lists.map((l, i) => (i === 0 ? { ...l, toBuy: fn(l.toBuy) } : l)) } }));
+  const dropFromList = (item: string) =>
+    patch(d => ({ ...d, grocery: { ...d.grocery, lists: d.grocery.lists.map(l => ({ ...l, toBuy: l.toBuy.filter(t => lc(t) !== lc(item)) })) } }));
+  const busyWith = (item: string) => saving[lc(item)] === 'saving';
+
+  /** Add item: on the list at once, saved to Keep behind it. */
+  async function add(raw: string): Promise<boolean> {
+    const item = raw.trim();
+    if (!item || busyWith(item) || outOf.some(o => lc(o) === lc(item))) return false;
+    setAddNote(null);
+    setToBuy(t => [...t, item]);
+    mark(item, 'saving');
+    void (async () => {
+      try {
+        const res = await actionsApi.perform('add_grocery_item', { item });
+        const added = (res.action?.params as { item?: string } | undefined)?.item || item;
+        if (added !== item) setToBuy(t => t.map(x => (x === item ? added : x)));
+        mark(item, null); mark(added, 'saved');
+      } catch (e) {
+        dropFromList(item); mark(item, null);
+        setAddNote({ ok: false, text: `Couldn’t add “${item}”: ${(e as Error).message || 'Keep didn’t take it'}` });
+      }
+    })();
+    return true;
   }
+  /** The checkbox: strikes through in place, then leaves once Keep has it. */
+  async function tick(item: string) {
+    const k = lc(item);
+    if (striking[k] || busyWith(item)) return;
+    setAddNote(null);
+    setStriking(m => ({ ...m, [k]: true }));
+    const shown = new Promise(r => setTimeout(r, 1500));
+    try {
+      await Promise.all([actionsApi.perform('mark_grocery_bought', { item }), shown]);
+      dropFromList(item);
+      setAddNote({ ok: true, text: `Marked “${item}” bought`, undo: item });
+    } catch (e) {
+      setAddNote({ ok: false, text: `Couldn’t tick off “${item}”: ${(e as Error).message || 'Keep didn’t take it'}` });
+    } finally {
+      setStriking(m => { const n = { ...m }; delete n[k]; return n; });
+    }
+  }
+  /** Undo a tick: back on the list at once with the Saving… pill (Keep unticks the same item). */
+  async function untick(item: string) {
+    if (busyWith(item)) return;
+    setAddNote(null);
+    setToBuy(t => (t.some(x => lc(x) === lc(item)) ? t : [...t, item]));
+    mark(item, 'saving');
+    try {
+      await actionsApi.perform('add_grocery_item', { item });
+      mark(item, 'saved');
+    } catch (e) {
+      dropFromList(item);
+      mark(item, null);
+      setAddNote({ ok: false, text: `Couldn’t put “${item}” back: ${(e as Error).message || 'Keep didn’t take it'}`, undo: item });
+    }
+  }
+  const pill = (item: string) => {
+    const st = saving[lc(item)];
+    return st === 'saving' ? <span className="prv-pill prv-pill-saving" role="status"><i aria-hidden="true" />Saving…</span>
+      : st === 'saved' ? <span className="prv-pill prv-pill-saved" role="status"><Icon name="check" />Saved</span> : null;
+  };
+  // Suggestions, most likely first: what's due to run out, the regulars, then the pantry and photos.
+  const known = ready ? [
+    ...ready.restock.map(r => r.item),
+    ...ready.grocery.lists.flatMap(l => [...(l.recentlyBought || []).map(b => b.text), ...(l.usuallyBuys || [])]),
+    ...Object.values(ready.stock.items).flat(),
+    ...(ready.photos.places || []).flatMap(p => p.items.map(i => i.name)),
+  ] : [];
   const jump = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   const scroll = (dir: 1 | -1) => strip.current?.scrollBy({ left: dir * strip.current.clientWidth * 0.8, behavior: 'smooth' });
 
@@ -177,16 +258,18 @@ export function FamilyProvisions({ tabs, roster, note, onAsk }: {
           </PanelHead>
           {note || <>
             <small className="fp-groceries-label">{outOf.length ? `Out of ${plural(outOf.length, 'thing')}` : 'Nothing on the list'}</small>
-            {outOf.length ? <ul className="prv-list">{outOf.slice(0, 12).map((item, i) => <li key={`${item}-${i}`}>
-              <button type="button" className="fp-check fp-check-btn" aria-label={`Ask Athena to mark “${item}” bought`} title="Ask Athena to mark it bought" onClick={() => onAsk(`Mark "${item}" bought on the grocery list.`)} />
-              <span>{item}</span>
-            </li>)}{outOf.length > 12 && <li className="prv-more">+{outOf.length - 12} more in Keep</li>}</ul>
+            {outOf.length ? <ul className="prv-list">{outOf.slice(0, 12).map((item, i) => {
+              const struck = !!striking[lc(item)];
+              return <li key={`${item}-${i}`} className={struck ? 'prv-striking' : saving[lc(item)] === 'saving' ? 'prv-row-saving' : ''}>
+                <button type="button" className={`fp-check fp-check-btn${struck ? ' fp-on' : ''}`} aria-pressed={struck} aria-label={struck ? `“${item}” is bought` : `Mark “${item}” bought`}
+                  title="Mark it bought in Keep" disabled={struck || busyWith(item)} onClick={() => void tick(item)}>{struck && <Icon name="check" />}</button>
+                <span>{item}</span>{pill(item)}
+              </li>;
+            })}{outOf.length > 12 && <li className="prv-more">+{outOf.length - 12} more in Keep</li>}</ul>
               : <p className="hp-empty">You’re stocked up — nothing waiting to be bought.</p>}
-            <form className="prv-add" onSubmit={add}>
-              <label className="prv-add-field"><Icon name="plus" /><input value={adding} onChange={e => setAdding(e.target.value)} placeholder="Add item" maxLength={120} aria-label="Add an item to the grocery list" /></label>
-              <button type="submit" className="cp-outline" disabled={!adding.trim()}>Add</button>
-            </form>
-            <p className="prv-fine">Athena adds it after you approve the card.</p>
+            <GroceryAddField known={known} onList={outOf} busy={false} onAdd={add} />
+            {addNote ? <p className={`prv-fine${addNote.ok ? ' prv-fine-ok' : ' prv-fine-err'}`} role={addNote.ok ? 'status' : 'alert'}>{addNote.text}{addNote.undo && <button type="button" className="prv-undo" onClick={() => void untick(addNote.undo!)}>{addNote.ok ? 'Undo' : 'Retry'}</button>}</p>
+              : <p className="prv-fine">Goes straight onto the Keep list.</p>}
           </>}
         </section>
 
@@ -273,7 +356,9 @@ export function FamilyProvisions({ tabs, roster, note, onAsk }: {
             : <ul className="prv-rows">{(allRestock ? ready.restock : ready.restock.slice(0, 3)).map(r => <li key={r.item}>
               <Icon name={KIND_ICON[r.kind] || 'box'} className="prv-row-icon" />
               <span><strong>{r.item}</strong><small>{r.seenIn ? `seen in the ${r.seenIn} — not running low` : r.daysLeft < 0 ? 'probably out now' : r.daysLeft === 0 ? 'runs out about today' : `runs out in ~${plural(r.daysLeft, 'day')}`} · every ~{r.everyDays}d</small></span>
-              <button type="button" className="prv-plus" aria-label={`Ask Athena to add ${r.item}`} title="Ask Athena to add it to the list" onClick={() => onAsk(`Add "${r.item}" to the grocery list.`)}><Icon name="plus" /></button>
+              {outOf.some(o => o.toLowerCase() === r.item.toLowerCase())
+                ? <span className="prv-plus prv-plus-done" title="On the list" aria-label={`${r.item} is on the list`}>✓</span>
+                : <button type="button" className="prv-plus" aria-label={`Add ${r.item} to the grocery list`} title="Add it to the Keep list" onClick={() => void add(r.item)}><Icon name="plus" /></button>}
             </li>)}</ul>}
           {ready.restock.length > 3 && <button type="button" className="cp-outline fp-wide" onClick={() => setAllRestock(v => !v)}>{allRestock ? 'Show fewer' : `View all suggestions (${ready.restock.length})`} <Icon name="arrowRight" /></button>}
         </section>

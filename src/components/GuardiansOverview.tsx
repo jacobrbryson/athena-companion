@@ -7,7 +7,7 @@ import { Icon, Ring } from './HealthPage';
  * team, the six skills, what the team did and what is next. It only reads;
  * every control stays on the tabs in GuardiansPage.tsx.
  */
-export const GUARDIANS_HEADER = '/assets/1684a674-5e7c-44d6-91f0-a0918e50d7f9.png';
+export const GUARDIANS_HEADER = '/assets/1684a674-5e7c-44d6-91f0-a0918e50d7f9.webp';
 
 export type GuardiansTab = 'overview' | 'missions' | 'skills' | 'team' | 'progress' | 'intel' | 'map' | 'kit';
 /** What a side drawer is showing. It holds a key, not a copy, so a change on the page reaches it. */

@@ -76,7 +76,7 @@ export function SignIn() {
   if (isAndroidCompanion()) {
     return <main className="android-signin">
       <div className="android-signin-card">
-        <img src="/assets/athena-avatar.png" alt="" className="android-signin-avatar" />
+        <img src="/assets/athena-avatar.webp" alt="" className="android-signin-avatar" />
         <p className="android-wordmark">ATHENA</p>
         <h1>Your day. Your companion.</h1>
         <p>Your calendar, conversations, and everything that matters — together.</p>

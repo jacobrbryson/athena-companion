@@ -12,7 +12,7 @@ import { mockModelLab, mockOutage } from './modelLab';
 import type { NewsSource } from '../src/api/dashboard';
 import { mockProjectsRoute, mockVehicles, mockApplyBill } from './projects';
 import { mockWorkItems } from './workItems';
-import { mockProvisions, mockMealImage } from './provisions';
+import { mockProvisions, mockMealImage, mockGroceryAdd, mockGroceryBought } from './provisions';
 import { mockReviewRuns, mockWorkspaceReviews } from './workspaceReviews';
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -2315,6 +2315,36 @@ Sam` };
     return { success: true, uuid, status: n!.status };
   }
 
+  // The Tasks card's Add task drawer: where a task can go, and adding one.
+  if (p === '/api/v1/dashboard/task-targets') {
+    await wait(300);
+    return {
+      google: { lists: [{ id: 'L1', title: 'My Tasks' }, { id: 'L2', title: 'House' }] },
+      jira: { site: 'example.atlassian.net', projects: [{ key: 'ATH', name: 'Athena' }, { key: 'OPS', name: 'Ops' }] },
+    };
+  }
+  if (method === 'POST' && /^\/api\/v1\/actions\/direct\/(create_google_task|create_jira_issue)$/.test(p)) {
+    await wait(600);
+    const actionId = p.split('/')[5];
+    const params = (body as { params?: { title?: string; summary?: string } } | undefined)?.params || {};
+    if (!(params.title || params.summary || '').trim()) fail(400, 'A task needs a title', 'invalid_action_params');
+    return { success: true, action: { uuid: `direct-${Date.now()}`, action_id: actionId, status: 'done', approval: 'human', result_ref: actionId === 'create_jira_issue' ? 'ATH-413' : 'gt-new' } };
+  }
+  // Provisions' checkbox: marked bought in Keep.
+  if (method === 'POST' && p === '/api/v1/actions/direct/mark_grocery_bought') {
+    await wait(1400); // about what Keep takes, so the Saving… pill shows
+    const item = ((body as { params?: { item?: string } } | undefined)?.params?.item || '').trim();
+    if (!mockGroceryBought(item)) fail(400, 'That item is not waiting to be bought', 'invalid_action_params');
+    return { success: true, action: { uuid: `direct-${Date.now()}`, action_id: 'mark_grocery_bought', status: 'done', approval: 'human', params: { item } } };
+  }
+  // Provisions' Add item: straight onto the Keep list.
+  if (method === 'POST' && p === '/api/v1/actions/direct/add_grocery_item') {
+    await wait(1400); // about what Keep takes, so the Saving… pill shows
+    const item = ((body as { params?: { item?: string } } | undefined)?.params?.item || '').trim();
+    if (!item) fail(400, 'Name each grocery item (120 characters at most)', 'invalid_action_params');
+    if (mockGroceryAdd(item) === 'dup') fail(400, 'That item is already on the grocery list', 'invalid_action_params');
+    return { success: true, action: { uuid: `direct-${Date.now()}`, action_id: 'add_grocery_item', status: 'done', approval: 'human', params: { item } } };
+  }
   // A tick on the Tasks card (complete_google_task / reopen_google_task).
   if (method === 'POST' && /^\/api\/v1\/actions\/direct\/(complete_google_task|reopen_google_task)$/.test(p)) {
     await wait(500);

@@ -9,7 +9,7 @@ import { useState } from 'react';
  * because this sits in the sidebar wordmark and the mobile nav — the two places
  * a gap would be impossible to miss.
  */
-const AVATAR_SRC = '/assets/athena-avatar.png';
+const AVATAR_SRC = '/assets/athena-avatar.webp';
 
 export function AthenaAvatar({ className = '', size }: { className?: string; size?: number }) {
   const [failed, setFailed] = useState(false);

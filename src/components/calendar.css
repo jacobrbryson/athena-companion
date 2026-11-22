@@ -86,7 +86,7 @@
 .cp-up-day li small { color: var(--hp-sub); font-size: 13px; white-space: nowrap; }
 
 .cp-trip { position: relative; display: flex; align-items: flex-end; gap: 12px; width: 100%; min-height: 104px; padding: 14px 16px; overflow: hidden; border: 1px solid #2a5a86; border-radius: 12px; text-align: left; color: #fff;
-  background: linear-gradient(180deg, #05101d00 20%, #05101de6), url('/assets/alpine-dawn.png') center 62% / cover; }
+  background: linear-gradient(180deg, #05101d00 20%, #05101de6), url('/assets/alpine-dawn.webp') center 62% / cover; }
 .cp-trip + .cp-trip { margin-top: 10px; }
 .cp-trip>.hp-icon:first-child { width: 26px; height: 26px; color: #4fc3ff; }
 .cp-trip div { flex: 1; min-width: 0; }

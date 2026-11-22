@@ -1,8 +1,11 @@
 import { useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { actionsApi } from '../api/companion';
 import type { GoogleTask, JiraIssue } from '../api/dashboard';
-import { isInProgress } from './workStatus';
+import { isInProgress, isReadyToStart } from './workStatus';
 import { CardHeader } from './YourDay';
+import { AddTaskDrawer } from './AddTaskDrawer';
+import { JiraIssueDrawer } from './JiraIssueDrawer';
 
 /**
  * The Tasks card's list (owner, 2026-11-13): open Google Tasks, soonest due
@@ -10,24 +13,32 @@ import { CardHeader } from './YourDay';
  * action — the click is the approval, recorded and audited like the Family
  * page's chore checkbox — and an Undo reopens it for a few seconds.
  */
-/** Ticking a task off (and the Undo after it), shared by both Tasks cards. */
+/**
+ * Ticking a task off (and the Undo after it), shared by both Tasks cards.
+ * The row stays put and strikes through over 1.5 s (owner, 2026-11-21); it
+ * leaves once both the strike and Google's save are done, so a slow save just
+ * holds it struck through a little longer. A failed save un-strikes it.
+ */
+const STRIKE_MS = 1500;
 function useTaskTicks() {
   const [done, setDone] = useState<Record<string, boolean>>({});
+  const [striking, setStriking] = useState<Record<string, boolean>>({});
   const [busy, setBusy] = useState<string | null>(null);
   const [note, setNote] = useState<{ task: GoogleTask; kind: 'done' | 'error'; text: string } | null>(null);
+  const strike = (id: string, on: boolean) => setStriking(s => { const n = { ...s }; if (on) n[id] = true; else delete n[id]; return n; });
 
   async function tick(t: GoogleTask) {
-    if (busy) return;
-    setBusy(t.id);
-    setDone(d => ({ ...d, [t.id]: true }));
+    if (striking[t.id] || done[t.id] || busy === t.id) return;
+    strike(t.id, true);
+    const shown = new Promise(r => setTimeout(r, STRIKE_MS));
     try {
-      await actionsApi.perform('complete_google_task', { task_id: t.id, task_list: t.listId });
+      await Promise.all([actionsApi.perform('complete_google_task', { task_id: t.id, task_list: t.listId }), shown]);
+      setDone(d => ({ ...d, [t.id]: true }));
       setNote({ task: t, kind: 'done', text: `“${t.title}” done` });
     } catch (e) {
-      setDone(d => ({ ...d, [t.id]: false }));
       setNote({ task: t, kind: 'error', text: `Couldn’t tick it off${(e as Error)?.message ? `: ${(e as Error).message}` : '.'}` });
     } finally {
-      setBusy(null);
+      strike(t.id, false);
     }
   }
 
@@ -45,12 +56,12 @@ function useTaskTicks() {
       setBusy(null);
     }
   }
-  return { done, busy, note, setNote, tick, undo };
+  return { done, striking, busy, note, setNote, tick, undo };
 }
 
 export function TasksCardBody({ tasks, total, limit = 5, today }: { tasks: GoogleTask[]; total: number; limit?: number; today: string }) {
-  const { done, busy, note, setNote, tick, undo } = useTaskTicks();
-  const shown = tasks.filter(t => !done[t.id] || note?.task.id === t.id).slice(0, limit);
+  const { done, striking, busy, note, setNote, tick, undo } = useTaskTicks();
+  const shown = tasks.filter(t => !done[t.id]).slice(0, limit);
   const hidden = Math.max(0, total - Object.values(done).filter(Boolean).length - shown.filter(t => !done[t.id]).length);
 
   const when = (due: string | null) => !due ? null : due < today ? `Overdue · ${due}` : due === today ? 'Due today' : `Due ${due}`;
@@ -59,10 +70,10 @@ export function TasksCardBody({ tasks, total, limit = 5, today }: { tasks: Googl
   return <>
     <ul className="dashboard-data-list task-list">
       {shown.map(t => {
-        const ticked = !!done[t.id];
+        const ticked = !!striking[t.id];
         const due = when(t.due);
         return <li key={t.id} className={ticked ? 'task-done' : ''}>
-          <button type="button" className="task-check" aria-pressed={ticked} disabled={ticked || !!busy}
+          <button type="button" className="task-check" aria-pressed={ticked} disabled={ticked || busy === t.id}
             aria-label={ticked ? `${t.title} is done` : `Tick off ${t.title}`} onClick={() => void tick(t)}>{ticked ? '✓' : ''}</button>
           <div><strong>{t.title}</strong><small className={t.due && t.due < today && !ticked ? 'task-overdue' : undefined}>{[due, t.list].filter(Boolean).join(' · ')}</small></div>
         </li>;
@@ -125,7 +136,7 @@ function DueRing({ parts, percent }: { parts: { value: number; color: string }[]
   </div>;
 }
 
-/** One row of the combined card: a Google Task (tickable) or a Jira issue (opens in Jira). */
+/** One row of the combined card: a Google Task (tickable) or a Jira issue (read in the app). */
 type Row = { kind: 'google'; id: string; title: string; due: string | null; task: GoogleTask }
   | { kind: 'jira'; id: string; title: string; due: string | null; issue: JiraIssue; started: boolean };
 
@@ -134,7 +145,7 @@ export const openJira = (issues: JiraIssue[]) => issues.filter(i => i.statusCate
 
 const JIRA_ICON = <path d="M12 3 3 12l9 9 9-9-9-9Zm0 5.2L15.8 12 12 15.8 8.2 12 12 8.2Z" />;
 
-export function TasksPanel({ tasks, total, jira = [], today, limit = 5, notes, googleReady, onOpen, onOpenIssue }: {
+export function TasksPanel({ tasks, jira = [], today, limit = 5, notes, googleReady }: {
   tasks: GoogleTask[]; total: number;
   /** Open Jira issues assigned to you, any site. */
   jira?: JiraIssue[];
@@ -143,22 +154,36 @@ export function TasksPanel({ tasks, total, jira = [], today, limit = 5, notes, g
   notes?: ReactNode;
   /** False when Google Tasks can't be read; Jira still shows. */
   googleReady: boolean;
-  onOpen: () => void;
-  onOpenIssue: (issue: JiraIssue) => void;
 }) {
-  const { done, busy, note, setNote, tick, undo } = useTaskTicks();
-  const openTasks = tasks.filter(t => !done[t.id]);
-  const googleOpen = Math.max(openTasks.length, total - Object.values(done).filter(Boolean).length);
+  const { done, striking, busy, note, setNote, tick, undo } = useTaskTicks();
+  // The Add task drawer (owner, 2026-11-20), and what it says once it's added.
+  const [adding, setAdding] = useState(false);
+  const [added, setAdded] = useState<string | null>(null);
+  // Everything stays in the app (owner, 2026-11-20): the card expands instead of linking out to Google Tasks.
+  const [showAll, setShowAll] = useState(false);
+  // A Jira issue opens in the app, read-only (owner, 2026-11-20) — never out to Jira.
+  const [reading, setReading] = useState<JiraIssue | null>(null);
+  const onOpenIssue = setReading;
   const started = (i: JiraIssue) => isInProgress(i);
-  const rows: Row[] = [
-    ...tasks.map(t => ({ kind: 'google' as const, id: `g-${t.id}`, title: t.title, due: t.due, task: t })),
-    ...jira.map(i => ({ kind: 'jira' as const, id: `j-${i.site}-${i.key}`, title: i.title, due: i.due ? i.due.slice(0, 10) : null, issue: i, started: started(i) })),
-  ].sort((x, y) => (x.due || '9999').localeCompare(y.due || '9999')
-    // Undated: what you're working on first, then Google Tasks, then the rest of Jira.
-    || (x.kind === 'jira' && x.started ? 0 : x.kind === 'google' ? 1 : 2) - (y.kind === 'jira' && y.started ? 0 : y.kind === 'google' ? 1 : 2));
+  // The list is only what's near (owner, 2026-11-21): Google Tasks due tomorrow
+  // or sooner (overdue included, undated left out), and Jira issues that are
+  // In Progress or Ready to Start — In Progress first. The 7-day bars still
+  // count everything open, since they're about the week ahead.
+  const tomorrow = addDays(today, 1);
+  const near = tasks.filter(t => !!t.due && t.due <= tomorrow);
+  const jiraNear = jira.filter(i => started(i) || isReadyToStart(i));
+  const toRows = (g: GoogleTask[], j: JiraIssue[]): Row[] => [
+    ...g.map(t => ({ kind: 'google' as const, id: `g-${t.id}`, title: t.title, due: t.due, task: t })),
+    ...j.map(i => ({ kind: 'jira' as const, id: `j-${i.site}-${i.key}`, title: i.title, due: i.due ? i.due.slice(0, 10) : null, issue: i, started: started(i) })),
+  ];
+  const rank = (r: Row) => r.kind === 'jira' && r.started ? 0 : 1;
+  const rows = toRows(near, jiraNear).sort((x, y) => rank(x) - rank(y)
+    || (x.due || '9999').localeCompare(y.due || '9999')
+    || (x.kind === 'google' ? 0 : 1) - (y.kind === 'google' ? 0 : 1));
   const open = rows.filter(r => r.kind === 'jira' || !done[r.task.id]);
-  const openTotal = googleOpen + jira.length;
-  const inProgress = jira.filter(started).length;
+  const allOpen = toRows(tasks, jira).filter(r => r.kind === 'jira' || !done[r.task.id]);
+  const openTotal = open.length;
+  const inProgress = jiraNear.filter(started).length;
   const overdue = open.filter(r => r.due && r.due < today).length;
   const dueToday = open.filter(r => r.due === today).length;
   const later = open.filter(r => r.due && r.due > today).length;
@@ -166,7 +191,7 @@ export function TasksPanel({ tasks, total, jira = [], today, limit = 5, notes, g
   const percent = open.length ? Math.round(((open.length - overdue) / open.length) * 100) : null;
   const week = Array.from({ length: 7 }, (_, i) => {
     const day = addDays(today, i);
-    return { day, count: open.filter(r => r.due === day).length };
+    return { day, count: allOpen.filter(r => r.due === day).length };
   });
   const peak = Math.max(1, ...week.map(d => d.count));
   const legend = [
@@ -175,13 +200,13 @@ export function TasksPanel({ tasks, total, jira = [], today, limit = 5, notes, g
     { label: 'Later', value: later, color: '#2fd4c4' },
     { label: 'No date', value: undated, color: '#4d7a90' },
   ];
-  const shown = rows.filter(r => r.kind === 'jira' || !done[r.task.id] || note?.task.id === r.task.id).slice(0, limit);
-  const hidden = Math.max(0, openTotal - shown.filter(r => r.kind === 'jira' || !done[r.task.id]).length);
+  const shown = open.slice(0, showAll ? undefined : limit);
+  const hidden = Math.max(0, openTotal - shown.length);
   const nothing = !googleReady && !jira.length;
 
   const subtitle = nothing ? 'Google Tasks and Jira' : <>{openTotal} open{inProgress ? ` · ${inProgress} in progress` : ''} · {dueToday} due today{overdue ? <> · <b className="dt-warn">{overdue} overdue</b></> : null}</>;
   return <section className="dh-section dt-card dh-section-tasks" id="dashboard-tasks">
-    <CardHeader icon="Tasks" title="Tasks" subtitle={subtitle} action="Open Google Tasks" onAction={onOpen} />
+    <CardHeader icon="Tasks" title="Tasks" subtitle={subtitle} action="Add task" actionArrow="＋" onAction={() => setAdding(true)} />
     {open.length > 0 && <div className="dt-summary">
       <DueRing parts={legend} percent={percent} />
       <div className="dt-legend">
@@ -197,7 +222,7 @@ export function TasksPanel({ tasks, total, jira = [], today, limit = 5, notes, g
     </div>}
     <div className="dh-section-body dt-body">
       {notes}
-      {!nothing && !rows.length ? <p className="dashboard-empty">Nothing open on Google Tasks or Jira.</p>
+      {!nothing && !open.length ? <p className="dashboard-empty">{allOpen.length ? 'Nothing due by tomorrow, and nothing In Progress or Ready to Start on Jira.' : 'Nothing open on Google Tasks or Jira.'}</p>
         : <ul className="dt-tasks">
           {shown.map(r => {
             const late = !!r.due && r.due < today;
@@ -205,7 +230,7 @@ export function TasksPanel({ tasks, total, jira = [], today, limit = 5, notes, g
             if (r.kind === 'jira') {
               const i = r.issue;
               return <li key={r.id} className={`dt-task-jira${r.started ? ' dt-task-started' : ''}`}>
-                <button type="button" className="dt-check dt-check-jira" onClick={() => onOpenIssue(i)} aria-label={`Open ${i.key} in Jira`} title="Open in Jira — tick it off there">
+                <button type="button" className="dt-check dt-check-jira" onClick={() => onOpenIssue(i)} aria-label={`Read ${i.key}`} title={`Read ${i.key}`}>
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" aria-hidden="true">{JIRA_ICON}</svg>
                 </button>
                 <button type="button" className="dt-task-text" onClick={() => onOpenIssue(i)}>
@@ -216,11 +241,11 @@ export function TasksPanel({ tasks, total, jira = [], today, limit = 5, notes, g
               </li>;
             }
             const t = r.task;
-            const ticked = !!done[t.id];
+            const ticked = !!striking[t.id];
             const look = listLook(t.list);
-            const when = ticked ? 'Completed just now' : dueWords || 'No due date';
+            const when = dueWords || 'No due date';
             return <li key={r.id} className={ticked ? 'dt-task-done' : undefined}>
-              <button type="button" className="dt-check" aria-pressed={ticked} disabled={ticked || !!busy}
+              <button type="button" className="dt-check" aria-pressed={ticked} disabled={ticked || busy === t.id}
                 aria-label={ticked ? `${t.title} is done` : `Tick off ${t.title}`} onClick={() => void tick(t)}>
                 {ticked && <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7" /></svg>}
               </button>
@@ -232,8 +257,12 @@ export function TasksPanel({ tasks, total, jira = [], today, limit = 5, notes, g
             </li>;
           })}
         </ul>}
-      {hidden > 0 && <p className="dt-more-note">+{hidden} more — on Google Tasks and the Work page</p>}
+      {(hidden > 0 || showAll) && open.length > limit && <button type="button" className="dt-more-note dt-more-toggle" aria-expanded={showAll} onClick={() => setShowAll(v => !v)}>
+        {showAll ? 'Show fewer' : `Show ${hidden} more`}</button>}
       {note && <p className="task-note" role="status">{note.text}{note.kind === 'done' && <button type="button" onClick={() => void undo()} disabled={!!busy}>Undo</button>}<button type="button" aria-label="Dismiss" onClick={() => setNote(null)}>×</button></p>}
+      {added && <p className="task-note" role="status">{added}<button type="button" aria-label="Dismiss" onClick={() => setAdded(null)}>×</button></p>}
     </div>
+    {reading && createPortal(<JiraIssueDrawer issue={reading} onClose={() => setReading(null)} />, document.body)}
+    {adding && createPortal(<AddTaskDrawer onClose={() => setAdding(false)} onAdded={setAdded} />, document.body)}
   </section>;
 }

@@ -39,7 +39,7 @@
 .dashboard-sidebar nav button,.sidebar-chat,.sidebar-bottom>button { display: flex; align-items: center; gap: 10px; min-height: 46px; width: 100%; padding: 4px 9px; border: 1px solid transparent; border-radius: 8px; text-align: left; font-size: 13px; color: #b5c9d8; }
 .dashboard-sidebar button.active { border-color: #168bc0; color: #effcff; background: linear-gradient(110deg,#06486a99,#05233866); box-shadow: inset 0 0 13px #00b5ff24,0 0 15px #009dff12; }
 .dashboard-sidebar nav button:hover,.sidebar-bottom>button:hover,.sidebar-chat:hover { background-color: #103145; color: white; }
-.dashboard-icon { width: 36px; height: 34px; flex-shrink: 0; display: inline-block; background-image: url('/assets/athena-sprites.png'); background-repeat: no-repeat; background-size: 614.4px 409.6px; }
+.dashboard-icon { width: 36px; height: 34px; flex-shrink: 0; display: inline-block; background-image: url('/assets/athena-sprites.webp'); background-repeat: no-repeat; background-size: 614.4px 409.6px; }
 /* Drawn icons occupy the same 36x34 footprint as a sprite window so they sit
    on the same optical column in the nav. */
 svg.dashboard-icon { box-sizing: border-box; padding: 6px 7px; background-image: none; overflow: visible; }
@@ -62,7 +62,7 @@ svg.dashboard-icon { box-sizing: border-box; padding: 6px 7px; background-image:
 .sidebar-profile-caret { margin-left: auto; color: #5f93aa; font-size: 13px; line-height: 1; transition: rotate .22s ease; }
 .sidebar-profile.open .sidebar-profile-caret { rotate: 180deg; }
 .dashboard-footer i { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #33dfb5; box-shadow: 0 0 8px #33dfb566; }
-.companion-workspace { flex: 1; min-width: 0; overflow: auto; background: linear-gradient(180deg,#02111d24 0%,#04131b45 38%,#03111aeb 90%),url('/assets/alpine-dawn.png') center top / cover fixed; }
+.companion-workspace { flex: 1; min-width: 0; overflow: auto; background: linear-gradient(180deg,#02111d24 0%,#04131b45 38%,#03111aeb 90%),url('/assets/alpine-dawn.webp') center top / cover fixed; }
 .companion-topbar { height: 58px; position: sticky; top: 0; z-index: 25; border-bottom: 1px solid #afd7f00f; background: #02101abb; backdrop-filter: blur(12px); }
 .dashboard-content { max-width: 1550px; margin: 0 auto; padding: 26px 34px 20px; }
 .dashboard-toolbar { display: flex; align-items: center; gap: 20px; color: #c9dae6; font-size: 12px; }
@@ -819,7 +819,9 @@ svg.dashboard-icon-drawn .icon-fill { fill: currentColor; fill-opacity: .9; }
 .task-check { flex: none; width: 18px; height: 18px; margin-top: 1px; border: 1px solid #4d798c; border-radius: 5px; background: transparent; color: #8fe0b0; font-size: 11px; line-height: 16px; text-align: center; cursor: pointer; }
 .task-check:hover:not(:disabled) { border-color: #8fe0b0; background: rgba(143, 224, 176, .08); }
 .task-check:disabled { cursor: default; }
-.task-done strong { color: #8fb3c4; text-decoration: line-through; text-decoration-color: #4d798c; }
+.task-done strong { color: #8fb3c4; background: linear-gradient(#4d798c, #4d798c) no-repeat 0 55% / 0% 1.5px; -webkit-box-decoration-break: clone; box-decoration-break: clone; animation: dt-strike 1.5s ease-out forwards; }
+@keyframes dt-strike { to { background-size: 100% 1.5px; } }
+@media (prefers-reduced-motion: reduce) { .task-done strong { animation: none; background-size: 100% 1.5px; } }
 .task-overdue { color: #f0b46a !important; }
 .task-note { display: flex; align-items: center; gap: 10px; margin: 8px 0 0; color: var(--muted); font-size: 11px; }
 .task-note button { border: 0; background: none; color: #8fe0b0; font-size: 11px; cursor: pointer; padding: 0; }

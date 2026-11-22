@@ -38,7 +38,7 @@ export type Provisions =
   | { status: 'not_connected' | 'unavailable'; reason?: string }
   | {
     status: 'ready';
-    grocery: { lists: { title: string; toBuy: string[]; usualCount: number; recentlyBought: { text: string; day: string }[] }[]; appUrl: string };
+    grocery: { lists: { title: string; toBuy: string[]; usualCount: number; /** The ticked regulars, for Add item's suggestions. */ usuallyBuys?: string[]; recentlyBought: { text: string; day: string }[] }[]; appUrl: string };
     stock: { total: number; household: number; seen: number; kinds: Record<StockKind, number>; items: Record<StockKind, string[]> };
     restock: RestockItem[];
     runningLow: number;

@@ -62,6 +62,39 @@ function computeArrival(email: string | null): Arrival {
 const statusOf = (err: unknown) => (err as ApiError | undefined)?.status;
 
 /**
+ * Who was signed in last time, so a restart opens straight to the console
+ * instead of a splash that waits on three round trips. It is a hint for the
+ * first paint only — never a credential, and never trusted: the server's own
+ * checks run immediately behind it, and a 401 or a denied access check clears
+ * it and moves to sign-in or the locked screen exactly as before. Every API
+ * call is still authorised by the httpOnly session cookie, so the hint cannot
+ * reach anything the cookie couldn't. Identity only (the same name/email the
+ * app already keys "last seen" on); no server data is stored with it.
+ */
+const SESSION_HINT_KEY = 'companion_session_hint.v1';
+const SESSION_HINT_MAX_AGE_MS = 14 * 86_400_000;
+interface SessionHint { user: CompanionUser; profile: Profile; at: number }
+
+function readSessionHint(): SessionHint | null {
+  try {
+    const raw = JSON.parse(localStorage.getItem(SESSION_HINT_KEY) || 'null');
+    if (!raw || typeof raw.at !== 'number' || Date.now() - raw.at > SESSION_HINT_MAX_AGE_MS) return null;
+    if (typeof raw.profile?.uuid !== 'string' || !raw.profile.uuid || typeof raw.user !== 'object' || !raw.user) return null;
+    return raw as SessionHint;
+  } catch { return null; }
+}
+
+function saveSessionHint(user: CompanionUser, profile: Profile) {
+  const pick = { email: user.email ?? null, full_name: user.full_name ?? null, picture: user.picture ?? null };
+  const own = { uuid: profile.uuid, full_name: profile.full_name ?? null, email: profile.email ?? null, picture: profile.picture ?? null };
+  try { localStorage.setItem(SESSION_HINT_KEY, JSON.stringify({ user: pick, profile: own, at: Date.now() })); } catch { /* first paint just waits */ }
+}
+
+export function clearSessionHint() {
+  try { localStorage.removeItem(SESSION_HINT_KEY); } catch { /* nothing stored */ }
+}
+
+/**
  * Sign-in hands off to Google's consent screen for Gmail, Calendar and
  * Contacts, which reloads the app. The arrival signal would die with the page,
  * so it rides across in sessionStorage and is taken exactly once on return.
@@ -104,19 +137,25 @@ async function handOffToGoogleConsent(): Promise<boolean> {
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [status, setStatus] = useState<AuthStatus>('loading');
-  const [user, setUser] = useState<CompanionUser | null>(null);
-  const [profile, setProfile] = useState<Profile | null>(null);
+  // Read once: a hint shows the console now and the checks below confirm it.
+  const [hint] = useState(readSessionHint);
+  const [status, setStatus] = useState<AuthStatus>(hint ? 'authenticated' : 'loading');
+  const [user, setUser] = useState<CompanionUser | null>(hint?.user ?? null);
+  const [profile, setProfile] = useState<Profile | null>(hint?.profile ?? null);
   const [arrival, setArrival] = useState<Arrival | null>(null);
   const [attempt, setAttempt] = useState(0);
   const failuresRef = useRef(0);
-  const statusRef = useRef<AuthStatus>('loading');
+  const statusRef = useRef<AuthStatus>(hint ? 'authenticated' : 'loading');
   statusRef.current = status;
+  /** On screen from the hint, not yet confirmed by the server. */
+  const provisionalRef = useRef(!!hint);
+  const profileRef = useRef<Profile | null>(hint?.profile ?? null);
+  profileRef.current = profile;
 
   const retry = useCallback(() => setAttempt((n) => n + 1), []);
 
   useEffect(() => {
-    const lock = () => { setProfile(null); setArrival(null); setStatus('locked'); };
+    const lock = () => { clearSessionHint(); provisionalRef.current = false; setProfile(null); setArrival(null); setStatus('locked'); };
     window.addEventListener('athena-access-required', lock);
     return () => window.removeEventListener('athena-access-required', lock);
   }, []);
@@ -126,6 +165,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const loadProfile = useCallback(async () => {
     const p = await fetchProfile();
     if (!p?.uuid) throw new Error('No profile');
+    // Confirming the profile the console is already showing must not throw
+    // away the reads it started meanwhile (they would fail as "data changed").
+    const shown = profileRef.current;
+    if (shown?.uuid === p.uuid && provisionalRef.current) {
+      if (JSON.stringify(shown) !== JSON.stringify(p)) setProfile(p);
+      return p;
+    }
     invalidateReads();
     setProfile(p);
     return p;
@@ -133,21 +179,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let cancelled = false;
-    // A retry keeps the reconnect screen up rather than flashing the splash.
-    setStatus((prev) => (prev === 'unreachable' ? prev : 'loading'));
+    let retryTimer: number | undefined;
+    // A retry keeps the reconnect screen up rather than flashing the splash,
+    // and a console shown from the hint stays up while it is confirmed.
+    if (!provisionalRef.current) setStatus((prev) => (prev === 'unreachable' ? prev : 'loading'));
 
     (async () => {
       try {
-        const res = await fetchMe();
+        // Both are reads; ask at once. fetchMe's verdict still comes first:
+        // a 401 there means signed out, whatever the access call said.
+        const [me, accessResult] = await Promise.allSettled([fetchMe(), fetchAccess()]);
         if (cancelled) return;
+        if (me.status === 'rejected') throw me.reason;
+        const res = me.value;
         setUser(res.user);
         // A failure here must propagate, not be read as a denial.
-        const access = await fetchAccess();
-        if (cancelled) return;
-        if (!access.allowed) { setStatus('locked'); return; }
-        await loadProfile();
+        if (accessResult.status === 'rejected') throw accessResult.reason;
+        const access = accessResult.value;
+        if (!access.allowed) { clearSessionHint(); provisionalRef.current = false; setProfile(null); setStatus('locked'); return; }
+        const p = await loadProfile();
         if (cancelled) return;
         setUser(res.user);
+        saveSessionHint(res.user, p);
+        provisionalRef.current = false;
         const stashed = takeStashedArrival();
         if (stashed) setArrival(stashed);
         failuresRef.current = 0;
@@ -156,6 +210,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (cancelled) return;
         if (statusOf(err) === 401) {
           // The session is genuinely gone (or was never there): sign in.
+          clearSessionHint();
+          provisionalRef.current = false;
           setUser(null);
           setProfile(null);
           setArrival(null);
@@ -166,14 +222,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // Anything else — proxy restart, cold start, timeout, offline, 5xx —
         // says nothing about this person's access. Keep retrying.
         failuresRef.current += 1;
+        if (provisionalRef.current) {
+          // The console is already up from the hint; its own calls show the
+          // link trouble. Keep confirming quietly instead of replacing it
+          // with the reconnect screen.
+          const delay = Math.min(RETRY_MAX_MS, RETRY_BASE_MS * 2 ** Math.max(0, failuresRef.current - 1));
+          retryTimer = window.setTimeout(retry, delay);
+          return;
+        }
         setStatus('unreachable');
       }
     })();
 
     return () => {
       cancelled = true;
+      if (retryTimer !== undefined) window.clearTimeout(retryTimer);
     };
-  }, [attempt, loadProfile]);
+  }, [attempt, loadProfile, retry]);
 
   // Reconnect on a backoff for as long as the link is down.
   useEffect(() => {
@@ -201,9 +266,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           const res = await fetchMe();
           setUser(res.user);
           const access = await fetchAccess();
-          if (!access.allowed) { setProfile(null); setArrival(null); setStatus('locked'); }
+          if (!access.allowed) { clearSessionHint(); provisionalRef.current = false; setProfile(null); setArrival(null); setStatus('locked'); }
         } catch (err) {
           if (statusOf(err) !== 401) return; // link trouble, not a verdict
+          clearSessionHint();
+          provisionalRef.current = false;
           setUser(null);
           setProfile(null);
           setArrival(null);
@@ -238,9 +305,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // A stale proxy may omit access — verify, and let a failure surface as a
       // sign-in error rather than a false lock.
       const access = res.access ?? (await fetchAccess());
-      if (access.allowed !== true) { setStatus('locked'); return; }
-      await loadProfile();
+      if (access.allowed !== true) { clearSessionHint(); setStatus('locked'); return; }
+      provisionalRef.current = false;
+      const p = await loadProfile();
       setUser(res.user);
+      saveSessionHint(res.user, p);
       const arrived = computeArrival(res.user.email);
       // Stay on the verifying screen while the browser leaves for Google.
       stashArrival(arrived);
@@ -263,6 +332,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }));
       return;
     }
+    // Forget who was here before anything else can fail.
+    clearSessionHint();
+    provisionalRef.current = false;
     try {
       await apiSignOut();
       window.google?.accounts.id.disableAutoSelect();

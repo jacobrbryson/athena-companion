@@ -192,7 +192,7 @@ export function WorkOverview(props: Props) {
     : 'Issues, messages, projects, site health, and the work Athena is doing for you.';
 
   return <div className="hp cp wp">
-    <PageHeader eyebrow="YOUR WORK, IN FOCUS" title="Work" blurb={blurb} backdrop="/assets/2f4d6755-5cc2-4e5d-aebd-44e2afcc49b2.png" />
+    <PageHeader eyebrow="YOUR WORK, IN FOCUS" title="Work" blurb={blurb} backdrop="/assets/2f4d6755-5cc2-4e5d-aebd-44e2afcc49b2.webp" />
 
     <section className="cp-stats" aria-label="Your work at a glance">
       <button type="button" className="hp-tile cp-stat" onClick={() => onSection('work-jira')}>

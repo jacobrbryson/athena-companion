@@ -40,7 +40,7 @@ export function HomeHero({ greeting, firstName, blurb, nodes, quote, aside }: {
       <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
         {nodes.slice(0, 6).map((n, i) => <line key={n.id} x1="50" y1="50" x2={SPOTS[i][0]} y2={SPOTS[i][1]} className={`dh-link dh-link-${n.tone}`} />)}
       </svg>
-      <div className="dh-core" aria-hidden="true"><img src="/assets/athena-avatar.png" alt="" /></div>
+      <div className="dh-core" aria-hidden="true"><img src="/assets/athena-avatar.webp" alt="" /></div>
       {nodes.slice(0, 6).map((n, i) => <button key={n.id} type="button" className={`dh-node dh-node-${n.tone} ${i < 3 ? 'dh-node-left' : 'dh-node-right'}`}
         style={{ left: `${SPOTS[i][0]}%`, top: `${SPOTS[i][1]}%` }} onClick={n.onOpen} aria-label={`${n.label}: ${n.status}`}>
         <span className="dh-node-orb"><DashboardIcon name={n.icon} bare /></span>

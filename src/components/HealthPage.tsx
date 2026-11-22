@@ -333,7 +333,7 @@ export function HealthOverview({ recovery, sleep, strain, weighIns, readiness, w
   return <div className="hp">
     <PageHeader eyebrow="HEALTH & PERFORMANCE" title={<>Stronger for<br />what matters</>}
       blurb="More energy for your family, the field, and the life you want to live."
-      art="/assets/heart.png"
+      art="/assets/heart.webp"
       aside={<div className={`hp-avg-hr${live != null ? ' hp-live' : ''}`}>
         <Ecg bpm={shownHr} />
         <div><strong>{shownHr ?? '—'}<small> bpm</small></strong><span>{live != null ? <><i className="hp-live-dot" />Live Heart Rate</> : 'Avg Heart Rate'}</span></div>
