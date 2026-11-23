@@ -1189,6 +1189,94 @@ async function route(method: string, path: string, body?: any): Promise<any> {
     device: { name: 'enterprises/mock/devices/up', title: 'Upstairs thermostat' },
     sentence: 'On nights the Upstairs thermostat averaged 66–67°F, your recovery averaged 74%, 11 points higher than your other nights (12 of 38 nights; moderate confidence — a pattern in your nights, not proof of cause).',
   };
+  // A kid's own Base screen (11-23). localStorage.mock_kid = 'true' signs in as Thomas; otherwise an adult is refused.
+  if (p === '/api/v1/guardian-missions/kid-home' || p.startsWith('/api/v1/guardian-missions/kid/')) {
+    if (localStorage.getItem('mock_kid') !== 'true') fail(403, "This is the kids' side.");
+    // I Spy: Thomas, Skylar, Athena take turns. Skylar's turns are played "on her tablet" by the mock itself.
+    if (p.startsWith('/api/v1/guardian-missions/kid/ispy')) {
+      const GK = 'mock_ispy_v1';
+      type R = { uuid: string; roundNo: number; spy: string; clue: string; answer: string; aliases: string[]; hints: string[]; guesses: { by: string; text: string; right: boolean | null }[]; outcome: string | null; solvedBy: string | null };
+      const g: { goal: number; rounds: R[] } = JSON.parse(localStorage.getItem(GK) || 'null') || { goal: 12, rounds: [] };
+      const players = ['Thomas', 'Skylar', 'Athena'];
+      const saveG = () => localStorage.setItem(GK, JSON.stringify(g));
+      const turnOf = (n: number) => players[(n - 1) % 3];
+      const shape = (r: R) => ({
+        uuid: r.uuid, roundNo: r.roundNo, spy: { name: r.spy, athena: r.spy === 'Athena', me: r.spy === 'Thomas' }, clue: r.clue, photo: true,
+        guesses: r.guesses.map(x => ({ by: x.by, athena: x.by === 'Athena', text: x.text, right: x.right })),
+        hints: r.spy === 'Athena' ? r.hints.slice(0, Math.floor(r.guesses.filter(x => !x.right).length / 3)) : [],
+        answer: !r.outcome && r.spy !== 'Thomas' ? null : r.answer, outcome: r.outcome, solvedBy: r.solvedBy,
+        awaitingJudge: !r.outcome && r.spy !== 'Athena' && r.guesses.length > 0 && r.guesses[r.guesses.length - 1].right == null,
+      });
+      const view = () => {
+        // Skylar plays her own turns on her tablet: she spies, Athena guesses right.
+        const open0 = g.rounds.find(r => !r.outcome);
+        const doneN = g.rounds.filter(r => r.outcome).length;
+        if (!open0 && doneN < g.goal && turnOf(g.rounds.length + 1) === 'Skylar') {
+          g.rounds.push({ uuid: `r-${g.rounds.length + 1}`, roundNo: g.rounds.length + 1, spy: 'Skylar', clue: 'something yellow', answer: 'the banana', aliases: [], hints: [], guesses: [{ by: 'Athena', text: 'the banana', right: true }], outcome: 'guessed', solvedBy: 'Athena' });
+          saveG();
+        }
+        const open = g.rounds.find(r => !r.outcome) || null;
+        const done = g.rounds.filter(r => r.outcome).length;
+        const next = turnOf(open ? open.roundNo : g.rounds.length + 1);
+        return { game: { mission: { uuid: 'm-ispy', title: 'Teach Athena I Spy' }, goal: g.goal, done, players: players.map(n => ({ name: n, athena: n === 'Athena', me: n === 'Thomas' })), turn: { name: next, athena: next === 'Athena', me: next === 'Thomas' }, round: open ? shape(open) : null, recent: g.rounds.filter(r => r.outcome).slice(-4).reverse().map(shape) } };
+      };
+      const rest = p.slice('/api/v1/guardian-missions/kid/ispy'.length);
+      const find = () => g.rounds.find(r => rest.includes(r.uuid))!;
+      if (rest === '/rounds' && method === 'POST') {
+        g.rounds.push({ uuid: `r-${g.rounds.length + 1}`, roundNo: g.rounds.length + 1, spy: 'Thomas', clue: body.clue, answer: body.answer, aliases: [], hints: [], guesses: [{ by: 'Athena', text: 'the blue cup', right: null }], outcome: null, solvedBy: null });
+        saveG(); return view();
+      }
+      if (rest === '/athena' && method === 'POST') {
+        g.rounds.push({ uuid: `r-${g.rounds.length + 1}`, roundNo: g.rounds.length + 1, spy: 'Athena', clue: 'something green', answer: 'plant', aliases: ['houseplant', 'leaves'], hints: ['It lives in a pot.', 'It needs water.', 'It sits by the window.'], guesses: [], outcome: null, solvedBy: null });
+        saveG(); return view();
+      }
+      if (rest.endsWith('/judge')) {
+        const r = find(); const last = r.guesses[r.guesses.length - 1]; last.right = body.right;
+        if (body.right) { r.outcome = 'guessed'; r.solvedBy = 'Athena'; } else if (r.guesses.length >= 3) r.outcome = 'taught'; else r.guesses.push({ by: 'Athena', text: ['the blue book', 'the lamp'][r.guesses.length - 1] || 'the chair', right: null });
+        saveG(); return view();
+      }
+      if (rest.endsWith('/guess')) {
+        const r = find(); const right = [r.answer, ...r.aliases].some(a => String(body.guess).toLowerCase().includes(a));
+        r.guesses.push({ by: 'Thomas', text: body.guess, right }); if (right) { r.outcome = 'guessed'; r.solvedBy = 'Thomas'; }
+        saveG(); return { right, ...view() };
+      }
+      if (rest.endsWith('/reveal')) { find().outcome = 'revealed'; saveG(); return view(); }
+      return view();
+    }
+    const KEY = 'mock_kid_home_v1';
+    const fresh = () => ({
+      guardian: true, name: 'Thomas',
+      ready: [],
+      steps: [localStorage.getItem('mock_kid_ispy') === 'true' ? { uuid: 'ks-ispy', mission: 'Teach Athena I Spy', premise: 'Athena can see through cameras, but she has never played I Spy. She needs two Guardians to teach her how.', instruction: 'Athena has never played I Spy, and she wants you to teach her. Take turns!', safety: { where: 'Inside the house', supervision: 'Ross or another adult is home', offLimits: "Outside, other people's rooms, and anything private" }, place: 'Inside the house', proof: 'game', dueAt: new Date(Date.now() + 864e5).toISOString() } : { uuid: 'ks-1', mission: 'Backyard Watcher', premise: 'Something moved past the backyard camera last night. Athena needs a Guardian to help her see.', instruction: 'Go to the front door and wave at the watcher.', safety: { where: 'Stay at the house.', supervision: 'Go with a parent or another Guardian.', offLimits: "Don't climb, enter, or get too close." }, place: 'Front door', proof: 'kid_confirm', dueAt: null }],
+      reveals: [{ uuid: 'r-1', title: 'The Gateway Watch Post', reveal: 'You helped Athena practice seeing people on the doorbell camera.' }],
+      trails: [{ uuid: 'm-1', title: 'Backyard Watcher', stops: ['done', 'current', 'locked', 'locked', 'locked'] }],
+      me: { level: 4, role: 'Builder', levelProgress: 80, xp: 20, xpPerLevel: 25, finds: 3, trailKeys: 10, mapPieces: 1, missionsStarted: 2, topSkill: { name: 'Morse code', badge: '📡', level: 'learning' } },
+      squad: [{ name: 'Thomas', level: 4, role: 'Builder' }, { name: 'Skylar', level: 1, role: 'Sage' }],
+      others: [{ name: 'Livia', level: 6, role: 'Tracker' }, { name: 'Erika', level: 3, role: 'Builder' }, { name: 'Aaron', level: 2, role: 'Creator' }, { name: 'Emery', level: 2, role: 'Builder' }, { name: 'Addy', level: 1, role: 'Sage' }, { name: 'Lena', level: 1, role: 'Sage' }, { name: 'Josh', level: 1, role: 'Recruit' }],
+      feed: [{ who: 'Skylar', text: 'found a clue card', at: new Date(Date.now() - 2 * 3600e3).toISOString() }, { who: 'Livia', text: 'decoded a trail key', at: new Date(Date.now() - 6 * 3600e3).toISOString() }, { who: 'Thomas', text: "reported the family's map piece", at: new Date(Date.now() - 30 * 3600e3).toISOString() }],
+      athena: [{ key: 'perception', name: 'Perception', percent: 3 }, { key: 'investigation', name: 'Investigation', percent: 1 }, { key: 'strategy', name: 'Strategy', percent: 1 }, { key: 'communication', name: 'Communication', percent: 2 }, { key: 'coordination', name: 'Coordination', percent: 1 }, { key: 'action', name: 'Action', percent: 1 }, { key: 'adaptation', name: 'Adaptation', percent: 1 }],
+      clues: { found: 2, total: 3 },
+      history: [
+        { uuid: 'h-1', title: 'The Gateway Watch Post', reveal: 'You helped Athena practice seeing people on the doorbell camera.', finished: true, endedAt: new Date(Date.now() - 3 * 864e5).toISOString() },
+        { uuid: 'h-2', title: 'Signal in the Dark', reveal: 'You taught Athena to read Morse code from the porch light.', finished: true, endedAt: new Date(Date.now() - 20 * 864e5).toISOString() },
+        { uuid: 'h-3', title: 'The Missing Map', reveal: null, finished: false, endedAt: new Date(Date.now() - 50 * 864e5).toISOString() },
+      ],
+      squadName: 'Bryson',
+      squads: [{ name: 'Abassi', members: [{ name: 'Aaron', level: 2, role: 'Creator' }, { name: 'Addy', level: 1, role: 'Sage' }] }, { name: 'Wallace', members: [{ name: 'Josh', level: 1, role: 'Recruit' }, { name: 'Lucy', level: 1, role: 'Sage' }, { name: 'Zeke', level: 1, role: 'Recruit' }] }, { name: 'Wolfer', members: [{ name: 'Lena', level: 1, role: 'Sage' }, { name: 'Livia', level: 6, role: 'Tracker' }] }],
+      weekFinds: 3,
+      skills: [{ name: 'Reads Morse', badge: '📡', level: 'learning' }, { name: 'Uses a compass', badge: '🧭', level: 'reliable' }, { name: 'Uses walkie-talkies', badge: '📻', level: 'untested' }, { name: 'Plays soccer', badge: '⚽', level: 'untested' }],
+      specialists: [{ skill: 'Uses a compass', badge: '🧭', who: [{ name: 'Thomas', level: 'reliable' }] }, { skill: 'Reads Morse', badge: '📡', who: [{ name: 'Thomas', level: 'learning' }, { name: 'Skylar', level: 'learning' }] }],
+      adventure: { key: 'lake_norman_guardians', label: 'Lake Norman Guardians' },
+      kit: ['a canvas bag to carry it all', 'a sealed letter', 'a Guardian ID card', 'a paper clip', 'two mysterious coins', 'a field notebook', 'a blacklight', 'a pen', 'a compass', 'a magnifying glass'],
+      stopWord: 'pineapple',
+    });
+    if (p.endsWith('/photo')) return { correct: true, steps: [] };
+    const k = JSON.parse(localStorage.getItem(KEY) || 'null') || fresh();
+    const save = () => { localStorage.setItem(KEY, JSON.stringify(k)); return k; };
+    if (p.endsWith('/seen')) { k.steps = k.steps.map((st: { uuid: string }) => (p.includes(st.uuid) ? { ...st, dueAt: new Date(Date.now() + 15 * 60e3).toISOString() } : st)); return save(); }
+    if (p.endsWith('/done')) { k.steps = k.steps.filter((st: { uuid: string }) => !p.includes(st.uuid)); k.trails[0].stops[1] = 'done'; k.me.levelProgress = 95; return save(); }
+    return k;
+  }
   // Guardians (2026-10-29): one running scout mission waiting on you, proposals, capabilities, two kids.
   if (p === '/api/v1/guardian-missions' || p.startsWith('/api/v1/guardian-missions/')) {
     const KEY = 'mock_guardian_missions_v3';

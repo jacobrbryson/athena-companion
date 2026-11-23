@@ -40,6 +40,8 @@ import { ProfileAvatar } from '../components/ProfileAvatar';
 import { Drawer } from '../components/Drawer';
 import '../dashboard.css';
 import { useStayAwake } from '../athena/idle';
+import { KidChatBanner, KidHome, KidRail, type KidTab } from '../components/KidHome';
+import { useKidHome } from '../api/kid';
 
 /**
  * The Companion console — the Guardians console's layout and feel (Athena
@@ -132,6 +134,11 @@ export function CompanionConsole() {
   const [chatOpened, setChatOpened] = useState(false);
   useEffect(() => { if (view === 'chat') setChatOpened(true); }, [view]);
   const [briefing, setBriefing] = useState(false);
+  // A kid's sign-in gets the kids' Base instead of the adult dashboards (11-23).
+  const kidHome = useKidHome(profile?.uuid);
+  const isKid = kidHome.mode === 'kid';
+  const [kidTab, setKidTabState] = useState<KidTab>(() => (sessionStorage.getItem('companion_kid_tab') as KidTab) || 'base');
+  const setKidTab = (t: KidTab) => { setKidTabState(t); try { sessionStorage.setItem('companion_kid_tab', t); } catch { /* tab resets */ } if (view === 'chat') navigate('/'); };
   const activeSection = sectionFromPath(location.pathname);
   const [menuOpen, setMenuOpen] = useState(false);
   // The phone's stand-in for the left nav: every page the sidebar lists.
@@ -163,7 +170,8 @@ export function CompanionConsole() {
     return () => { document.removeEventListener('visibilitychange', arm); window.removeEventListener('athena-native-resume', arm); };
   }, []);
   useEffect(() => {
-    if (!inboxArmed.current || !inbox.reads || arriving) return;
+    // A kid's Base has no notifications drawer; their asks show on Base itself.
+    if (!inboxArmed.current || !inbox.reads || arriving || isKid) return;
     inboxArmed.current = false;
     let seen = 0;
     try { seen = Number(localStorage.getItem('athena_inbox_seen')) || 0; } catch { /* private window */ }
@@ -171,7 +179,7 @@ export function CompanionConsole() {
     if (!fresh.length) return;
     try { localStorage.setItem('athena_inbox_seen', String(Math.max(...fresh.map(n => Date.parse(n.createdAt))))); } catch { /* private window */ }
     setPanel('notifications');
-  }, [inbox.reads, inbox.waiting, arriving]);
+  }, [inbox.reads, inbox.waiting, arriving, isKid]);
   // A dashboard Connect that hit a health-consent gate: Connected apps opens on that prompt.
   const [consentFor, setConsentFor] = useState<string | null>(null);
   const inputId = useId();
@@ -557,7 +565,10 @@ export function CompanionConsole() {
   ];
 
   return (
-    <div className={`companion-shell ${view === 'chat' ? 'companion-chat-mode' : ''}`}>
+    <div className={`companion-shell ${view === 'chat' ? 'companion-chat-mode' : ''}${isKid ? ' companion-kid' : ''}`}>
+      {isKid ? (
+        <KidRail tab={kidTab} inChat={view === 'chat'} waiting={(kidHome.data?.steps.length || 0) + (kidHome.data?.ready.length || 0)} onTab={setKidTab} onAthena={() => navigate('/chat')} />
+      ) : (
       <aside className="dashboard-sidebar">
         <button className="athena-wordmark" onClick={() => navigateDashboard('Dashboard')}><AthenaAvatar /> ATHENA</button>
         <span className="sidebar-caption">YOUR COMPANION</span>
@@ -582,6 +593,7 @@ export function CompanionConsole() {
           </button>
         </div>
       </aside>
+      )}
       <div className="companion-workspace">
       {/* Top status bar */}
       <header className="companion-topbar flex items-center justify-between gap-2 px-4 py-2 font-mono text-[11px] uppercase tracking-[0.2em]">
@@ -654,8 +666,10 @@ export function CompanionConsole() {
         <EmergencyBanner onAsk={askAthena} onPlaces={showPointsOfInterest} pinned={view === 'chat'} />
       )}
 
-      {view === 'dashboard' && <Dashboard section={activeSection} firstName={firstName} onAsk={askAthena} onPanel={openPanel} onPlaces={showPointsOfInterest} onNavigate={navigateDashboard} brain={brain} />}
+      {view === 'dashboard' && isKid && <KidHome tab={kidTab} data={kidHome.data} error={kidHome.error} picture={user?.picture} onTab={setKidTab} onAthena={() => navigate('/chat')} onSignOut={() => void signOut()} act={kidHome.act} />}
+      {view === 'dashboard' && !isKid && <Dashboard section={activeSection} firstName={firstName} onAsk={askAthena} onPanel={openPanel} onPlaces={showPointsOfInterest} onNavigate={navigateDashboard} brain={brain} />}
       <div className="companion-chat" hidden={view !== 'chat'}>
+      {isKid && <KidChatBanner data={kidHome.data} onMission={() => setKidTab(kidHome.data?.steps.length ? 'base' : 'missions')} />}
 
       {/* Athena — large and front-and-center */}
       <section className="relative min-h-0 flex-1">
