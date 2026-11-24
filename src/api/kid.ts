@@ -23,7 +23,13 @@ export interface KidHome {
   ready: { uuid: string; title: string }[];
   reveals: { uuid: string; title: string; reveal: string }[];
   trails: { uuid: string; title: string; stops: StopState[] }[];
-  history?: { uuid: string; title: string; reveal: string | null; finished: boolean; endedAt: string | null }[];
+  history?: { uuid: string; title: string; reveal: string | null; finished: boolean; endedAt: string | null; legacy?: boolean; did?: { finds: number; keys: number; pieces: number } }[];
+  /** Approved, not started, with a planned start for the countdown. Absent before core_api is deployed. */
+  upcoming?: KidUpcoming[];
+  /** Missions they're in that haven't started and have no date: shown only as locked cards. */
+  mysteries?: number;
+  /** The rows behind the four Base counters, theirs only. */
+  record?: KidRecord | null;
   me: { level: number; role: string; levelProgress: number; xp?: number; xpPerLevel?: number; finds: number; trailKeys?: number; mapPieces?: number; missionsStarted?: number; badges?: number; checkedIn?: boolean; topSkill: { name: string; badge: string | null; level: string } | null } | null;
   squad: KidGuardian[];
   squadName?: string | null;
@@ -38,6 +44,14 @@ export interface KidHome {
   adventure?: { key: string; label: string | null } | null;
   kit?: string[];
   stopWord?: string | null;
+}
+
+export interface KidUpcoming { uuid: string; title: string; plannedFor: string; ready: boolean; game: string | null }
+export interface KidRecord {
+  finds: { title: string; mission: string; at: string }[];
+  keys: { clue: number; code: string; mission: string; at: string }[];
+  pieces: { family: string; fragment: string | null; mission: string; at: string }[];
+  missions: { title: string; status: string; at: string }[];
 }
 
 const BASE = '/api/v1/guardian-missions';

@@ -3,7 +3,7 @@ import { AthenaAvatar } from './AthenaAvatar';
 import { IspyGame } from './IspyGame';
 import { ProfileAvatar } from './ProfileAvatar';
 import { GUARDIANS_HEADER } from './GuardiansOverview';
-import { kidApi, kidSound, photoForProof, type KidGuardian, type KidHome as KidHomeData, type KidSafety, type KidStep, type StopState } from '../api/kid';
+import { kidApi, kidSound, photoForProof, type KidGuardian, type KidHome as KidHomeData, type KidRecord, type KidSafety, type KidStep, type KidUpcoming, type StopState } from '../api/kid';
 import './kid.css';
 
 /**
@@ -26,11 +26,12 @@ const ROLE_ICON: Record<string, string> = { Pathfinder: '🧭', Tracker: '🐾',
 const roleIcon = (role: string) => ROLE_ICON[role] || '⭐';
 
 /** Athena's opening line. Written ahead of time, never improvised. */
-function greeting(name: string | null, hasStep: boolean, now = new Date()): string {
+function greeting(name: string | null, hasStep: boolean, now = new Date(), soon = false): string {
   const h = now.getHours();
   const hello = h < 12 ? 'Morning' : h < 17 ? 'Afternoon' : 'Evening';
   const who = name || 'Guardian';
   if (hasStep) return `${hello}, ${who}. I could use a Guardian right now.`;
+  if (soon) return `${hello}, ${who}. A new mission is on the way. Watch the countdown!`;
   const calm = [
     `${hello}, ${who}. All quiet. I'm keeping watch.`,
     `${hello}, ${who}. Nothing moving out there. Yet.`,
@@ -227,20 +228,109 @@ function YourMove({ data, onAct, onAthena, onIspy }: { data: KidHomeData; onAct:
   );
 }
 
-/** What they've really done, as big friendly counters. */
+/** What a kid did on a Guardians-app mission, in a line. */
+function didLine(d: { finds: number; keys: number; pieces: number }): string {
+  const bits = [
+    d.finds ? `${d.finds} clue${d.finds === 1 ? '' : 's'} found` : '',
+    d.keys ? `${d.keys} trail key${d.keys === 1 ? '' : 's'} cracked` : '',
+    d.pieces ? `${d.pieces} map piece${d.pieces === 1 ? '' : 's'} reported` : '',
+  ].filter(Boolean);
+  return bits.length ? `You: ${bits.join(', ')}.` : 'You were part of this one.';
+}
+
+type RecordKind = keyof KidRecord;
+
+/** What they've really done, as big friendly counters. Each one opens its list. */
 function Stats({ data }: { data: KidHomeData }) {
+  const [open, setOpen] = useState<RecordKind | null>(null);
   const me = data.me;
   if (!me) return null;
-  const tiles: [string, string, number][] = [
-    ['🔍', 'Clues found', me.finds],
-    ['🔑', 'Trail keys', me.trailKeys || 0],
-    ['🗺️', 'Map pieces', me.mapPieces || 0],
-    ['🚀', 'Missions', me.missionsStarted || 0],
+  const tiles: [RecordKind, string, string, number][] = [
+    ['finds', '🔍', 'Clues found', me.finds],
+    ['keys', '🔑', 'Trail keys', me.trailKeys || 0],
+    ['pieces', '🗺️', 'Map pieces', me.mapPieces || 0],
+    ['missions', '🚀', 'Missions', me.missionsStarted || 0],
   ];
   return (
-    <ul className="kid-stats">
-      {tiles.map(([icon, label, n]) => <li key={label}><span aria-hidden>{icon}</span><b>{n}</b><small>{label}</small></li>)}
-    </ul>
+    <>
+      <ul className="kid-stats">
+        {tiles.map(([kind, icon, label, n]) => (
+          <li key={kind}>
+            <button type="button" onClick={() => setOpen(kind)} disabled={!data.record} aria-label={`${label}: ${n}. Show them.`}>
+              <span aria-hidden>{icon}</span><b>{n}</b><small>{label}</small>
+            </button>
+          </li>
+        ))}
+      </ul>
+      {open && data.record && <RecordSheet kind={open} record={data.record} onClose={() => setOpen(null)} />}
+    </>
+  );
+}
+
+const RECORD_HEAD: Record<RecordKind, { icon: string; title: string; empty: string }> = {
+  finds: { icon: '🔍', title: 'Clues you found', empty: 'No clue cards yet. Keep your eyes open on the next hunt!' },
+  keys: { icon: '🔑', title: 'Trail keys you cracked', empty: 'No trail keys yet.' },
+  pieces: { icon: '🗺️', title: 'Map pieces you reported', empty: 'No map pieces yet.' },
+  missions: { icon: '🚀', title: 'Missions you started', empty: 'You haven\'t started a mission yet. When you press Go, it shows up here.' },
+};
+
+const STATUS_WORD: Record<string, string> = { active: 'Going now', running: 'Going now', complete: 'Finished', completed: 'Finished', decrypting: 'Decoding', ended: 'Ended', stopped: 'Ended' };
+
+function RecordSheet({ kind, record, onClose }: { kind: RecordKind; record: KidRecord; onClose: () => void }) {
+  const head = RECORD_HEAD[kind];
+  useEffect(() => {
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', esc);
+    return () => window.removeEventListener('keydown', esc);
+  }, [onClose]);
+  const rows: { key: string; main: string; sub: string; at: string }[] =
+    kind === 'finds' ? record.finds.map((f, i) => ({ key: `f${i}`, main: f.title, sub: f.mission, at: f.at }))
+    : kind === 'keys' ? record.keys.map((k, i) => ({ key: `k${i}`, main: `Clue ${k.clue + 1}: key ${k.code}`, sub: k.mission, at: k.at }))
+    : kind === 'pieces' ? record.pieces.map((p, i) => ({ key: `p${i}`, main: p.fragment ? `${p.family}: ${p.fragment}` : p.family, sub: p.mission, at: p.at }))
+    : record.missions.map((m, i) => ({ key: `m${i}`, main: m.title, sub: STATUS_WORD[m.status] || m.status, at: m.at }));
+  return (
+    <div className="kid-sheet-back" onClick={onClose}>
+      <section className="kid-sheet" role="dialog" aria-label={head.title} onClick={e => e.stopPropagation()}>
+        <header><span aria-hidden>{head.icon}</span><h2>{head.title}</h2><b className="kid-pill">{rows.length}</b><button type="button" className="kid-btn" onClick={onClose}>✕</button></header>
+        {rows.length ? (
+          <ol className="kid-record">{rows.map(r => <li key={r.key}><b>{r.main}</b><small>{r.sub}{r.at ? ` · ${ago(r.at)}` : ''}</small></li>)}</ol>
+        ) : <p className="kid-empty">{head.empty}</p>}
+      </section>
+    </div>
+  );
+}
+
+/** Ticks once a second while mounted. */
+function useNow(ms = 1000) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => { const t = window.setInterval(() => setNow(Date.now()), ms); return () => window.clearInterval(t); }, [ms]);
+  return now;
+}
+
+function Countdown({ at }: { at: string }) {
+  const now = useNow();
+  const left = Math.max(0, Math.floor((new Date(at).getTime() - now) / 1000));
+  if (!left) return <p className="kid-countdown-zero">🚀 Any minute now!</p>;
+  const parts: [number, string][] = [[Math.floor(left / 86400), 'days'], [Math.floor(left / 3600) % 24, 'hours'], [Math.floor(left / 60) % 60, 'min'], [left % 60, 'sec']];
+  const shown = parts[0][0] ? parts : parts.slice(1);
+  return (
+    <div className="kid-countdown" role="timer" aria-label={`Starts in ${shown.map(([n, u]) => `${n} ${u}`).join(' ')}`}>
+      {shown.map(([n, u]) => <span key={u}><b>{String(n).padStart(2, '0')}</b><small>{u}</small></span>)}
+    </div>
+  );
+}
+
+const startsWhen = (at: string) => new Date(at).toLocaleString(undefined, { weekday: 'long', hour: 'numeric', minute: '2-digit' });
+
+/** The next mission, counting down to when the grown-ups plan to press Go. */
+function NextMissionCard({ next, more, onOpen }: { next: KidUpcoming; more: number; onOpen: () => void }) {
+  return (
+    <Card className="kid-next" icon="🚀" title="Next mission" aside={<button type="button" className="kid-link" onClick={onOpen}>{more > 0 ? `+${more} more` : 'All missions'} ›</button>}>
+      <h3>{next.title}</h3>
+      <p className="kid-next-when">Starts {startsWhen(next.plannedFor)}</p>
+      <Countdown at={next.plannedFor} />
+      <p className="kid-note">{next.ready ? 'Your grown-up can press Go any time now.' : 'When it starts, your first step shows up in Your move.'}{next.game === 'ispy' ? ' Get your tablet camera ready! 📸' : ''}</p>
+    </Card>
   );
 }
 
@@ -355,7 +445,8 @@ export function KidHome({ tab, data, error, picture, onTab, onAthena, onSignOut,
   if (!data) {
     return <div className="kid-home kid-loading"><AthenaAvatar className="kid-quiet-face" /><p>{error || 'Opening Base…'}</p></div>;
   }
-  const line = greeting(data.name, data.steps.length > 0);
+  const next = data.steps.length ? undefined : data.upcoming?.[0];
+  const line = greeting(data.name, data.steps.length > 0, new Date(), Boolean(next));
 
   return (
     <div className="kid-home">
@@ -381,7 +472,7 @@ export function KidHome({ tab, data, error, picture, onTab, onAthena, onSignOut,
         <div className="kid-grid">
           <YourMove data={data} onAct={onAct} onAthena={onAthena} onIspy={() => setIspyOpen(true)} />
           <div className="kid-col">
-            <MissionCard data={data} onOpen={() => onTab('missions')} />
+            {next ? <NextMissionCard next={next} more={(data.upcoming?.length || 1) - 1 + (data.mysteries || 0)} onOpen={() => onTab('missions')} /> : <MissionCard data={data} onOpen={() => onTab('missions')} />}
             <TaughtAthena data={data} />
           </div>
           <SquadFeed data={data} />
@@ -390,24 +481,55 @@ export function KidHome({ tab, data, error, picture, onTab, onAthena, onSignOut,
       )}
 
       {tab === 'missions' && data.guardian && (
-        <div className="kid-grid">
-          <YourMove data={data} onAct={onAct} onAthena={onAthena} onIspy={() => setIspyOpen(true)} />
-          <div className="kid-col">
-            {data.steps[0]?.premise && <Card className="kid-story" icon="📖" title="The story so far"><p>{data.steps[0].premise}</p></Card>}
-            <MissionCard data={data} onOpen={() => onTab('missions')} />
-          </div>
-          <Card className="kid-span" icon="📚" title="Your quest books" aside={data.history?.length ? <span className="kid-pill">{data.history.length} QUEST{data.history.length === 1 ? '' : 'S'}</span> : undefined}>
-            {data.history?.length ? (
-              <ul className="kid-books">{data.history.map((h, i) => (
-                <li key={h.uuid} className={`kid-book kid-book-${i % 5}`}>
-                  <span className="kid-book-spine" aria-hidden />
-                  <b>{h.title}</b>
-                  <small>{h.finished ? '🏆 Finished' : '⏹ Ended early'}{h.endedAt ? ` · ${ago(h.endedAt)}` : ''}</small>
-                  {h.reveal ? <p>{h.reveal}</p> : <p className="kid-book-locked">Athena hasn't told this one's secret yet.</p>}
-                </li>
-              ))}</ul>
-            ) : <p className="kid-empty">Finish a quest and it joins your shelf, with what you really helped Athena learn.</p>}
-          </Card>
+        <div className="kid-missions">
+          <section className="kid-mission-now" aria-label="Now">
+            <h2 className="kid-section">🎯 Now</h2>
+            <div className="kid-grid kid-grid-now">
+              <YourMove data={data} onAct={onAct} onAthena={onAthena} onIspy={() => setIspyOpen(true)} />
+              <div className="kid-col">
+                {data.steps[0]?.premise && <Card className="kid-story" icon="📖" title="The story so far"><p>{data.steps[0].premise}</p></Card>}
+                <MissionCard data={data} onOpen={() => onTab('missions')} />
+              </div>
+            </div>
+          </section>
+
+          <section aria-label="Coming up">
+            <h2 className="kid-section">🚀 Coming up</h2>
+            {(data.upcoming?.length || 0) + (data.mysteries || 0) === 0 ? <p className="kid-empty">Nothing planned yet. Athena and your grown-ups are cooking up the next one.</p> : (
+              <ul className="kid-coming">
+                {(data.upcoming || []).map(u => (
+                  <li key={u.uuid} className="kid-card kid-coming-card">
+                    <small>{startsWhen(u.plannedFor)}</small>
+                    <b>{u.title}</b>
+                    <Countdown at={u.plannedFor} />
+                  </li>
+                ))}
+                {Array.from({ length: Math.min(data.mysteries || 0, 6) }, (_, i) => (
+                  <li key={`m${i}`} className="kid-card kid-coming-card kid-mystery" aria-label="A secret mission">
+                    <span aria-hidden>🔒</span><b>???</b><small>Top secret. Athena hasn't told anyone yet.</small>
+                  </li>
+                ))}
+                {(data.mysteries || 0) > 6 && <li className="kid-coming-more">+{(data.mysteries || 0) - 6} more secret missions</li>}
+              </ul>
+            )}
+          </section>
+
+          <section aria-label="Past">
+            <Card className="kid-span" icon="📚" title="Your quest books" aside={data.history?.length ? <span className="kid-pill">{data.history.length} QUEST{data.history.length === 1 ? '' : 'S'}</span> : undefined}>
+              {data.history?.length ? (
+                <ul className="kid-books">{data.history.map((h, i) => (
+                  <li key={h.uuid} className={`kid-book kid-book-${i % 5}`}>
+                    <span className="kid-book-spine" aria-hidden />
+                    <b>{h.title}</b>
+                    <small>{h.finished ? '🏆 Finished' : '⏹ Ended early'}{h.endedAt ? ` · ${ago(h.endedAt)}` : ''}</small>
+                    {h.reveal ? <p>{h.reveal}</p>
+                      : h.legacy && h.did ? <p>{didLine(h.did)}</p>
+                      : <p className="kid-book-locked">Athena hasn't told this one's secret yet.</p>}
+                  </li>
+                ))}</ul>
+              ) : <p className="kid-empty">Finish a quest and it joins your shelf, with what you really helped Athena learn.</p>}
+            </Card>
+          </section>
         </div>
       )}
 

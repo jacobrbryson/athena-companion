@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AthenaAvatar } from './AthenaAvatar';
 import { ispyApi, kidSound, photoForProof, type IspyGame as Game, type IspyRound } from '../api/kid';
+import type { IspyApi } from '../api/ispyDemo';
+import './kid.css';
 
 /**
  * I Spy on a kid's tablet (owner, 11-23). Thomas, Skylar and Athena take
@@ -10,15 +12,15 @@ import { ispyApi, kidSound, photoForProof, type IspyGame as Game, type IspyRound
  */
 const POLL_MS = 4000;
 
-function usePhoto(uuid: string | null | undefined, has: boolean) {
+function usePhoto(src: IspyApi, uuid: string | null | undefined, has: boolean) {
   const [url, setUrl] = useState<string | null>(null);
   useEffect(() => {
     if (!uuid || !has) { setUrl(null); return; }
     let live = true;
     let made: string | null = null;
-    ispyApi.photo(uuid).then(blob => { if (!live) return; made = URL.createObjectURL(blob); setUrl(made); }).catch(() => setUrl(null));
+    src.photo(uuid).then(blob => { if (!live) return; made = URL.createObjectURL(blob); setUrl(made); }).catch(() => setUrl(null));
     return () => { live = false; if (made) URL.revokeObjectURL(made); };
-  }, [uuid, has]);
+  }, [src, uuid, has]);
   return url;
 }
 
@@ -52,7 +54,11 @@ function LastRound({ r }: { r: IspyRound }) {
   return <p className="ispy-last">Round {r.roundNo}: {text}</p>;
 }
 
-export function IspyGame({ onClose }: { onClose: () => void }) {
+/**
+ * `api` swaps in a parent's practice game (api/ispyDemo.ts) on the same
+ * screen; without it this is the kids' real game.
+ */
+export function IspyGame({ onClose, api = ispyApi, practice = false }: { onClose: () => void; api?: IspyApi; practice?: boolean }) {
   const [game, setGame] = useState<Game | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -65,8 +71,8 @@ export function IspyGame({ onClose }: { onClose: () => void }) {
   const doneRef = useRef<number | null>(null);
 
   const load = useCallback(async () => {
-    try { const { game: g } = await ispyApi.state(); setGame(g); } catch { /* next poll */ } finally { setLoaded(true); }
-  }, []);
+    try { const { game: g } = await api.state(); setGame(g); } catch { /* next poll */ } finally { setLoaded(true); }
+  }, [api]);
   useEffect(() => {
     void load();
     const t = window.setInterval(() => { if (document.visibilityState === 'visible') void load(); }, POLL_MS);
@@ -81,7 +87,7 @@ export function IspyGame({ onClose }: { onClose: () => void }) {
   useEffect(() => () => { if (shot) URL.revokeObjectURL(shot.url); }, [shot]);
 
   const round = game?.round || null;
-  const photo = usePhoto(round?.uuid, Boolean(round?.photo));
+  const photo = usePhoto(api, round?.uuid, Boolean(round?.photo));
 
   async function run(fn: () => Promise<{ game: Game | null }>) {
     setBusy(true); setNote('');
@@ -97,13 +103,13 @@ export function IspyGame({ onClose }: { onClose: () => void }) {
   async function sendMine() {
     if (!shot) return;
     const { image, contentType } = await photoForProof(shot.file);
-    const out = await run(() => ispyApi.spy(image, contentType, clue.trim(), answer.trim()));
+    const out = await run(() => api.spy(image, contentType, clue.trim(), answer.trim()));
     if (out) { setShot(null); setClue('something '); setAnswer(''); }
   }
   async function sendForAthena() {
     if (!shot) return;
     const { image, contentType } = await photoForProof(shot.file);
-    const out = await run(() => ispyApi.athena(image, contentType));
+    const out = await run(() => api.athena(image, contentType));
     if (out) setShot(null);
   }
 
@@ -115,6 +121,7 @@ export function IspyGame({ onClose }: { onClose: () => void }) {
         <h2>🔎 {game?.mission.title || 'I Spy'}</h2>
         <button type="button" className="kid-btn" onClick={onClose}>✕ Close</button>
       </header>
+      {practice && <p className="ispy-practice-note">Practice: this is what Thomas and Skylar see. Athena really looks at your photos, but nothing is saved and it doesn't count toward the mission.</p>}
       {!loaded ? <p className="ispy-wait">Opening the game…</p> : !game ? (
         <div className="ispy-stage"><p className="ispy-wait">There's no I Spy game going right now. When a grown-up starts the mission, it shows up here.</p></div>
       ) : (
@@ -125,7 +132,7 @@ export function IspyGame({ onClose }: { onClose: () => void }) {
 
           <div className="ispy-stage">
             {finished ? (
-              <div className="ispy-win"><span aria-hidden>🏆</span><h3>You taught Athena I Spy!</h3><p>All {game.goal} rounds done. Your 🔎 badge is on its way once a grown-up wraps up the mission.</p></div>
+              <div className="ispy-win"><span aria-hidden>🏆</span><h3>You taught Athena I Spy!</h3><p>{practice ? `That was all ${game.goal} practice rounds. The kids play the real game once you press Go.` : `All ${game.goal} rounds done. Your 🔎 badge is on its way once a grown-up wraps up the mission.`}</p></div>
             ) : round ? (
               <div className="ispy-round">
                 <div className="ispy-photo">{photo ? <img src={photo} alt="The I Spy photo" /> : <span>📷</span>}</div>
@@ -142,8 +149,8 @@ export function IspyGame({ onClose }: { onClose: () => void }) {
                     <div className="ispy-judge">
                       <p>Is Athena right?</p>
                       <div className="kid-move-actions">
-                        <button type="button" className="kid-btn kid-btn-primary" disabled={busy} onClick={() => void run(() => ispyApi.judge(round.uuid, true))}>✅ Yes!</button>
-                        <button type="button" className="kid-btn" disabled={busy} onClick={() => void run(() => ispyApi.judge(round.uuid, false, hint.trim() || undefined)).then(() => setHint(''))}>❌ Nope</button>
+                        <button type="button" className="kid-btn kid-btn-primary" disabled={busy} onClick={() => void run(() => api.judge(round.uuid, true))}>✅ Yes!</button>
+                        <button type="button" className="kid-btn" disabled={busy} onClick={() => void run(() => api.judge(round.uuid, false, hint.trim() || undefined)).then(() => setHint(''))}>❌ Nope</button>
                       </div>
                       <input className="ispy-input" value={hint} onChange={e => setHint(e.target.value)} placeholder="Give her a hint (optional)" aria-label="Hint for Athena" />
                     </div>
@@ -153,10 +160,10 @@ export function IspyGame({ onClose }: { onClose: () => void }) {
 
                   {/* Athena's round: everyone guesses. */}
                   {round.spy.athena && (
-                    <form className="ispy-guess" onSubmit={e => { e.preventDefault(); if (guess.trim()) void run(() => ispyApi.guess(round.uuid, guess.trim())).then(() => setGuess('')); }}>
+                    <form className="ispy-guess" onSubmit={e => { e.preventDefault(); if (guess.trim()) void run(() => api.guess(round.uuid, guess.trim())).then(() => setGuess('')); }}>
                       <input className="ispy-input" value={guess} onChange={e => setGuess(e.target.value)} placeholder="What is it?" aria-label="Your guess" autoComplete="off" />
                       <button type="submit" className="kid-btn kid-btn-primary" disabled={busy || !guess.trim()}>Guess</button>
-                      <button type="button" className="kid-btn" disabled={busy} onClick={() => void run(() => ispyApi.reveal(round.uuid))}>Give up</button>
+                      <button type="button" className="kid-btn" disabled={busy} onClick={() => void run(() => api.reveal(round.uuid))}>Give up</button>
                     </form>
                   )}
                 </div>

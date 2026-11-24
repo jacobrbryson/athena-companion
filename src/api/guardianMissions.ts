@@ -49,12 +49,16 @@ export interface GmMission {
   status: MissionStatus;
   phase?: 'prep' | 'ready' | 'live' | 'debrief' | null;
   goAt?: string | null;
+  /** When the grown-ups plan to press Go: the kids' countdown. Starts nothing. */
+  plannedFor?: string | null;
   /** What stands in the way of Go, once the mission is ready. */
   preflight?: string[];
   debrief?: { passed: number; total: number; results: { key: string; text: string; passed: boolean; detail: string }[] } | null;
   approval: 'unapproved' | 'approved' | 'revoked';
   source: 'athena' | 'seed' | 'legacy' | 'parent';
   adventure: string | null;
+  /** The plan's game, when the mission is one (I Spy); absent before core_api is deployed. */
+  game?: 'ispy' | null;
   notes: string | null;
   startedAt: string | null;
   endedAt: string | null;
@@ -211,6 +215,7 @@ export const guardianMissionsApi = {
   setCapability: (uuid: string, enabled: boolean) => api.patch<GuardiansOverview>(`${BASE}/capabilities/${uuid}`, { enabled }),
   setRecipient: (uuid: string, muted: boolean, mutedUntil?: string | null) => api.patch<GuardiansOverview>(`${BASE}/recipients/${uuid}`, { muted, mutedUntil: mutedUntil || null }),
   setSkill: (guardianUuid: string, capability: string, level: SkillLevel) => api.put<GuardiansOverview>(`${BASE}/guardians/${guardianUuid}/skills`, { capability, level }),
+  schedule: (uuid: string, plannedFor: string | null) => api.post<GuardiansOverview>(`${BASE}/missions/${uuid}/schedule`, { plannedFor }),
   approve: (uuid: string) => api.post<GuardiansOverview>(`${BASE}/missions/${uuid}/approve`, {}),
   setCode: (stepUuid: string, code: string) => api.post<GuardiansOverview>(`${BASE}/steps/${stepUuid}/secret`, { code }),
   look: (stepUuid: string) => api.post<GuardiansOverview>(`${BASE}/steps/${stepUuid}/look`, {}),

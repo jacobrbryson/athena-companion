@@ -171,7 +171,8 @@ export function CompanionConsole() {
   }, []);
   useEffect(() => {
     // A kid's Base has no notifications drawer; their asks show on Base itself.
-    if (!inboxArmed.current || !inbox.reads || arriving || isKid) return;
+    // Wait until we know which side this is, or a kid's first visit opens it.
+    if (!inboxArmed.current || !inbox.reads || arriving || kidHome.mode !== 'adult') return;
     inboxArmed.current = false;
     let seen = 0;
     try { seen = Number(localStorage.getItem('athena_inbox_seen')) || 0; } catch { /* private window */ }
@@ -179,7 +180,9 @@ export function CompanionConsole() {
     if (!fresh.length) return;
     try { localStorage.setItem('athena_inbox_seen', String(Math.max(...fresh.map(n => Date.parse(n.createdAt))))); } catch { /* private window */ }
     setPanel('notifications');
-  }, [inbox.reads, inbox.waiting, arriving, isKid]);
+  }, [inbox.reads, inbox.waiting, arriving, kidHome.mode]);
+  // A page that turns out to be a kid's closes the adults' drawer it may have opened from a stale hint.
+  useEffect(() => { if (isKid) setPanel(p => (p === 'notifications' ? null : p)); }, [isKid]);
   // A dashboard Connect that hit a health-consent gate: Connected apps opens on that prompt.
   const [consentFor, setConsentFor] = useState<string | null>(null);
   const inputId = useId();

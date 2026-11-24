@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   guardianMissionsApi as gm, NEEDS_CAMERA, TESTABLE,
   type GmCamera, type GmCapability, type GmGuardian, type GmMission, type GmRecipient, type GmStep, type GuardiansOverview, type SkillLevel,
@@ -10,6 +10,8 @@ import { AbilityDrawer, GuardianDrawer, MissionDrawer, SkillDrawer } from './Gua
 import { GuardiansConsentList } from './GuardiansConsent';
 import { PlanMissionDrawer } from './GuardiansPlanning';
 import { GuardiansHandoff } from './GuardiansHandoff';
+import { IspyGame } from './IspyGame';
+import { makeIspyDemo } from '../api/ispyDemo';
 import './health.css';
 import './guardians.css';
 
@@ -349,6 +351,7 @@ function PlanRow({ mission: m, showRung, busy, act }: { mission: GmMission; show
       <div className="gm-row">
         <button type="button" className="gm-btn gm-btn-primary" disabled={!!busy} onClick={() => act(`a-${m.uuid}`, () => gm.approve(m.uuid), `Approved: Athena is getting "${m.title}" ready.`)}>Approve plan</button>
         <button type="button" className="gm-btn" disabled={!!busy} onClick={() => act(`d-${m.uuid}`, () => gm.decline(m.uuid))}>Decline</button>
+        <PracticeGame mission={m} />
       </div>
     </div>
   </details></li>;
@@ -365,8 +368,20 @@ function ProposedCard({ mission: m, busy, act }: { mission: GmMission; busy: str
     <div className="gm-row">
       <button type="button" className="gm-btn gm-btn-primary" disabled={!!busy} onClick={() => act(`a-${m.uuid}`, () => gm.approve(m.uuid), `Approved: Athena is getting "${m.title}" ready.`)}>Approve plan</button>
       <button type="button" className="gm-btn" disabled={!!busy} onClick={() => act(`d-${m.uuid}`, () => gm.decline(m.uuid))}>Decline</button>
+        <PracticeGame mission={m} />
     </div>
   </li>;
+}
+
+/** A practice round of the mission's game on the kids' own screen, against the live Athena. Nothing is saved. */
+function PracticeGame({ mission: m }: { mission: GmMission }) {
+  const [round, setRound] = useState(0);
+  const demo = useMemo(() => (round ? makeIspyDemo({ title: m.title }) : null), [round, m.title]);
+  if (m.game !== 'ispy') return null;
+  return <>
+    <button type="button" className="gm-btn" onClick={() => setRound(r => r + 1)}>🔎 Try I Spy yourself</button>
+    {demo && <IspyGame api={demo} practice onClose={() => setRound(0)} />}
+  </>;
 }
 
 function Caps({ mission }: { mission: GmMission }) {
@@ -394,6 +409,27 @@ function GoPanel({ mission: m, adults, busy, act }: { mission: GmMission; adults
   </div>;
 }
 
+/** An ISO time as an <input type="datetime-local"> value, in this device's time zone. */
+function localInput(iso: string | null | undefined) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+}
+
+/** When you plan to press Go: the kids see a countdown to it. It starts nothing. */
+function PlannedFor({ mission: m, busy, act }: { mission: GmMission; busy: string; act: Act }) {
+  const [when, setWhen] = useState(localInput(m.plannedFor));
+  useEffect(() => setWhen(localInput(m.plannedFor)), [m.plannedFor]);
+  return <form className="gm-row gm-planned" onSubmit={e => { e.preventDefault(); if (when) act(`t-${m.uuid}`, () => gm.schedule(m.uuid, new Date(when).toISOString()), 'The kids see a countdown to it now.'); }}>
+    <label>Kids' countdown to
+      <input type="datetime-local" value={when} onChange={e => setWhen(e.target.value)} />
+    </label>
+    <button type="submit" className="gm-btn" disabled={!!busy || !when || when === localInput(m.plannedFor)}>Save</button>
+    {m.plannedFor && <button type="button" className="hp-link" disabled={!!busy} onClick={() => act(`t-${m.uuid}`, () => gm.schedule(m.uuid, null), 'Countdown cleared.')}>Clear</button>}
+    <small className="gm-sub">It only sets what their Base counts down to. Go still starts it.</small>
+  </form>;
+}
+
 /** An open step an adult settles here: a check they were asked for, or their own step with nothing else to prove it. */
 const adultCheck = (s: GmStep) => !['done', 'pending', 'stuck', 'declined'].includes(s.status)
   && (s.proofRequired === 'parent_confirm' || (s.proofRequired === 'none' && s.assignee?.kind === 'parent'));
@@ -408,6 +444,7 @@ function MissionCard({ mission: m, busy, act, adults }: { mission: GmMission; bu
     </div>
     {m.waitingOn.length > 0 && <p className="gm-waiting">Waiting on {m.waitingOn.join(' and ')}</p>}
     {m.status === 'running' && m.phase === 'ready' && <GoPanel mission={m} adults={adults} busy={busy} act={act} />}
+    {!legacy && m.status === 'running' && (m.phase === 'prep' || m.phase === 'ready') && <PlannedFor mission={m} busy={busy} act={act} />}
     {(legacy || over) && <p className="gm-sub">{m.goal}{legacy ? (over ? ' Ran in the Guardians app.' : ' Runs in the Guardians app.') : ''}</p>}
     <Caps mission={m} />
     {!!m.steps.length && <ol className="gm-steps">
@@ -446,6 +483,7 @@ function MissionCard({ mission: m, busy, act, adults }: { mission: GmMission; bu
       {m.status === 'running' && m.phase === 'live' && <button type="button" className="gm-btn" disabled={!!busy} onClick={() => { if (window.confirm('End this mission now and grade it as it stands?')) act(`f-${m.uuid}`, () => gm.finish(m.uuid), `Ended "${m.title}".`); }}>End and debrief</button>}
       {m.status === 'running' && <button type="button" className="gm-btn" disabled={!!busy} onClick={() => act(`p-${m.uuid}`, () => gm.pause(m.uuid, true))}>Pause</button>}
       {m.status === 'paused' && <button type="button" className="gm-btn" disabled={!!busy} onClick={() => act(`p-${m.uuid}`, () => gm.pause(m.uuid, false))}>Resume</button>}
+      <PracticeGame mission={m} />
       <button type="button" className="gm-btn gm-btn-danger" disabled={!!busy} onClick={() => act(`x-${m.uuid}`, () => gm.stop(m.uuid), `Stopped "${m.title}".`)}>Stop</button>
     </div>}
   </li>;

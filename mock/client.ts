@@ -1243,7 +1243,7 @@ async function route(method: string, path: string, body?: any): Promise<any> {
       if (rest.endsWith('/reveal')) { find().outcome = 'revealed'; saveG(); return view(); }
       return view();
     }
-    const KEY = 'mock_kid_home_v1';
+    const KEY = 'mock_kid_home_v2';
     const fresh = () => ({
       guardian: true, name: 'Thomas',
       ready: [],
@@ -1260,7 +1260,18 @@ async function route(method: string, path: string, body?: any): Promise<any> {
         { uuid: 'h-1', title: 'The Gateway Watch Post', reveal: 'You helped Athena practice seeing people on the doorbell camera.', finished: true, endedAt: new Date(Date.now() - 3 * 864e5).toISOString() },
         { uuid: 'h-2', title: 'Signal in the Dark', reveal: 'You taught Athena to read Morse code from the porch light.', finished: true, endedAt: new Date(Date.now() - 20 * 864e5).toISOString() },
         { uuid: 'h-3', title: 'The Missing Map', reveal: null, finished: false, endedAt: new Date(Date.now() - 50 * 864e5).toISOString() },
+        { uuid: 'h-fw', title: 'The First Watch', reveal: null, legacy: true, did: { finds: 3, keys: 0, pieces: 0 }, finished: true, endedAt: new Date(Date.now() - 100 * 864e5).toISOString() },
+        { uuid: 'h-rt', title: 'The Trail to Ratatouille', reveal: null, legacy: true, did: { finds: 0, keys: 10, pieces: 0 }, finished: true, endedAt: new Date(Date.now() - 130 * 864e5).toISOString() },
       ],
+      // Owner 11-24: the countdown (noon tomorrow), locked mysteries, and the rows behind each counter.
+      upcoming: [{ uuid: 'u-ispy', title: 'Teach Athena I Spy', plannedFor: (() => { const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(12, 0, 0, 0); return d.toISOString(); })(), ready: false, game: 'ispy' }],
+      mysteries: 4,
+      record: {
+        finds: [{ title: 'Duke Power survey stake 40-C', mission: 'The First Watch', at: '2026-07-26T22:02:30Z' }, { title: "Nell's journal — June 1963", mission: 'The First Watch', at: '2026-07-24T19:12:00Z' }, { title: 'The lantern mark', mission: 'The First Watch', at: '2026-07-22T18:40:00Z' }],
+        keys: Array.from({ length: 10 }, (_, i) => ({ clue: i, code: ['VS8T', 'C4A8', '6KT8', '7PKT', 'X1G7', 'M2QD', 'R9LB', 'T5WE', 'H3NZ', 'P8JC'][i], mission: 'The Trail to Ratatouille', at: new Date(Date.parse('2026-07-08T23:45:30Z') + i * 120e3).toISOString() })),
+        pieces: [{ family: 'The Bryson Family', fragment: '.544604', mission: 'Decryption (Convergence)', at: '2026-07-01T23:28:57Z' }],
+        missions: [{ title: 'The Portico Signal', status: 'completed', at: '2026-07-04T18:00:38Z' }, { title: 'The First Watch', status: 'complete', at: '2026-07-20T18:00:00Z' }],
+      },
       squadName: 'Bryson',
       squads: [{ name: 'Abassi', members: [{ name: 'Aaron', level: 2, role: 'Creator' }, { name: 'Addy', level: 1, role: 'Sage' }] }, { name: 'Wallace', members: [{ name: 'Josh', level: 1, role: 'Recruit' }, { name: 'Lucy', level: 1, role: 'Sage' }, { name: 'Zeke', level: 1, role: 'Recruit' }] }, { name: 'Wolfer', members: [{ name: 'Lena', level: 1, role: 'Sage' }, { name: 'Livia', level: 6, role: 'Tracker' }] }],
       weekFinds: 3,
@@ -1275,11 +1286,26 @@ async function route(method: string, path: string, body?: any): Promise<any> {
     const save = () => { localStorage.setItem(KEY, JSON.stringify(k)); return k; };
     if (p.endsWith('/seen')) { k.steps = k.steps.map((st: { uuid: string }) => (p.includes(st.uuid) ? { ...st, dueAt: new Date(Date.now() + 15 * 60e3).toISOString() } : st)); return save(); }
     if (p.endsWith('/done')) { k.steps = k.steps.filter((st: { uuid: string }) => !p.includes(st.uuid)); k.trails[0].stops[1] = 'done'; k.me.levelProgress = 95; return save(); }
-    return k;
+    // localStorage.mock_kid_quiet = 'true': no open step, so Base shows the countdown.
+    return localStorage.getItem('mock_kid_quiet') === 'true' ? { ...k, steps: [] } : k;
+  }
+  // A parent's practice I Spy: the server only looks; the browser keeps the game.
+  if (p.startsWith('/api/v1/guardian-missions/ispy-demo/')) {
+    const what = p.slice('/api/v1/guardian-missions/ispy-demo/'.length);
+    await new Promise(r => setTimeout(r, 600));
+    if (what === 'guess') {
+      const wrong: string[] = (body?.wrong || []).map((w: string) => w.toLowerCase());
+      return { guess: ['the blue cup', 'the window', 'the toy car', 'the book'].find(g => !wrong.includes(g)) || 'the rug', ms: 600 };
+    }
+    if (what === 'pick') return { clue: 'something red', answer: 'apple', aliases: ['red apple', 'fruit'], hints: ['You can eat it.', 'It grows on a tree.', "It's on the table."] };
+    if (what === 'check') {
+      const n = (x: string) => String(x || '').toLowerCase().replace(/\b(a|an|the)\b/g, ' ').replace(/\s+/g, ' ').trim();
+      return { right: [body?.answer, ...(body?.aliases || [])].map(n).includes(n(body?.guess)) };
+    }
   }
   // Guardians (2026-10-29): one running scout mission waiting on you, proposals, capabilities, two kids.
   if (p === '/api/v1/guardian-missions' || p.startsWith('/api/v1/guardian-missions/')) {
-    const KEY = 'mock_guardian_missions_v3';
+    const KEY = 'mock_guardian_missions_v4';
     const cap = (key: string, name: string, badge: string, extra: Record<string, unknown> = {}) => ({
       uuid: `cap-${key}`, key, kind: 'system', name, description: null, channel: null, locality: 'cloud', permission: 'free', missionOnly: false, houseControl: false,
       enabled: true, status: 'untested', badge, hardware: null, lastTestedAt: null, stale: false,
@@ -1289,6 +1315,8 @@ async function route(method: string, path: string, body?: any): Promise<any> {
       control: { mode: 'running', quietUntil: null, killSwitch: false, killSwitchAt: null, monthlyBudget: 200, stopWord: 'Kraken' },
       attention: 'yellow',
       active: [
+        { uuid: 'm-ispy', key: 'teach-athena-ispy', title: 'Teach Athena I Spy', goal: 'Thomas, Skylar and Athena take turns spying with the tablet cameras. Twelve rounds earns the badge.', rung: 1, priority: 'normal', status: 'running', phase: 'prep', approval: 'approved', source: 'parent', adventure: null, game: 'ispy', notes: null, startedAt: new Date().toISOString(), endedAt: null,
+          capabilities: [{ name: 'Plays I Spy', badge: '🔎' }], steps: [], waitingOn: [], audience: 'kids_too' },
         { uuid: 'm-scout', key: 'scout-the-yard', title: 'Scout the yard', goal: 'First test of scouting.', rung: 1, priority: 'normal', status: 'running', approval: 'approved', source: 'seed', adventure: null, notes: null, startedAt: new Date().toISOString(), endedAt: null,
           capabilities: [{ name: 'Scout geography', badge: '🧭' }, { name: 'Push notification', badge: '🔔' }, { name: 'Phone camera', badge: '📷' }],
           steps: [{ uuid: 's-1', seq: 1, instruction: 'Stand at the back porch and take four photos, holding the phone upright: north, east, south, then west. Proof: the four photos.', place: 'the back porch', proofRequired: 'photo_set', status: 'waiting_parent', dueAt: null, sentAt: new Date().toISOString(), nudgeCount: 0, assignee: { uuid: 'a-ross', name: 'Ross', kind: 'parent' }, capability: 'Scout geography', resultNote: null, audience: 'parent_only' },
@@ -1344,6 +1372,7 @@ async function route(method: string, path: string, body?: any): Promise<any> {
     const save = () => { localStorage.setItem(KEY, JSON.stringify(s)); return s; };
     const rest = p.slice('/api/v1/guardian-missions'.length);
     if (!rest && method === 'GET') return s;
+    if (/^\/missions\/[^/]+\/schedule$/.test(rest)) { const id = rest.split('/')[2]; s.active = s.active.map((m: { uuid: string }) => (m.uuid === id ? { ...m, plannedFor: body?.plannedFor || null } : m)); return save(); }
     if (rest === '/control') { s.control = { ...s.control, ...body, mode: body.mode ?? s.control.mode, quietUntil: body.mode === 'quiet_until' ? body.quietUntil : body.mode ? null : s.control.quietUntil }; return save(); }
     if (rest === '/planning' || rest.startsWith('/planning/')) {
       const workspace = {
