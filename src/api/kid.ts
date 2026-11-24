@@ -30,6 +30,10 @@ export interface KidHome {
   mysteries?: number;
   /** The rows behind the four Base counters, theirs only. */
   record?: KidRecord | null;
+  /** Mission badges: earned, and the ones their approved missions will give. */
+  badges?: { earned: KidBadge[]; ahead: KidBadge[] } | null;
+  /** Athena as a Guardian: her badges, the next she's working toward, her I Spy record. */
+  athenaCard?: AthenaCard | null;
   me: { level: number; role: string; levelProgress: number; xp?: number; xpPerLevel?: number; finds: number; trailKeys?: number; mapPieces?: number; missionsStarted?: number; badges?: number; checkedIn?: boolean; topSkill: { name: string; badge: string | null; level: string } | null } | null;
   squad: KidGuardian[];
   squadName?: string | null;
@@ -46,7 +50,10 @@ export interface KidHome {
   stopWord?: string | null;
 }
 
-export interface KidUpcoming { uuid: string; title: string; plannedFor: string; ready: boolean; game: string | null }
+export interface KidUpcoming { uuid: string; title: string; premise?: string | null; plannedFor: string; ready: boolean; game: string | null; badge?: { name: string; art: string | null } | null }
+/** A mission badge (owner, 11-24): painted art, earned by the kids who took part and, on her missions, Athena. */
+export interface KidBadge { key: string; name: string; story: string; art: string | null; withAthena: boolean; earnedAt: string | null; mission?: string }
+export interface AthenaCard { since: string; badges: KidBadge[]; next: KidBadge[]; ispy: { rounds: number; spotted: number; taught: number; spied: number } }
 export interface KidRecord {
   finds: { title: string; mission: string; at: string }[];
   keys: { clue: number; code: string; mission: string; at: string }[];

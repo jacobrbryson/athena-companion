@@ -1,4 +1,5 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { KID_PATHS } from './components/KidHome';
 import { AuthProvider, useAuth } from './auth/AuthContext';
 import { Splash } from './pages/Splash';
 import { SignIn } from './pages/SignIn';
@@ -36,6 +37,8 @@ export default function App() {
         <Routes>
           {dashboardRoutePaths.map(path => <Route key={path} path={path} element={<Home />} />)}
           <Route path="/chat" element={<Home />} />
+          {/* A kid's Companion pages (Base is "/"). Adults landing here get their dashboard. */}
+          {KID_PATHS.map(path => <Route key={path} path={path} element={<Home />} />)}
           <Route path="/properties/*" element={<Home />} />
           <Route path="/work/:uuid" element={<Home />} />
           <Route path="/system/projects/:uuid" element={<Home />} />

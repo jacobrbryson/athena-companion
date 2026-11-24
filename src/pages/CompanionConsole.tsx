@@ -40,7 +40,7 @@ import { ProfileAvatar } from '../components/ProfileAvatar';
 import { Drawer } from '../components/Drawer';
 import '../dashboard.css';
 import { useStayAwake } from '../athena/idle';
-import { KidChatBanner, KidHome, KidRail, type KidTab } from '../components/KidHome';
+import { KidChatBanner, KidHome, KidRail, kidTabFromPath, kidTabPath, type KidTab } from '../components/KidHome';
 import { useKidHome } from '../api/kid';
 
 /**
@@ -137,8 +137,9 @@ export function CompanionConsole() {
   // A kid's sign-in gets the kids' Base instead of the adult dashboards (11-23).
   const kidHome = useKidHome(profile?.uuid);
   const isKid = kidHome.mode === 'kid';
-  const [kidTab, setKidTabState] = useState<KidTab>(() => (sessionStorage.getItem('companion_kid_tab') as KidTab) || 'base');
-  const setKidTab = (t: KidTab) => { setKidTabState(t); try { sessionStorage.setItem('companion_kid_tab', t); } catch { /* tab resets */ } if (view === 'chat') navigate('/'); };
+  // A kid's tab is the address: /, /missions, /team, /me (and /chat for Athena).
+  const kidTab: KidTab = kidTabFromPath(location.pathname);
+  const setKidTab = (t: KidTab) => navigate(kidTabPath(t));
   const activeSection = sectionFromPath(location.pathname);
   const [menuOpen, setMenuOpen] = useState(false);
   // The phone's stand-in for the left nav: every page the sidebar lists.

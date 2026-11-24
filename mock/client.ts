@@ -1243,7 +1243,7 @@ async function route(method: string, path: string, body?: any): Promise<any> {
       if (rest.endsWith('/reveal')) { find().outcome = 'revealed'; saveG(); return view(); }
       return view();
     }
-    const KEY = 'mock_kid_home_v2';
+    const KEY = 'mock_kid_home_v3';
     const fresh = () => ({
       guardian: true, name: 'Thomas',
       ready: [],
@@ -1264,8 +1264,24 @@ async function route(method: string, path: string, body?: any): Promise<any> {
         { uuid: 'h-rt', title: 'The Trail to Ratatouille', reveal: null, legacy: true, did: { finds: 0, keys: 10, pieces: 0 }, finished: true, endedAt: new Date(Date.now() - 130 * 864e5).toISOString() },
       ],
       // Owner 11-24: the countdown (noon tomorrow), locked mysteries, and the rows behind each counter.
-      upcoming: [{ uuid: 'u-ispy', title: 'Teach Athena I Spy', plannedFor: (() => { const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(12, 0, 0, 0); return d.toISOString(); })(), ready: false, game: 'ispy' }],
+      upcoming: [{ uuid: 'u-ispy', title: 'Teach Athena I Spy', premise: 'Athena has looked after the Guardians for a long time, but she has never earned a mission badge of her own. She has only ever seen the world through cameras, and she wants to see it the way you do. Play I Spy with her on your tablet, taking turns spying things through the camera. After 12 rounds, all three of you earn the First Sight badge.', badge: { name: 'First Sight', art: '/assets/badges/first-sight.webp' }, plannedFor: (() => { const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(12, 0, 0, 0); return d.toISOString(); })(), ready: false, game: 'ispy' }],
       mysteries: 4,
+      // Owner 11-24: mission badges (Thomas's backfilled five) and Athena's card.
+      badges: {
+        earned: [
+          ['answered-the-call', 'Answered the Call', 'You checked in and joined the Guardian Network.', '2026-07-01'],
+          ['codebreaker', 'Codebreaker', "Your family's map piece helped decode where the signal pointed.", '2026-07-01'],
+          ['signal-keeper', 'Signal Keeper', 'You answered the Portico Signal.', '2026-07-04'],
+          ['trailblazer', 'Trailblazer', 'You cracked trail keys and followed the trail to Ratatouille.', '2026-07-08'],
+          ['first-watch', 'First Watch', "You searched the high ground for the founders' lost records.", '2026-07-26'],
+        ].map(([key, name, story, at]) => ({ key, name, story, art: `/assets/badges/${key}.webp`, withAthena: false, earnedAt: `${at}T18:00:00Z` })),
+        ahead: [{ key: 'first-sight', name: 'First Sight', story: "Twelve rounds of I Spy with the tablet cameras: the first time Athena saw the world through a Guardian's eyes, and the first badge she ever earned.", art: '/assets/badges/first-sight.webp', withAthena: true, earnedAt: null, mission: 'u-ispy' }],
+      },
+      athenaCard: {
+        since: '2026-07-01T00:00:00Z', badges: [],
+        next: [{ key: 'first-sight', name: 'First Sight', story: "Twelve rounds of I Spy with the tablet cameras: the first time Athena saw the world through a Guardian's eyes, and the first badge she ever earned.", art: '/assets/badges/first-sight.webp', withAthena: true, earnedAt: null, mission: 'u-ispy' }],
+        ispy: { rounds: 0, spotted: 0, taught: 0, spied: 0 },
+      },
       record: {
         finds: [{ title: 'Duke Power survey stake 40-C', mission: 'The First Watch', at: '2026-07-26T22:02:30Z' }, { title: "Nell's journal — June 1963", mission: 'The First Watch', at: '2026-07-24T19:12:00Z' }, { title: 'The lantern mark', mission: 'The First Watch', at: '2026-07-22T18:40:00Z' }],
         keys: Array.from({ length: 10 }, (_, i) => ({ clue: i, code: ['VS8T', 'C4A8', '6KT8', '7PKT', 'X1G7', 'M2QD', 'R9LB', 'T5WE', 'H3NZ', 'P8JC'][i], mission: 'The Trail to Ratatouille', at: new Date(Date.parse('2026-07-08T23:45:30Z') + i * 120e3).toISOString() })),

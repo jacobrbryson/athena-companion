@@ -3,7 +3,7 @@ import { AthenaAvatar } from './AthenaAvatar';
 import { IspyGame } from './IspyGame';
 import { ProfileAvatar } from './ProfileAvatar';
 import { GUARDIANS_HEADER } from './GuardiansOverview';
-import { kidApi, kidSound, photoForProof, type KidGuardian, type KidHome as KidHomeData, type KidRecord, type KidSafety, type KidStep, type KidUpcoming, type StopState } from '../api/kid';
+import { kidApi, kidSound, photoForProof, type KidBadge, type KidGuardian, type KidHome as KidHomeData, type KidRecord, type KidSafety, type KidStep, type KidUpcoming, type StopState } from '../api/kid';
 import './kid.css';
 
 /**
@@ -12,7 +12,16 @@ import './kid.css';
  * is the console's own chat. No cameras, controls, codes or other families'
  * details beyond first names — the server never sends them.
  */
-export type KidTab = 'base' | 'missions' | 'team' | 'me';
+export type KidTab = 'base' | 'missions' | 'team' | 'me' | 'athenaCard';
+
+/** Each kid page has its own address (owner, 11-24); Base is the home page and Athena is /chat. */
+const KID_TAB_PATH: Record<KidTab, string> = { base: '/', missions: '/missions', team: '/team', me: '/me', athenaCard: '/team/athena' };
+export const KID_PATHS = ['/missions', '/team', '/me', '/team/athena'];
+export const kidTabPath = (t: KidTab) => KID_TAB_PATH[t];
+export function kidTabFromPath(pathname: string): KidTab {
+  const path = pathname.replace(/\/+$/, '') || '/';
+  return (Object.entries(KID_TAB_PATH).find(([, p]) => p === path)?.[0] as KidTab | undefined) || 'base';
+}
 
 const TABS: { key: KidTab | 'athena'; label: string; icon: string }[] = [
   { key: 'base', label: 'Base', icon: '🏠' },
@@ -117,7 +126,7 @@ export function KidRail({ tab, inChat, waiting, onTab, onAthena }: {
     <nav className="kid-rail" aria-label="Guardian navigation">
       <div className="kid-rail-brand" aria-hidden><span>GUARDIANS</span></div>
       {TABS.map(t => {
-        const active = t.key === 'athena' ? inChat : !inChat && tab === t.key;
+        const active = t.key === 'athena' ? inChat : !inChat && (tab === 'athenaCard' ? 'team' : tab) === t.key;
         const badge = (t.key === 'base' || t.key === 'missions') && waiting > 0 && !active;
         return (
           <button key={t.key} type="button" className={`kid-rail-btn${t.key === 'athena' ? ' kid-rail-athena' : ''}${active ? ' active' : ''}`}
@@ -147,7 +156,7 @@ function LevelBadge({ level }: { level: number }) {
 }
 
 /** The big "what do I do now" card. Hidden behind a calm state when nothing is asked. */
-function YourMove({ data, onAct, onAthena, onIspy }: { data: KidHomeData; onAct: (fn: () => Promise<unknown>, cheer?: boolean) => Promise<void>; onAthena: () => void; onIspy?: () => void }) {
+function YourMove({ data, onAct, onAthena, onIspy, onMissions }: { data: KidHomeData; onAct: (fn: () => Promise<unknown>, cheer?: boolean) => Promise<void>; onAthena: () => void; onIspy?: () => void; onMissions: () => void }) {
   const step: KidStep | undefined = data.steps[0];
   const ready = data.ready[0];
   const [code, setCode] = useState('');
@@ -173,13 +182,21 @@ function YourMove({ data, onAct, onAthena, onIspy }: { data: KidHomeData; onAct:
     );
   }
   if (!step) {
-    const last = data.reveals[0];
+    // The owner's mockup (11-24): the Guardians' lookout fills the card, so a
+    // quiet day reads as "on watch", not as an empty box.
     return (
       <Card className="kid-move kid-move-quiet" icon="🎯" title="Your move">
-        <div className="kid-quiet"><AthenaAvatar className="kid-quiet-face" /><div><h3>All quiet</h3><p>Athena is keeping watch. When she needs a Guardian, your mission shows up right here.</p></div></div>
-        <Stats data={data} />
-        {last && <div className="kid-last"><small>LAST QUEST</small><b>{last.title}</b><p>{last.reveal}</p></div>}
-        <div className="kid-move-actions"><button type="button" className="kid-btn kid-btn-primary" onClick={onAthena}>💬 Talk to Athena</button></div>
+        <div className="kid-quiet-scene" aria-hidden />
+        <div className="kid-quiet">
+          <svg className="kid-quiet-shield" viewBox="0 0 64 72" aria-hidden>
+            <path d="M32 3 58 13v19c0 18-11 30-26 37C17 62 6 50 6 32V13Z" />
+            <path className="tick" d="m20 36 9 9 16-18" />
+          </svg>
+          <h3>All quiet.</h3>
+          <p>Athena is keeping watch.<br />When she needs a Guardian, your next mission step will appear here.</p>
+        </div>
+        <Stats data={data} onMissions={onMissions} />
+        <div className="kid-move-actions"><button type="button" className="kid-btn kid-btn-primary kid-talk" onClick={onAthena}>💬 Talk to Athena <span aria-hidden>›</span></button></div>
       </Card>
     );
   }
@@ -241,7 +258,7 @@ function didLine(d: { finds: number; keys: number; pieces: number }): string {
 type RecordKind = keyof KidRecord;
 
 /** What they've really done, as big friendly counters. Each one opens its list. */
-function Stats({ data }: { data: KidHomeData }) {
+function Stats({ data, onMissions }: { data: KidHomeData; onMissions: () => void }) {
   const [open, setOpen] = useState<RecordKind | null>(null);
   const me = data.me;
   if (!me) return null;
@@ -256,7 +273,8 @@ function Stats({ data }: { data: KidHomeData }) {
       <ul className="kid-stats">
         {tiles.map(([kind, icon, label, n]) => (
           <li key={kind}>
-            <button type="button" onClick={() => setOpen(kind)} disabled={!data.record} aria-label={`${label}: ${n}. Show them.`}>
+            {/* Missions is a page of its own, so that counter goes there (owner, 11-24). */}
+            <button type="button" onClick={() => (kind === 'missions' ? onMissions() : setOpen(kind))} disabled={kind !== 'missions' && !data.record} aria-label={kind === 'missions' ? `${label}: ${n}. Open the Missions page.` : `${label}: ${n}. Show them.`}>
               <span aria-hidden>{icon}</span><b>{n}</b><small>{label}</small>
             </button>
           </li>
@@ -283,17 +301,31 @@ function RecordSheet({ kind, record, onClose }: { kind: RecordKind; record: KidR
     window.addEventListener('keydown', esc);
     return () => window.removeEventListener('keydown', esc);
   }, [onClose]);
-  const rows: { key: string; main: string; sub: string; at: string }[] =
-    kind === 'finds' ? record.finds.map((f, i) => ({ key: `f${i}`, main: f.title, sub: f.mission, at: f.at }))
-    : kind === 'keys' ? record.keys.map((k, i) => ({ key: `k${i}`, main: `Clue ${k.clue + 1}: key ${k.code}`, sub: k.mission, at: k.at }))
-    : kind === 'pieces' ? record.pieces.map((p, i) => ({ key: `p${i}`, main: p.fragment ? `${p.family}: ${p.fragment}` : p.family, sub: p.mission, at: p.at }))
-    : record.missions.map((m, i) => ({ key: `m${i}`, main: m.title, sub: STATUS_WORD[m.status] || m.status, at: m.at }));
+  // Clues, keys and map pieces sit under the mission they came from (owner, 11-24).
+  const rows: { key: string; main: string; sub: string; group: string | null; at: string }[] =
+    kind === 'finds' ? record.finds.map((f, i) => ({ key: `f${i}`, main: f.title, sub: '', group: f.mission, at: f.at }))
+    : kind === 'keys' ? record.keys.map((k, i) => ({ key: `k${i}`, main: `Clue ${k.clue + 1}: key ${k.code}`, sub: '', group: k.mission, at: k.at }))
+    : kind === 'pieces' ? record.pieces.map((p, i) => ({ key: `p${i}`, main: p.fragment ? `${p.family}: ${p.fragment}` : p.family, sub: '', group: p.mission, at: p.at }))
+    : record.missions.map((m, i) => ({ key: `m${i}`, main: m.title, sub: STATUS_WORD[m.status] || m.status, group: null, at: m.at }));
+  const groups: { name: string | null; rows: typeof rows }[] = [];
+  for (const r of rows) {
+    const g = groups.find(x => x.name === r.group);
+    if (g) g.rows.push(r); else groups.push({ name: r.group, rows: [r] });
+  }
+  const line = (r: (typeof rows)[number]) => [r.sub, r.at ? ago(r.at) : ''].filter(Boolean).join(' · ');
   return (
     <div className="kid-sheet-back" onClick={onClose}>
       <section className="kid-sheet" role="dialog" aria-label={head.title} onClick={e => e.stopPropagation()}>
         <header><span aria-hidden>{head.icon}</span><h2>{head.title}</h2><b className="kid-pill">{rows.length}</b><button type="button" className="kid-btn" onClick={onClose}>✕</button></header>
         {rows.length ? (
-          <ol className="kid-record">{rows.map(r => <li key={r.key}><b>{r.main}</b><small>{r.sub}{r.at ? ` · ${ago(r.at)}` : ''}</small></li>)}</ol>
+          <div className="kid-record-groups">
+            {groups.map(g => (
+              <section key={g.name || 'all'} className="kid-record-group" aria-label={g.name || head.title}>
+                {g.name && <h3><span>🗺️ {g.name}</span><b>{g.rows.length}</b></h3>}
+                <ol className="kid-record">{g.rows.map(r => <li key={r.key}><b>{r.main}</b>{line(r) && <small>{line(r)}</small>}</li>)}</ol>
+              </section>
+            ))}
+          </div>
         ) : <p className="kid-empty">{head.empty}</p>}
       </section>
     </div>
@@ -322,12 +354,120 @@ function Countdown({ at }: { at: string }) {
 
 const startsWhen = (at: string) => new Date(at).toLocaleString(undefined, { weekday: 'long', hour: 'numeric', minute: '2-digit' });
 
+/** A mission badge's painted art, in its circle. Locked ones are dimmed with a lock. */
+function BadgeArt({ badge, locked = false, className = '' }: { badge: Pick<KidBadge, 'name' | 'art'>; locked?: boolean; className?: string }) {
+  return (
+    <span className={`kid-badge-art${locked ? ' locked' : ''} ${className}`}>
+      {badge.art ? <img src={badge.art} alt="" loading="lazy" /> : <i aria-hidden>🏅</i>}
+      {locked && <b aria-hidden>🔒</b>}
+    </span>
+  );
+}
+
+const earnedOn = (at: string | null) => (at ? new Date(at).toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' }) : '');
+
+function BadgeSheet({ badge, locked, onClose }: { badge: KidBadge; locked: boolean; onClose: () => void }) {
+  useEffect(() => {
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', esc);
+    return () => window.removeEventListener('keydown', esc);
+  }, [onClose]);
+  return (
+    <div className="kid-sheet-back" onClick={onClose}>
+      <section className="kid-sheet kid-badge-sheet" role="dialog" aria-label={badge.name} onClick={e => e.stopPropagation()}>
+        <button type="button" className="kid-btn kid-badge-close" onClick={onClose} aria-label="Close">✕</button>
+        <BadgeArt badge={badge} locked={locked} className="big" />
+        <h2>{badge.name}</h2>
+        <p>{badge.story}</p>
+        <small>{locked ? 'Not earned yet. Finish the mission to earn it!' : `Earned ${earnedOn(badge.earnedAt)}`}{badge.withAthena ? ' · Athena earns this one too' : ''}</small>
+      </section>
+    </div>
+  );
+}
+
+/** A shelf of mission badges: earned first, then the ones waiting on a mission, locked. */
+function BadgeShelf({ earned, ahead, empty }: { earned: KidBadge[]; ahead: KidBadge[]; empty: string }) {
+  const [open, setOpen] = useState<{ badge: KidBadge; locked: boolean } | null>(null);
+  if (!earned.length && !ahead.length) return <p className="kid-empty">{empty}</p>;
+  return (
+    <>
+      <ul className="kid-badge-shelf">
+        {earned.map(b => (
+          <li key={b.key}><button type="button" onClick={() => setOpen({ badge: b, locked: false })}><BadgeArt badge={b} /><b>{b.name}</b><small>{earnedOn(b.earnedAt)}</small></button></li>
+        ))}
+        {ahead.map(b => (
+          <li key={b.key} className="ahead"><button type="button" onClick={() => setOpen({ badge: b, locked: true })}><BadgeArt badge={b} locked /><b>{b.name}</b><small>Up next</small></button></li>
+        ))}
+      </ul>
+      {open && <BadgeSheet badge={open.badge} locked={open.locked} onClose={() => setOpen(null)} />}
+    </>
+  );
+}
+
+/**
+ * Athena as a Guardian (owner, 11-24), at /team/athena: her badges, what she's
+ * working toward, what she's learning, and her I Spy record. Her line is
+ * written ahead of time, never improvised.
+ */
+function AthenaPage({ data, onBack, onMissions }: { data: KidHomeData; onBack: () => void; onMissions: () => void }) {
+  const card = data.athenaCard;
+  const top = [...data.athena].sort((a, b) => b.percent - a.percent);
+  const ispy = card?.ispy;
+  return (
+    <div className="kid-stack">
+      <section className="kid-card kid-athena-hero">
+        <button type="button" className="kid-link kid-athena-back" onClick={onBack}>‹ Team</button>
+        <AthenaAvatar className="kid-athena-face" />
+        <div>
+          <h2>Athena</h2>
+          <p className="kid-athena-role">Guardian{card?.since ? ` since ${new Date(card.since).toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}` : ''} · 🏅 {card?.badges.length || 0} badge{card?.badges.length === 1 ? '' : 's'}</p>
+          <p className="kid-athena-line">“I've kept watch over the Guardians for a long time, but always through a camera. I'd like to earn a badge of my own one day, and see the world the way you do.”</p>
+        </div>
+      </section>
+      <div className="kid-two">
+        <Card icon="🏅" title="Athena's badges" aside={<span className="kid-pill">{card?.badges.length || 0}</span>}>
+          <BadgeShelf earned={card?.badges || []} ahead={card?.next || []} empty="No badges yet. Her first one is waiting for a mission with the Guardians." />
+          {!!card?.next.length && !card.badges.length && <p className="kid-note">She can't earn it alone. <button type="button" className="kid-link" onClick={onMissions}>See the mission ›</button></p>}
+        </Card>
+        <Card icon="🧠" title="What she's learning">
+          <div className="kid-taught-bars">
+            {top.map(a => (
+              <div key={a.key} className="kid-taught-row">
+                <span className="kid-taught-name">{a.name}</span>
+                <span className="kid-bar"><i style={{ width: `${Math.max(3, a.percent)}%` }} /></span>
+                <b>{a.percent}%</b>
+              </div>
+            ))}
+          </div>
+          <p className="kid-hint">Every mission you finish together helps her grow.</p>
+        </Card>
+      </div>
+      <Card icon="🔎" title="Athena's I Spy record">
+        {ispy && ispy.rounds > 0 ? (
+          <ul className="kid-stats kid-stats-static">
+            <li><span aria-hidden>🎲</span><b>{ispy.rounds}</b><small>Rounds played</small></li>
+            <li><span aria-hidden>👀</span><b>{ispy.spotted}</b><small>She spotted it</small></li>
+            <li><span aria-hidden>🧑‍🏫</span><b>{ispy.taught}</b><small>You showed her</small></li>
+            <li><span aria-hidden>🔭</span><b>{ispy.spied}</b><small>She spied</small></li>
+          </ul>
+        ) : <p className="kid-empty">She hasn't played yet. When I Spy starts, every round you play shows up here.</p>}
+      </Card>
+    </div>
+  );
+}
+
 /** The next mission, counting down to when the grown-ups plan to press Go. */
 function NextMissionCard({ next, more, onOpen }: { next: KidUpcoming; more: number; onOpen: () => void }) {
   return (
     <Card className="kid-next" icon="🚀" title="Next mission" aside={<button type="button" className="kid-link" onClick={onOpen}>{more > 0 ? `+${more} more` : 'All missions'} ›</button>}>
-      <h3>{next.title}</h3>
-      <p className="kid-next-when">Starts {startsWhen(next.plannedFor)}</p>
+      <div className="kid-next-head">
+        <div>
+          <h3>{next.title}</h3>
+          <p className="kid-next-when">Starts {startsWhen(next.plannedFor)}</p>
+        </div>
+        {next.badge && <span className="kid-next-badge" title={`Earn the ${next.badge.name} badge`}><BadgeArt badge={next.badge} locked /><small>{next.badge.name}</small></span>}
+      </div>
+      {next.premise && <p className="kid-next-story">{next.premise}</p>}
       <Countdown at={next.plannedFor} />
       <p className="kid-note">{next.ready ? 'Your grown-up can press Go any time now.' : 'When it starts, your first step shows up in Your move.'}{next.game === 'ispy' ? ' Get your tablet camera ready! 📸' : ''}</p>
     </Card>
@@ -344,16 +484,23 @@ function Trail({ stops }: { stops: StopState[] }) {
   );
 }
 
-function MissionCard({ data, onOpen }: { data: KidHomeData; onOpen: () => void }) {
-  const t = data.trails[0];
+/**
+ * The quest they're on: a trail with one of their own stops still to do. A mission
+ * can keep running for someone else after their part is done (Thomas, 11-24),
+ * and that one is finished for them, not current.
+ */
+const currentTrail = (data: KidHomeData) => data.trails.find(t => t.stops.some(s => s !== 'done'));
+
+function MissionCard({ data, onOpen }: { data: KidHomeData; onOpen?: () => void }) {
+  const t = currentTrail(data);
   const at = t ? t.stops.findIndex(s => s === 'current') : -1;
   const done = t ? t.stops.filter(s => s === 'done').length : 0;
-  const complete = Boolean(t && done === t.stops.length);
   return (
     <Card className="kid-mission" icon="🗺️" title={t ? `Mission: ${t.title}` : 'Mission map'}
-      aside={t && <button type="button" className="kid-link" onClick={onOpen}>{complete ? 'Complete ✓' : `Step ${at >= 0 ? at + 1 : done} of ${t.stops.length}`} ›</button>}>
+      aside={t && (onOpen
+        ? <button type="button" className="kid-link" onClick={onOpen}>Step {at >= 0 ? at + 1 : done + 1} of {t.stops.length} ›</button>
+        : <span className="kid-link">Step {at >= 0 ? at + 1 : done + 1} of {t.stops.length}</span>)}>
       {t ? <Trail stops={t.stops} /> : <p className="kid-empty">No mission right now. Your next adventure will appear on this map.</p>}
-      {complete && <p className="kid-complete">🏁 You finished every step! Athena is checking how it went.</p>}
       {data.clues && data.clues.total > 0 && (
         <p className="kid-clues">Clues collected: {Array.from({ length: Math.min(data.clues.total, 8) }, (_, i) => <i key={i} className={i < data.clues!.found ? 'got' : ''} aria-hidden>{i < data.clues!.found ? '🔍' : ''}</i>)}<b>{data.clues.found}/{data.clues.total}</b></p>
       )}
@@ -443,7 +590,7 @@ export function KidHome({ tab, data, error, picture, onTab, onAthena, onSignOut,
   const squads = data?.squads?.length ? data.squads : others.length ? [{ name: 'Other', members: others }] : [];
 
   if (!data) {
-    return <div className="kid-home kid-loading"><AthenaAvatar className="kid-quiet-face" /><p>{error || 'Opening Base…'}</p></div>;
+    return <div className="kid-home kid-loading"><AthenaAvatar className="kid-quiet-face" /><p>{error || 'Opening…'}</p></div>;
   }
   const next = data.steps.length ? undefined : data.upcoming?.[0];
   const line = greeting(data.name, data.steps.length > 0, new Date(), Boolean(next));
@@ -470,7 +617,7 @@ export function KidHome({ tab, data, error, picture, onTab, onAthena, onSignOut,
 
       {tab === 'base' && data.guardian && (
         <div className="kid-grid">
-          <YourMove data={data} onAct={onAct} onAthena={onAthena} onIspy={() => setIspyOpen(true)} />
+          <YourMove data={data} onAct={onAct} onAthena={onAthena} onIspy={() => setIspyOpen(true)} onMissions={() => onTab('missions')} />
           <div className="kid-col">
             {next ? <NextMissionCard next={next} more={(data.upcoming?.length || 1) - 1 + (data.mysteries || 0)} onOpen={() => onTab('missions')} /> : <MissionCard data={data} onOpen={() => onTab('missions')} />}
             <TaughtAthena data={data} />
@@ -482,16 +629,21 @@ export function KidHome({ tab, data, error, picture, onTab, onAthena, onSignOut,
 
       {tab === 'missions' && data.guardian && (
         <div className="kid-missions">
-          <section className="kid-mission-now" aria-label="Now">
-            <h2 className="kid-section">🎯 Now</h2>
-            <div className="kid-grid kid-grid-now">
-              <YourMove data={data} onAct={onAct} onAthena={onAthena} onIspy={() => setIspyOpen(true)} />
-              <div className="kid-col">
-                {data.steps[0]?.premise && <Card className="kid-story" icon="📖" title="The story so far"><p>{data.steps[0].premise}</p></Card>}
-                <MissionCard data={data} onOpen={() => onTab('missions')} />
-              </div>
-            </div>
-          </section>
+          {/* Owner 11-24: the mission they're on (or what's next) first, then past missions. Your move stays on Base. */}
+          {(currentTrail(data) || data.steps[0]) && (
+            <section aria-label="Current mission">
+              <h2 className="kid-section">🎯 Current mission</h2>
+              {data.steps[0] ? (
+                <div className="kid-grid kid-grid-now">
+                  <MissionCard data={data} />
+                  <Card className="kid-story" icon="📖" title="The story so far">
+                    {data.steps[0].premise && <p>{data.steps[0].premise}</p>}
+                    <button type="button" className="kid-btn kid-btn-primary" onClick={() => onTab('base')}>🎯 Your step is on Base</button>
+                  </Card>
+                </div>
+              ) : <MissionCard data={data} />}
+            </section>
+          )}
 
           <section aria-label="Coming up">
             <h2 className="kid-section">🚀 Coming up</h2>
@@ -499,8 +651,11 @@ export function KidHome({ tab, data, error, picture, onTab, onAthena, onSignOut,
               <ul className="kid-coming">
                 {(data.upcoming || []).map(u => (
                   <li key={u.uuid} className="kid-card kid-coming-card">
-                    <small>{startsWhen(u.plannedFor)}</small>
-                    <b>{u.title}</b>
+                    <div className="kid-next-head">
+                      <div><small>{startsWhen(u.plannedFor)}</small><b>{u.title}</b></div>
+                      {u.badge && <span className="kid-next-badge"><BadgeArt badge={u.badge} locked /><small>{u.badge.name}</small></span>}
+                    </div>
+                    {u.premise && <p className="kid-next-story">{u.premise}</p>}
                     <Countdown at={u.plannedFor} />
                   </li>
                 ))}
@@ -514,8 +669,8 @@ export function KidHome({ tab, data, error, picture, onTab, onAthena, onSignOut,
             )}
           </section>
 
-          <section aria-label="Past">
-            <Card className="kid-span" icon="📚" title="Your quest books" aside={data.history?.length ? <span className="kid-pill">{data.history.length} QUEST{data.history.length === 1 ? '' : 'S'}</span> : undefined}>
+          <section aria-label="Past missions">
+            <Card className="kid-span" icon="📚" title="Past missions" aside={data.history?.length ? <span className="kid-pill">{data.history.length} MISSION{data.history.length === 1 ? '' : 'S'}</span> : undefined}>
               {data.history?.length ? (
                 <ul className="kid-books">{data.history.map((h, i) => (
                   <li key={h.uuid} className={`kid-book kid-book-${i % 5}`}>
@@ -527,7 +682,7 @@ export function KidHome({ tab, data, error, picture, onTab, onAthena, onSignOut,
                       : <p className="kid-book-locked">Athena hasn't told this one's secret yet.</p>}
                   </li>
                 ))}</ul>
-              ) : <p className="kid-empty">Finish a quest and it joins your shelf, with what you really helped Athena learn.</p>}
+              ) : <p className="kid-empty">Finish a mission and it joins this shelf, with what you really helped Athena learn.</p>}
             </Card>
           </section>
         </div>
@@ -538,7 +693,7 @@ export function KidHome({ tab, data, error, picture, onTab, onAthena, onSignOut,
           <Card icon="🛡️" title={data.squadName ? `${data.squadName} squad` : 'Your squad'}>
             <ul className="kid-tiles kid-tiles-big">
               {data.squad.map(g => <GuardianTile key={g.name} g={g} mine={g.name === data.name} />)}
-              <li className="kid-tile kid-tile-athena"><AthenaAvatar className="kid-tile-face" /><b>Athena</b><small>🧠 Learning</small></li>
+              <li className="kid-tile kid-tile-athena"><button type="button" onClick={() => onTab('athenaCard')} aria-label="Athena's Guardian page"><AthenaAvatar className="kid-tile-face" /><b>Athena</b><small>🏅 {data.athenaCard?.badges.length || 0} badge{data.athenaCard?.badges.length === 1 ? '' : 's'} ›</small></button></li>
             </ul>
           </Card>
           <Card icon="⭐" title="Specialists">
@@ -570,9 +725,16 @@ export function KidHome({ tab, data, error, picture, onTab, onAthena, onSignOut,
         </div>
       )}
 
+      {tab === 'athenaCard' && data.guardian && <AthenaPage data={data} onBack={() => onTab('team')} onMissions={() => onTab('missions')} />}
+
       {tab === 'me' && (
         <div className="kid-stack">
           {data.guardian && <GuardianCard data={data} picture={picture} big />}
+          {data.guardian && data.badges && (
+            <Card icon="🎖️" title="Mission badges" aside={<span className="kid-pill">{data.badges.earned.length}</span>}>
+              <BadgeShelf earned={data.badges.earned} ahead={data.badges.ahead} empty="Finish a mission and its badge lands here." />
+            </Card>
+          )}
           {data.guardian && !!data.skills?.length && (
             <div className="kid-two">
               <Card icon="📊" title="Your skills">
@@ -582,7 +744,7 @@ export function KidHome({ tab, data, error, picture, onTab, onAthena, onSignOut,
                     <small>{s.level === 'reliable' ? 'Mastered!' : s.level === 'learning' ? 'Learning' : 'Not yet'}</small></li>
                 ))}</ul>
               </Card>
-              <Card icon="🏅" title="Badges" aside={<span className="kid-pill">{data.skills.filter(s => s.level === 'reliable').length} / {data.skills.length}</span>}>
+              <Card icon="🏅" title="Skill badges" aside={<span className="kid-pill">{data.skills.filter(s => s.level === 'reliable').length} / {data.skills.length}</span>}>
                 <ul className="kid-badges">{data.skills.map(s => (
                   <li key={s.name} className={`kid-badge-${s.level}`} title={s.name}><span aria-hidden>{s.level === 'untested' ? '❔' : s.badge || '🏅'}</span><small>{s.level === 'untested' ? '???' : s.name}</small></li>
                 ))}</ul>
@@ -616,7 +778,7 @@ export function KidHome({ tab, data, error, picture, onTab, onAthena, onSignOut,
 export function KidChatBanner({ data, onMission }: { data: KidHomeData | null; onMission: () => void }) {
   if (!data?.guardian) return null;
   const step = data.steps[0];
-  const trail = data.trails[0];
+  const trail = currentTrail(data);
   return (
     <div className="kid-chat-banner">
       {step || trail ? (
