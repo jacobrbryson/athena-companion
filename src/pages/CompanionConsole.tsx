@@ -44,6 +44,8 @@ import { KidChatBanner, KidHome, KidRail, kidTabFromPath, kidTabPath, type KidTa
 import { useKidHome } from '../api/kid';
 import { RelayGame } from '../components/relay/RelayGame';
 import { useSignalRelay } from '../components/relay/useSignalRelay';
+import { PianoQuest } from '../components/piano/PianoQuest';
+import { useRelayInbox } from '../api/relayMessages';
 
 /**
  * The Companion console — the Guardians console's layout and feel (Athena
@@ -141,6 +143,9 @@ export function CompanionConsole() {
   const isKid = kidHome.mode === 'kid';
   // Signal Relay (11-24): the offline Morse game, by itself when Base is lost.
   const relay = useSignalRelay(isKid, kidHome.failures);
+  const [piano, setPiano] = useState(false);
+  // Secret Morse messages for whoever is signed in, kid or adult (11-25).
+  const relayInbox = useRelayInbox(profile?.uuid, Boolean(relay.open));
   // A kid's tab is the address: /, /missions, /team, /me (and /chat for Athena).
   const kidTab: KidTab = kidTabFromPath(location.pathname);
   const setKidTab = (t: KidTab) => navigate(kidTabPath(t));
@@ -674,8 +679,14 @@ export function CompanionConsole() {
         <EmergencyBanner onAsk={askAthena} onPlaces={showPointsOfInterest} pinned={view === 'chat'} />
       )}
 
-      {view === 'dashboard' && isKid && <KidHome tab={kidTab} data={kidHome.data} error={kidHome.error} picture={user?.picture} onTab={setKidTab} onAthena={() => navigate('/chat')} onSignOut={() => void signOut()} act={kidHome.act} onRelay={(reason) => relay.start(reason || 'bored')} />}
-      {isKid && relay.open && profile?.uuid && <RelayGame who={profile.uuid} reason={relay.open} online={relay.online} onClose={relay.close} />}
+      {view === 'dashboard' && isKid && <KidHome tab={kidTab} data={kidHome.data} error={kidHome.error} picture={user?.picture} onTab={setKidTab} onAthena={() => navigate('/chat')} onSignOut={() => void signOut()} act={kidHome.act} onRelay={(reason) => relay.start(reason || 'bored')} onPiano={() => setPiano(true)} secrets={relayInbox.messages.length} />}
+      {(isKid || relay.open === 'message') && relay.open && profile?.uuid && <RelayGame who={profile.uuid} reason={relay.open} online={relay.online} onClose={() => { relay.close(); void relayInbox.check(); }} secrets={relayInbox.messages} onDecoded={relayInbox.done} />}
+      {!isKid && !relay.open && relayInbox.messages.length > 0 && (
+        <button type="button" className="relay-secret-pill" onClick={() => relay.start('message')}>
+          <span aria-hidden>📡</span><b>Secret message from {relayInbox.messages[0].from}</b><small>{relayInbox.messages.length > 1 ? `+${relayInbox.messages.length - 1} more · ` : ''}decode it in Morse</small>
+        </button>
+      )}
+      {isKid && piano && !relay.open && profile?.uuid && <PianoQuest who={profile.uuid} onClose={() => setPiano(false)} />}
       {view === 'dashboard' && !isKid && <Dashboard section={activeSection} firstName={firstName} onAsk={askAthena} onPanel={openPanel} onPlaces={showPointsOfInterest} onNavigate={navigateDashboard} brain={brain} />}
       <div className="companion-chat" hidden={view !== 'chat'}>
       {isKid && <KidChatBanner data={kidHome.data} onMission={() => setKidTab(kidHome.data?.steps.length ? 'base' : 'missions')} />}

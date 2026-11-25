@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  MORSE, decode, encode, classify, adapt, check, letterGapMs, settleMs, pickMessages, TIERS, FINAL_MESSAGE, START_DOT_MS,
+  MORSE, decode, encode, classify, adapt, check, letterGapMs, settleMs, pickMessages, pickIncoming, choicesFor, runPlan, TIERS, INCOMING, FINAL_MESSAGE, START_DOT_MS,
 } from '../src/components/relay/morse.ts';
 
 test('every letter and digit is real International Morse and decodes back', () => {
@@ -50,10 +50,34 @@ test('a letter in progress is a match, a prefix, or wrong', () => {
 });
 
 test('a run asks one word from each tier, then her name', () => {
-  const run = pickMessages(() => 0.5);
-  assert.equal(run.length, TIERS.length + 1);
-  assert.equal(run.at(-1), FINAL_MESSAGE);
-  run.slice(0, -1).forEach((w, i) => assert.ok(TIERS[i].includes(w)));
-  assert.equal(new Set(run).size, run.length);
+  for (let level = 1; level <= 15; level += 1) {
+    const plan = runPlan(level);
+    const run = pickMessages(level, () => 0.5);
+    assert.equal(run.length, plan.tiers.length + 1);
+    assert.equal(run.at(-1), FINAL_MESSAGE);
+    run.slice(0, -1).forEach((w, i) => assert.ok(TIERS[plan.tiers[i]].includes(w)));
+    assert.equal(new Set(run).size, run.length, `level ${level} never repeats a word`);
+  }
   for (const w of TIERS.flat()) assert.equal(encode(w).length, w.length, `${w} is all Morse letters`);
+});
+
+test('runs grow with the relay level, and Incoming starts at level 3', () => {
+  assert.equal(runPlan(1).tiers.length, 2);
+  assert.ok(runPlan(9).tiers.length >= runPlan(4).tiers.length);
+  assert.equal(pickIncoming(1), null);
+  assert.equal(pickIncoming(2), null);
+  assert.ok(INCOMING[0].includes(pickIncoming(3, () => 0)));
+  assert.ok(Math.max(...runPlan(12).tiers) <= TIERS.length - 1);
+  for (const w of INCOMING.flat()) assert.equal(encode(w).length, w.length);
+});
+
+test('decode choices are four different letters including the right one', () => {
+  for (const ch of 'ABCDEFGHIJKLMNOPQRSTUVWXYZ') {
+    for (const r of [0, 0.3, 0.99]) {
+      const c = choicesFor(ch, () => r);
+      assert.equal(c.length, 4);
+      assert.equal(new Set(c).size, 4);
+      assert.ok(c.includes(ch));
+    }
+  }
 });

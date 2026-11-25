@@ -1,0 +1,105 @@
+/* Piano Quest (11-25): the Guardians' offline sheet-music game. Full screen
+   over Base, like Signal Relay. One scale, --p, so a landscape tablet and a
+   phone both fit the staff and the keys. Transforms and opacity only. */
+
+.pq {
+  --p: clamp(0.55px, min(calc(100vw / 1200), calc(100vh / 820)), 1.35px);
+  position: fixed; inset: 0; z-index: 80;
+  display: grid; grid-template-rows: auto 1fr auto;
+  overflow: hidden; color: #f2f0ff; font-family: system-ui, sans-serif;
+  background: radial-gradient(120% 90% at 50% 0%, #3a2470 0%, #170b33 55%, #07030f 100%);
+  user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent;
+  animation: pq-in .45s ease-out;
+}
+.pq button { font: inherit; color: inherit; cursor: pointer; }
+
+.pq-top { display: flex; align-items: center; gap: calc(16 * var(--p)); padding: calc(14 * var(--p)) calc(22 * var(--p)); flex-wrap: wrap; }
+.pq-title { display: flex; flex-direction: column; line-height: 1.1; }
+.pq-title b { font: 900 calc(22 * var(--p)) system-ui, sans-serif; letter-spacing: .16em; color: #ffd1f4; text-shadow: 0 0 calc(14 * var(--p)) #ff6ad588; }
+.pq-title small { font: 700 calc(14 * var(--p)) system-ui, sans-serif; letter-spacing: .1em; text-transform: uppercase; color: #c9b8ea; margin-top: calc(4 * var(--p)); }
+.pq-top .gxp { border-color: #b77bff; background: #1d0f3dcc; }
+.pq-combo { font: 900 calc(24 * var(--p)) system-ui, sans-serif; color: #ffb14d; animation: pq-pop .4s cubic-bezier(.2, 1.6, .4, 1); }
+.pq-tools { margin-left: auto; display: flex; gap: calc(10 * var(--p)); }
+.pq-tools button { width: calc(56 * var(--p)); height: calc(56 * var(--p)); border-radius: calc(16 * var(--p)); border: 2px solid #5b3a99; background: #1a0d3499; font-size: calc(24 * var(--p)); transition: transform .12s; }
+.pq-tools button:active { transform: scale(.9); }
+
+.pq-stage { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: calc(10 * var(--p)); min-height: 0; padding: 0 calc(20 * var(--p)); }
+.pq-line { min-height: calc(28 * var(--p)); font: 700 calc(19 * var(--p)) system-ui, sans-serif; color: #e6dcff; text-align: center; max-width: calc(820 * var(--p)); }
+
+/* ── menu, songs, finish ── */
+.pq-menu, .pq-songs, .pq-done { position: relative; display: flex; flex-direction: column; align-items: center; gap: calc(12 * var(--p)); text-align: center; animation: pq-pop .5s cubic-bezier(.2, 1.4, .4, 1); }
+.pq-face { width: calc(110 * var(--p)); height: calc(110 * var(--p)); border-radius: 50%; }
+.pq-menu h2, .pq-songs h2, .pq-done h2 { font: 900 calc(40 * var(--p)) system-ui, sans-serif; color: #fff; }
+.pq-menu p { font: 600 calc(18 * var(--p)) system-ui, sans-serif; color: #d9ccf5; max-width: calc(640 * var(--p)); }
+.pq-notes-now { font-weight: 800 !important; color: #ffd1f4 !important; letter-spacing: .08em; }
+.pq-menu-actions { display: flex; gap: calc(12 * var(--p)); flex-wrap: wrap; justify-content: center; }
+.pq-btn { min-height: calc(60 * var(--p)); padding: 0 calc(26 * var(--p)); border-radius: calc(18 * var(--p)); border: 2px solid #b77bff; background: #24104a; color: #f0e6ff; font: 800 calc(20 * var(--p)) system-ui, sans-serif !important; transition: transform .12s; }
+.pq-btn small { margin-left: calc(6 * var(--p)); padding: 0 calc(8 * var(--p)); border-radius: 99px; background: #b77bff; color: #1a0b33; font-size: calc(14 * var(--p)); }
+.pq-btn:active { transform: scale(.94); }
+.pq-btn.primary { border-color: #ff9be6; background: linear-gradient(180deg, #ff7ad9, #b94bd8); color: #2a0830 !important; box-shadow: 0 0 calc(20 * var(--p)) #ff7ad966; }
+.pq-songs ul { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: calc(10 * var(--p)); max-height: calc(380 * var(--p)); overflow-y: auto; padding: calc(4 * var(--p)); }
+.pq-song { width: 100%; display: grid; gap: calc(2 * var(--p)); text-align: left; padding: calc(12 * var(--p)) calc(16 * var(--p)); border-radius: calc(16 * var(--p)); border: 2px solid #7d55c7; background: #20103f; }
+.pq-song b { font: 800 calc(18 * var(--p)) system-ui, sans-serif; }
+.pq-song small { font: 600 calc(13 * var(--p)) system-ui, sans-serif; color: #bfaee6; }
+.pq-song.locked { opacity: .5; border-style: dashed; }
+.pq-run-xp { font: 800 calc(22 * var(--p)) system-ui, sans-serif; color: #7dffb2; }
+.pq-confetti { position: absolute; inset: 0; pointer-events: none; }
+.pq-confetti i { position: absolute; left: 50%; top: 30%; width: calc(10 * var(--p)); height: calc(14 * var(--p)); border-radius: 2px; background: hsl(calc(var(--i) * 15deg) 90% 65%);
+  animation: pq-confetti 1.6s ease-out forwards; transform: rotate(calc(var(--i) * 15deg)) translateY(0); }
+
+/* ── the staff ── */
+.pq-read { display: flex; flex-direction: column; align-items: center; gap: calc(8 * var(--p)); width: 100%; animation: pq-slide .35s cubic-bezier(.2, 1.2, .4, 1); }
+.pq-staff { width: min(100%, calc(560 * var(--p))); height: auto; background: #fffdf6; border-radius: calc(22 * var(--p)); box-shadow: 0 calc(10 * var(--p)) calc(40 * var(--p)) #0008, inset 0 0 0 3px #e6d9ff; }
+.pq-song-read .pq-staff { width: min(100%, calc(900 * var(--p))); }
+.pq-sline, .pq-ledger { stroke: #2b2440; stroke-width: 2; }
+.pq-clef { fill: #2b2440; font-family: 'Noto Music', 'Segoe UI Symbol', 'Bravura', serif; }
+.pq-clef-name { fill: #8b80a8; font: 700 13px system-ui, sans-serif; letter-spacing: .08em; text-transform: uppercase; }
+.pq-note ellipse { fill: #2b2440; }
+.pq-note .pq-stem { stroke: #2b2440; stroke-width: 2.5; }
+.pq-note.now ellipse { fill: #c2189b; }
+.pq-note.now .pq-stem { stroke: #c2189b; }
+.pq-note.now { animation: pq-bob 1.6s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+.pq-note.done ellipse { fill: #1e9d5a; }
+.pq-note.done .pq-stem { stroke: #1e9d5a; }
+.pq-note.next { opacity: .55; }
+.pq-intro { font: 700 calc(22 * var(--p)) system-ui, sans-serif; color: #fff; }
+.pq-intro b { color: #ff9be6; font-size: 1.3em; }
+.pq-dots { display: flex; gap: calc(8 * var(--p)); }
+.pq-dots i { width: calc(14 * var(--p)); height: calc(14 * var(--p)); border-radius: 50%; background: #3a2468; }
+.pq-dots i.done { background: #4be08d; }
+.pq-dots i.now { background: #ff7ad9; transform: scale(1.3); }
+.pq-song-bar { width: min(100%, calc(900 * var(--p))); height: calc(10 * var(--p)); border-radius: 99px; background: #2a1650; overflow: hidden; }
+.pq-song-bar i { display: block; height: 100%; background: linear-gradient(90deg, #ff7ad9, #7dffb2); transition: width .3s; }
+
+/* ── the keyboard ── */
+.pq-deck { padding: 0 calc(14 * var(--p)) calc(calc(14 * var(--p)) + env(safe-area-inset-bottom)); }
+.pq-keys { position: relative; display: grid; grid-template-columns: repeat(var(--white), minmax(0, 1fr)); height: clamp(150px, 30vh, calc(260 * var(--p)));
+  max-width: calc(1400 * var(--p)); margin: 0 auto; padding: calc(8 * var(--p)) calc(8 * var(--p)) 0; border-radius: calc(18 * var(--p)) calc(18 * var(--p)) 0 0;
+  background: linear-gradient(180deg, #2a1a3a, #120a1c); box-shadow: 0 calc(-6 * var(--p)) calc(30 * var(--p)) #0007; }
+.pq-white { position: relative; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; padding-bottom: calc(14 * var(--p));
+  margin: 0 1px; border: 0; border-radius: 0 0 calc(10 * var(--p)) calc(10 * var(--p)); background: linear-gradient(180deg, #f4f1ea, #fff 70%, #e8e2d6);
+  box-shadow: inset 0 -6px 0 #cfc6b6; transition: transform .06s, background .15s; touch-action: none; }
+.pq-white:active { transform: translateY(2px); box-shadow: inset 0 -2px 0 #cfc6b6; }
+.pq-white b { font: 900 calc(24 * var(--p)) system-ui, sans-serif; color: #5b4a7a; }
+.pq-white.ok { background: linear-gradient(180deg, #b9ffd4, #6fe7a1); }
+.pq-white.bad { background: linear-gradient(180deg, #ffc2cf, #ff7f99); animation: pq-shake .35s ease-in-out; }
+.pq-white.hint { background: linear-gradient(180deg, #fff6c2, #ffe066); box-shadow: inset 0 -6px 0 #e5b800, 0 0 calc(24 * var(--p)) #ffe066; animation: pq-glow 1s ease-in-out infinite; }
+.pq-middle-c { position: absolute; bottom: calc(52 * var(--p)); width: calc(10 * var(--p)); height: calc(10 * var(--p)); border-radius: 50%; background: #c2189b; }
+.pq-black { position: absolute; z-index: 2; top: 0; right: calc(-28%); width: 56%; height: 60%; border-radius: 0 0 calc(8 * var(--p)) calc(8 * var(--p));
+  background: linear-gradient(180deg, #2a2530, #0c0a10); box-shadow: inset 0 -4px 0 #000, 0 2px 4px #0008; touch-action: none; }
+
+@keyframes pq-in { from { opacity: 0; transform: scale(.98); } }
+@keyframes pq-pop { from { opacity: 0; transform: scale(.7); } }
+@keyframes pq-slide { from { opacity: 0; transform: translateX(calc(60 * var(--p))); } }
+@keyframes pq-bob { 50% { transform: translateY(-3px); } }
+@keyframes pq-shake { 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
+@keyframes pq-glow { 50% { filter: brightness(1.12); } }
+@keyframes pq-confetti { to { opacity: 0; transform: rotate(calc(var(--i) * 15deg)) translateY(calc(-260 * var(--p))); } }
+
+@media (max-aspect-ratio: 1/1) {
+  .pq-songs ul { grid-template-columns: 1fr; }
+  .pq-keys { height: 26vh; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pq-note.now, .pq-white.hint, .pq-confetti { animation: none !important; }
+}

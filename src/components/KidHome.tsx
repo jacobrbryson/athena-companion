@@ -574,11 +574,15 @@ function GuardianTile({ g, mine }: { g: KidGuardian; mine?: boolean }) {
   );
 }
 
-export function KidHome({ tab, data, error, picture, onTab, onAthena, onSignOut, act, onRelay }: {
+export function KidHome({ tab, data, error, picture, onTab, onAthena, onSignOut, act, onRelay, onPiano, secrets = 0 }: {
   tab: KidTab; data: KidHomeData | null; error: string; picture?: string | null;
   onTab: (t: KidTab) => void; onAthena: () => void; onSignOut: () => void;
   /** Signal Relay, the Morse game (11-24): "Bored?" on Base, and when Base can't load. */
-  onRelay?: (reason?: 'lost' | 'bored') => void;
+  onRelay?: (reason?: 'lost' | 'bored' | 'message') => void;
+  /** Secret Morse messages waiting to be decoded (11-25). */
+  secrets?: number;
+  /** Piano Quest, the sheet-music game (11-25), offered beside Signal Relay under "Bored?". */
+  onPiano?: () => void;
   act: (fn: () => Promise<Partial<KidHomeData>>) => Promise<unknown>;
 }) {
   const [cheer, setCheer] = useState(0);
@@ -589,6 +593,7 @@ export function KidHome({ tab, data, error, picture, onTab, onAthena, onSignOut,
   const [sound, setSound] = useState(kidSound.on());
   const [openSquad, setOpenSquad] = useState<string | null>(null);
   const [ispyOpen, setIspyOpen] = useState(false);
+  const [games, setGames] = useState(false);
   const others = [...(data?.others || [])].sort((a, b) => a.name.localeCompare(b.name));
   const squads = data?.squads?.length ? data.squads : others.length ? [{ name: 'Other', members: others }] : [];
 
@@ -603,7 +608,21 @@ export function KidHome({ tab, data, error, picture, onTab, onAthena, onSignOut,
       <header className="kid-hero" style={{ backgroundImage: `url(${GUARDIANS_HEADER})` }}>
         <AthenaAvatar className="kid-hero-face" />
         <button type="button" className="kid-bubble" onClick={onAthena}>{line}</button>
-        {onRelay && <button type="button" className="kid-relay-btn" onClick={() => onRelay('bored')} aria-label="Bored? Play Signal Relay"><span aria-hidden>📡</span><b>Bored?</b><small>Secret code</small></button>}
+        {onRelay && <button type="button" className="kid-relay-btn" onClick={() => setGames(true)} aria-label="Bored? Pick a game"><span aria-hidden>🎮</span><b>Bored?</b><small>Play a game</small></button>}
+        {onRelay && secrets > 0 && <button type="button" className="kid-secret-btn" onClick={() => onRelay('message')} aria-label={`${secrets} secret ${secrets === 1 ? 'message' : 'messages'}`}><span aria-hidden>✉️</span><b>{secrets}</b><small>Secret {secrets === 1 ? 'message' : 'messages'}!</small></button>}
+        {games && onRelay && (
+          <div className="kid-sheet-back" onClick={() => setGames(false)}>
+            <section className="kid-sheet kid-games" role="dialog" aria-label="Games" onClick={e => e.stopPropagation()}>
+              <header><span aria-hidden>🎮</span><h2>Pick a game</h2><button type="button" className="kid-btn" onClick={() => setGames(false)} aria-label="Close">✕</button></header>
+              <div className="kid-games-grid">
+                <button type="button" className="kid-game-card" onClick={() => { setGames(false); onRelay('bored'); }}><span aria-hidden>📡</span><b>Signal Relay</b><small>Bring Athena's signal back in Morse code</small></button>
+                {onPiano && <button type="button" className="kid-game-card" onClick={() => { setGames(false); onPiano(); }}><span aria-hidden>🎹</span><b>Piano Quest</b><small>Learn to read music and play songs</small></button>}
+                <button type="button" className="kid-game-card" onClick={() => { setGames(false); onRelay('message'); }}><span aria-hidden>✉️</span><b>Secret messages</b><small>{secrets ? `${secrets} new to decode!` : 'Send a Morse message to someone'}</small>{secrets > 0 && <em className="kid-game-new">{secrets}</em>}</button>
+              </div>
+              <p className="kid-games-note">They all work with no internet. Messages send once you're back online.</p>
+            </section>
+          </div>
+        )}
         {data.me && (
           <button type="button" className="kid-me-pill" onClick={() => onTab('me')}>
             <ProfileAvatar picture={picture} name={data.name || 'Guardian'} />

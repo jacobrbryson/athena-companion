@@ -1235,6 +1235,28 @@ async function route(method: string, path: string, body?: any): Promise<any> {
     device: { name: 'enterprises/mock/devices/up', title: 'Upstairs thermostat' },
     sentence: 'On nights the Upstairs thermostat averaged 66–67°F, your recovery averaged 74%, 11 points higher than your other nights (12 of 38 nights; moderate confidence — a pattern in your nights, not proof of cause).',
   };
+  // Secret Morse messages (11-25). Sent ones are kept in localStorage mock_relay_sent; Skylar has one waiting.
+  if (p.startsWith('/api/v1/relay-messages')) {
+    const SENT = 'mock_relay_sent';
+    const DONE = 'mock_relay_decoded';
+    const done: string[] = JSON.parse(localStorage.getItem(DONE) || '[]');
+    if (p === '/api/v1/relay-messages/recipients') return { people: [
+      { uuid: '00000000-0000-4000-8000-000000000001', name: 'Skylar B.', picture: null },
+      { uuid: '00000000-0000-4000-8000-000000000002', name: 'Ross B.', picture: null },
+      { uuid: '00000000-0000-4000-8000-000000000003', name: 'Jenny W.', picture: null },
+    ] };
+    if (p === '/api/v1/relay-messages' && method === 'POST') {
+      const sent = JSON.parse(localStorage.getItem(SENT) || '[]');
+      const fresh = (body?.messages || []).filter((m: { id: string }) => !sent.some((x: { id: string }) => x.id === m.id));
+      localStorage.setItem(SENT, JSON.stringify([...sent, ...fresh]));
+      return { saved: fresh.length, refused: 0 };
+    }
+    if (p === '/api/v1/relay-messages/inbox') return { messages: [
+      { uuid: '10000000-0000-4000-8000-000000000001', body: 'HI THOMAS', from: 'Skylar B.', picture: null, at: new Date().toISOString() },
+    ].filter(m => !done.includes(m.uuid)) };
+    const dm = p.match(/^\/api\/v1\/relay-messages\/([0-9a-f-]{36})\/decoded$/);
+    if (dm) { localStorage.setItem(DONE, JSON.stringify([...done, dm[1]])); return { ok: true }; }
+  }
   // A kid's own Base screen (11-23). localStorage.mock_kid = 'true' signs in as Thomas; otherwise an adult is refused.
   if (p === '/api/v1/guardian-missions/kid-home' || p.startsWith('/api/v1/guardian-missions/kid/')) {
     if (localStorage.getItem('mock_kid') !== 'true') fail(403, "This is the kids' side.");

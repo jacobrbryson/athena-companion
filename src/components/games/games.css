@@ -1,0 +1,38 @@
+/* Game XP (11-25): shared by Signal Relay and Piano Quest. Sized by the host
+   game's own scale (--r in relay, --p in piano) through --g. Transforms and
+   opacity only, for old tablets. */
+
+.gxp { --g: var(--r, var(--p, 1px)); position: relative; display: inline-flex; align-items: center; gap: calc(10 * var(--g));
+  padding: calc(6 * var(--g)) calc(14 * var(--g)) calc(6 * var(--g)) calc(6 * var(--g)); border-radius: calc(40 * var(--g));
+  background: #06263acc; border: 2px solid #2fb8e0; color: #e8f6ff; font-family: system-ui, sans-serif; }
+.gxp-lvl { display: grid; place-items: center; width: calc(52 * var(--g)); height: calc(52 * var(--g)); border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #fff3b0, #ffc533 55%, #c27a00); color: #3a2400; font: 900 calc(24 * var(--g))/1 system-ui, sans-serif;
+  box-shadow: 0 0 calc(14 * var(--g)) #ffd34d88; }
+.gxp-lvl small { display: block; font-size: calc(10 * var(--g)); letter-spacing: .1em; margin-bottom: calc(-6 * var(--g)); }
+.gxp-body { display: grid; gap: calc(3 * var(--g)); min-width: calc(150 * var(--g)); }
+.gxp-body b { font: 800 calc(16 * var(--g)) system-ui, sans-serif; color: #ffe08a; white-space: nowrap; }
+.gxp-body small { font: 700 calc(12 * var(--g)) system-ui, sans-serif; color: #9fd8ee; }
+.gxp-track { display: block; height: calc(9 * var(--g)); border-radius: 99px; background: #0b3b55; overflow: hidden; }
+.gxp-track i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #36e3ff, #7dffb2); transition: width .5s ease-out; }
+.gxp-pop { position: absolute; right: calc(8 * var(--g)); top: 0; pointer-events: none; font: 900 calc(22 * var(--g)) system-ui, sans-serif; font-style: normal;
+  color: #7dffb2; text-shadow: 0 2px 0 #022, 0 0 calc(10 * var(--g)) #7dffb2aa; white-space: nowrap; animation: gxp-pop 1.4s ease-out forwards; }
+@keyframes gxp-pop { 0% { opacity: 0; transform: translateY(0) scale(.6); } 15% { opacity: 1; transform: translateY(calc(-14 * var(--g))) scale(1.15); } 100% { opacity: 0; transform: translateY(calc(-60 * var(--g))) scale(1); } }
+
+.gxp-levelup { --g: var(--r, var(--p, 1px)); position: fixed; left: 50%; top: calc(6px + env(safe-area-inset-top)); z-index: 95; translate: -50% 0;
+  display: grid; justify-items: center; gap: calc(6 * var(--g)); padding: calc(18 * var(--g)) calc(34 * var(--g));
+  border-radius: calc(26 * var(--g)); border: 3px solid #ffd34d; background: radial-gradient(circle at 50% 0%, #4a3a00, #1b1400 70%);
+  color: #fff6d0; font-family: system-ui, sans-serif; box-shadow: 0 0 calc(40 * var(--g)) #ffd34d88; cursor: pointer;
+  animation: gxp-levelup 4.2s ease-out forwards; }
+.gxp-levelup small { font: 900 calc(16 * var(--g)) system-ui, sans-serif; letter-spacing: .3em; color: #ffd34d; }
+.gxp-levelup b { font: 900 calc(30 * var(--g)) system-ui, sans-serif; }
+.gxp-levelup span { font: 700 calc(18 * var(--g)) system-ui, sans-serif; color: #c9f4ff; }
+.gxp-levelup-burst { position: absolute; inset: 50% auto auto 50%; pointer-events: none; }
+.gxp-levelup-burst i { position: absolute; width: calc(10 * var(--g)); height: calc(10 * var(--g)); border-radius: 2px; background: hsl(calc(var(--i) * 30deg) 95% 65%);
+  animation: gxp-burst 1.1s ease-out forwards; transform: rotate(calc(var(--i) * 30deg)) translateY(0); }
+@keyframes gxp-burst { to { opacity: 0; transform: rotate(calc(var(--i) * 30deg)) translateY(calc(-170 * var(--g))); } }
+@keyframes gxp-levelup { 0% { opacity: 0; transform: scale(.5); } 8% { opacity: 1; transform: scale(1.08); } 14% { transform: scale(1); } 85% { opacity: 1; } 100% { opacity: 0; transform: translateY(calc(-20 * var(--g))); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .gxp-levelup, .gxp-pop { animation-duration: 3s; }
+  .gxp-levelup-burst { display: none; }
+}
