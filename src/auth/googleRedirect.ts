@@ -1,9 +1,9 @@
 import { GOOGLE_CLIENT_ID } from '../config';
 
 /**
- * Full-page Google sign-in, for browsers where the Google Identity Services
- * button can't finish — Amazon Silk on the kids' Fire tablets stalls at
- * accounts.google.com/gsi/transform and never calls back.
+ * Full-page Google sign-in — Companion's only web sign-in. It replaced the
+ * Google Identity Services button, which Amazon Silk on the kids' Fire
+ * tablets stalls on at accounts.google.com/gsi/transform.
  *
  * No Google JavaScript, popup or iframe: the page itself goes to Google's
  * OpenID Connect endpoint and asks for an ID token (`response_type=id_token`),
@@ -93,13 +93,4 @@ export function takeGoogleRedirectResult(): RedirectResult | null {
     return { error: 'Google sign-in could not be confirmed. Please retry.' };
   }
   return { credential: idToken };
-}
-
-/**
- * Browsers where the GSI button is known not to finish. Silk is the Fire
- * tablet browser; everything else keeps the Google button, with the
- * full-page sign-in one tap away under it.
- */
-export function prefersRedirectSignIn(): boolean {
-  return /\bSilk\//.test(navigator.userAgent);
 }

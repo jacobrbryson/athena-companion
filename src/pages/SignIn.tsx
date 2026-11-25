@@ -2,83 +2,38 @@ import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../auth/AuthContext';
 import { SequenceOverlay } from '../components/SequenceOverlay';
 import { VERIFY_MESSAGES } from '../athena/sequences';
-import { GOOGLE_CLIENT_ID } from '../config';
 import { androidCall, isAndroidCompanion } from '../native/android';
 import { LegalLinks } from '../components/LegalLinks';
-import { prefersRedirectSignIn, startGoogleRedirect } from '../auth/googleRedirect';
+import { startGoogleRedirect } from '../auth/googleRedirect';
 
 /**
  * The Companion gate — the Guardians access point, but the credential is a
- * Google account. Same terminal masthead, scanlines and glitch; the Google
- * button is rendered by Google Identity Services, unframed.
+ * Google account. Same terminal masthead, scanlines and glitch.
  *
- * Where that button can't finish (Amazon Silk on the Fire tablets), the page
- * signs in with a full-page redirect to Google instead — see
- * auth/googleRedirect.ts. Every other browser keeps the Google button, with
- * the full-page sign-in offered under it.
+ * On the web, sign-in is a full-page redirect to Google (auth/googleRedirect.ts),
+ * finished on /oauth/google/callback. It replaced the Google Identity Services
+ * button, which stalled at accounts.google.com/gsi/transform in Silk on the
+ * kids' Fire tablets — and Silk in desktop mode can't be told apart by its
+ * user agent, so there is no browser sniffing: every browser gets the redirect.
  */
-
-const VERIFY_MIN_MS = 1700;
 
 export function SignIn() {
   const { signIn } = useAuth();
-  const buttonRef = useRef<HTMLDivElement | null>(null);
   const [verifying, setVerifying] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [gsiReady, setGsiReady] = useState(false);
-  const redirectOnly = prefersRedirectSignIn();
+  const [leaving, setLeaving] = useState(false);
   const mountedRef = useRef(true);
   useEffect(() => {
     mountedRef.current = true;
     return () => { mountedRef.current = false; };
   }, []);
-
+  // Coming back from Google with Back restores this page from the cache with
+  // the button still disabled; let it be pressed again.
   useEffect(() => {
-    if (verifying || isAndroidCompanion() || redirectOnly) return;
-    let tries = 0;
-    let timer: number | undefined;
-
-    const onCredential = async (response: GoogleCredentialResponse) => {
-      if (!response.credential) {
-        setError('Google sign-in was cancelled.');
-        return;
-      }
-      setError(null);
-      setVerifying(true);
-      const minDelay = new Promise((r) => window.setTimeout(r, VERIFY_MIN_MS));
-      const [result] = await Promise.allSettled([signIn(response.credential)]);
-      await minDelay;
-      if (result.status === 'rejected' && mountedRef.current) {
-        const status = (result.reason as { status?: number })?.status;
-        setError(status === 429 ? 'Too many attempts. Wait, then retry.' : status === 401 ? 'Identity not recognized.' : status === 503 ? 'Access verification is unavailable. Please retry.' : 'Sign-in could not finish. Please retry.');
-        setVerifying(false);
-      }
-    };
-
-    // The GSI script loads async from index.html; wait for it briefly.
-    const init = () => {
-      const gsi = window.google?.accounts?.id;
-      if (!gsi) {
-        if (tries++ < 50) timer = window.setTimeout(init, 100);
-        else setError('Sign-in is unavailable. Check your connection.');
-        return;
-      }
-      gsi.initialize({ client_id: GOOGLE_CLIENT_ID, callback: onCredential, cancel_on_tap_outside: true });
-      if (buttonRef.current) {
-        const dark = window.matchMedia?.('(prefers-color-scheme: dark)').matches;
-        gsi.renderButton(buttonRef.current, {
-          theme: dark ? 'filled_black' : 'outline',
-          size: 'large',
-          shape: 'rectangular',
-          text: 'continue_with',
-          width: 280,
-        });
-      }
-      setGsiReady(true);
-    };
-    init();
-    return () => window.clearTimeout(timer);
-  }, [signIn, verifying, redirectOnly]);
+    const back = () => setLeaving(false);
+    window.addEventListener('pageshow', back);
+    return () => window.removeEventListener('pageshow', back);
+  }, []);
 
   if (isAndroidCompanion()) {
     return <main className="android-signin">
@@ -121,33 +76,14 @@ export function SignIn() {
         </div>
 
         <p className="mb-6 text-xs uppercase tracking-[0.3em] opacity-50">Identify yourself</p>
-        {redirectOnly ? (
-          <button
-            type="button"
-            onClick={startGoogleRedirect}
-            className="mx-auto block w-[280px] rounded border border-current px-4 py-3 text-xs uppercase tracking-[0.3em] opacity-80 hover:opacity-100"
-          >
-            Continue with Google
-          </button>
-        ) : (
-          <>
-            <div className={`flex justify-center transition-opacity ${gsiReady ? 'opacity-100' : 'opacity-0'}`}>
-              <div ref={buttonRef} />
-            </div>
-            {!gsiReady && !error && (
-              <p className="mt-4 text-xs tracking-widest opacity-40">
-                connecting<span className="animate-caret">_</span>
-              </p>
-            )}
-            <button
-              type="button"
-              onClick={startGoogleRedirect}
-              className="mt-5 text-[10px] uppercase tracking-[0.3em] opacity-40 underline-offset-4 hover:underline hover:opacity-70"
-            >
-              Button not working? Sign in on Google’s page
-            </button>
-          </>
-        )}
+        <button
+          type="button"
+          onClick={() => { setLeaving(true); startGoogleRedirect(); }}
+          disabled={leaving}
+          className="mx-auto block w-[280px] rounded border border-current px-4 py-3 text-xs uppercase tracking-[0.3em] opacity-80 hover:opacity-100 disabled:opacity-40"
+        >
+          {leaving ? 'Opening Google…' : 'Continue with Google'}
+        </button>
 
         <div className="mt-8 h-5" aria-live="polite">
           {error && (
