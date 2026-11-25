@@ -1333,7 +1333,8 @@ async function route(method: string, path: string, body?: any): Promise<any> {
         { uuid: 'h-rt', title: 'The Trail to Ratatouille', reveal: null, legacy: true, did: { finds: 0, keys: 10, pieces: 0 }, finished: true, endedAt: new Date(Date.now() - 130 * 864e5).toISOString() },
       ],
       // Owner 11-24: the countdown (noon tomorrow), locked mysteries, and the rows behind each counter.
-      upcoming: [{ uuid: 'u-ispy', title: 'Teach Athena I Spy', premise: 'Athena has looked after the Guardians for a long time, but she has never earned a mission badge of her own. She has only ever seen the world through cameras, and she wants to see it the way you do. Play I Spy with her on your tablet, taking turns spying things through the camera. After 12 rounds, all three of you earn the First Sight badge.', badge: { name: 'First Sight', art: '/assets/badges/first-sight.webp' }, plannedFor: (() => { const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(12, 0, 0, 0); return d.toISOString(); })(), ready: false, game: 'ispy' }],
+      // I Spy is live now (11-25), so nothing is counting down; matches the real data.
+      upcoming: [],
       mysteries: 4,
       // Owner 11-24: mission badges (Thomas's backfilled five) and Athena's card.
       badges: {
