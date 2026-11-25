@@ -5,6 +5,7 @@ import type { IspyApi } from '../api/ispyDemo';
 import { useIspyFiller, type IspyFillerKind } from './ispyFillers';
 import { IspyFinale } from './IspyFinale';
 import './kid.css';
+import { KidCamera } from './KidCamera';
 
 /**
  * I Spy on a kid's tablet (owner, 11-23). Thomas, Skylar and Athena take
@@ -270,10 +271,9 @@ export function IspyGame({ onClose, api = ispyApi, practice = false }: { onClose
               <div className={`ispy-new${shot ? ' ispy-new-ready' : ''}`}>
                 <h3>{game.turn.athena ? "Athena's turn to spy!" : 'Your turn to spy!'}</h3>
                 <p className="ispy-new-help">{game.turn.athena ? 'Take a photo of the room. Athena will choose something for you both to guess in turn.' : 'Take a photo, pick something in it, and give the group a clue. Keep your answer secret!'}</p>
-                <label className="kid-btn kid-btn-primary ispy-snap">
+                <KidCamera className="kid-btn kid-btn-primary ispy-snap" onPhoto={pick}>
                   📸 {shot ? 'Take a different photo' : 'Take the photo'}
-                  <input type="file" accept="image/*" capture="environment" className="sr-only" onChange={e => { pick(e.target.files?.[0]); e.target.value = ''; }} />
-                </label>
+                </KidCamera>
                 {shot && <img className="ispy-preview" src={shot.url} alt="Your photo" />}
                 {shot && !game.turn.athena && (
                   <div className="ispy-form">

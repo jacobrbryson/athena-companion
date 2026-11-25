@@ -529,3 +529,12 @@
 .ispy-replay-tag { margin-left: calc(12 * var(--k)); padding: calc(4 * var(--k)) calc(12 * var(--k)); border-radius: 999px; border: 2px solid #b48cff; background: #24124a; color: #e6d9ff; font: 800 calc(14 * var(--k)) system-ui,sans-serif; vertical-align: middle; }
 .ispy-win-actions { justify-content: center; margin-top: calc(10 * var(--k)); }
 .ispy-win-note { color: #a9c8d8; font-size: calc(14 * var(--k)); }
+
+/* In-page camera (KidCamera): the Kids browser ignores <input capture>. Above I Spy (50) and the finale (60). */
+.kid-cam { --k: clamp(0.58px, min(calc(100vw / 1040), calc(100vh / 880)), 1.25px); position: fixed; inset: 0; z-index: 70; display: flex; flex-direction: column; gap: calc(14 * var(--k)); padding: calc(16 * var(--k)) calc(20 * var(--k)) calc(calc(20 * var(--k)) + env(safe-area-inset-bottom)); background: #010609; color: #e8f6ff; font-family: system-ui,sans-serif; }
+.kid-cam-view { position: relative; flex: 1; min-height: 0; display: grid; place-items: center; border-radius: calc(20 * var(--k)); border: 2px solid #1c4a63; overflow: hidden; background: #000; }
+.kid-cam-view video { width: 100%; height: 100%; object-fit: contain; }
+.kid-cam-msg { position: absolute; inset: auto calc(20 * var(--k)); max-width: calc(560 * var(--k)); justify-self: center; text-align: center; font: 700 calc(19 * var(--k)) system-ui,sans-serif; color: #c9f4ff; }
+.kid-cam-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: calc(12 * var(--k)); }
+.kid-cam-actions .kid-btn { flex: 0 1 auto; }
+.kid-cam-shutter { min-width: calc(220 * var(--k)); }

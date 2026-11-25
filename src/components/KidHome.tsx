@@ -5,6 +5,7 @@ import { ProfileAvatar } from './ProfileAvatar';
 import { GUARDIANS_HEADER } from './GuardiansOverview';
 import { kidApi, kidSound, photoForProof, type KidBadge, type KidGuardian, type KidHome as KidHomeData, type KidRecord, type KidSafety, type KidStep, type KidUpcoming, type StopState } from '../api/kid';
 import './kid.css';
+import { KidCamera } from './KidCamera';
 
 /**
  * A kid's Companion (owner, 11-23): the Guardians theme made playful, for old
@@ -234,10 +235,9 @@ function YourMove({ data, onAct, onAthena, onIspy, onMissions }: { data: KidHome
         {!opened && <button type="button" className="kid-btn kid-btn-primary" disabled={busy} onClick={() => run(() => kidApi.seen(step.uuid))}>▶ I'm on it!</button>}
         {kidCanFinish && <button type="button" className={`kid-btn${opened ? ' kid-btn-primary' : ''}`} disabled={busy} onClick={() => run(() => kidApi.done(step.uuid), true)}>✔ It's done</button>}
         {needsPhoto && opened && (
-          <label className={`kid-btn kid-btn-primary kid-photo${busy ? ' is-busy' : ''}`}>
+          <KidCamera className={`kid-btn kid-btn-primary kid-photo${busy ? ' is-busy' : ''}`} disabled={busy} onPhoto={f => void sendPhoto(f)}>
             📸 {busy ? 'Sending…' : 'Take the photo'}
-            <input type="file" accept="image/*" capture="environment" className="sr-only" disabled={busy} onChange={e => { void sendPhoto(e.target.files?.[0]); e.target.value = ''; }} />
-          </label>
+          </KidCamera>
         )}
         {step.proof === 'parent_confirm' && opened && <p className="kid-note">When it's done, ask your grown-up to check it.</p>}
         {step.proof === 'camera_check' && opened && <p className="kid-note">Athena checks this one herself on the camera. Do your part and she'll know!</p>}
