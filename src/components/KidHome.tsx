@@ -215,7 +215,7 @@ function YourMove({ data, onAct, onAthena, onIspy, onMissions }: { data: KidHome
   }
   return (
     <Card className="kid-move kid-move-live" icon="🎯" title="Your move" aside={<span className="kid-pill">MISSION ACTIVE</span>}>
-      <div className="kid-move-head"><h3>{step.mission}</h3><TimerRing dueAt={step.dueAt} /></div>
+      <div className="kid-move-head"><h3>{step.mission}</h3>{/* A game (I Spy) runs over days; its week-long deadline isn't a clock for the kids (owner, 11-24). */}{step.proof !== 'game' && <TimerRing dueAt={step.dueAt} />}</div>
       {stepNo > 0 && trail && <p className="kid-move-sub">Step {stepNo} of {trail.stops.length}</p>}
       <p className="kid-move-text"><span aria-hidden>🎯</span>{step.instruction}</p>
       {rules.length > 0 && (
