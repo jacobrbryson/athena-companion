@@ -18,6 +18,8 @@ import { FamilyPersonEditor } from './FamilyPersonEditor';
 import { Drawer } from './Drawer';
 import { DoorToDoor, ModelsPage, EmergencyAlertSetup, Workplaces, WorkoutsPanel, FamilyFinance, FamilyProvisions, FamilyTrading, ResearchPage, GuardiansPage, WorkspacePage, PropertySecurity } from '../lazyPages';
 import { HealthWatchModal } from './HealthWatch';
+import { HealthWatchPage } from './HealthWatchPage';
+import { PersonPage } from './PersonPage';
 import { familyHealthSummary } from './familyHealthSummary';
 import { TasksCardBody, TasksPanel, openJira } from './TasksCard';
 import { AddTaskDrawer } from './AddTaskDrawer';
@@ -53,7 +55,7 @@ import { SectionTabs } from './PageTabs';
 import { Stat } from './SectionMetric';
 import { ProjectDashboard } from './ProjectDashboard';
 import { PropertyProjects } from './PropertyProjects';
-import { dashboardPath, projectUuidFromPath, workspaceUuidFromPath } from '../dashboardRoutes';
+import { dashboardPath, healthWatchPath, healthWatchUuidFromPath, personKeyFromPath, personPath, projectUuidFromPath, workspaceUuidFromPath } from '../dashboardRoutes';
 import { WeatherPanel } from './WeatherPanel';
 import { usePropertyIssues, reportedWhen, ReportIssueDrawer, IssueDetailsDrawer, ActiveIssueBanner, IssueList, troubleshootPrompt, findProPrompt } from './PropertyIssues';
 import type { PropertyIssue } from '../api/propertyIssues';
@@ -807,6 +809,10 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
   // A project's own page: /properties/<id>/projects/<project> or /system/projects/<project>.
   const projectPageUuid = projectUuidFromPath(location.pathname);
   const workspacePageUuid = workspaceUuidFromPath(location.pathname);
+  const healthWatchUuid = healthWatchUuidFromPath(location.pathname);
+  const personKey = personKeyFromPath(location.pathname);
+  // Leaving the People & pets drawer for someone's page closes it, so Back lands on the Family page itself.
+  useEffect(() => { if (personKey || healthWatchUuid) setFamilyMemoriesOpen(false); }, [personKey, healthWatchUuid]);
   useEffect(() => {
     if (compact || section !== 'Property' || !property.property?.uuid || projectPageUuid) return;
     const canonical = propertyTabPath(property.property.uuid, propertyTab);
@@ -1446,13 +1452,41 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
     </SectionPage>;
   }
 
-  function FamilyPage() {
-    const health = familyHealthSummary(summary?.familyHealth);
-    const toDetails = () => setFamilyMemoriesOpen(true);
+  /** The person editor and the start-a-health-watch dialog, shared by the Family page and a person's page. */
+  function familyEditors() {
     const selectedFact = familyEdit && family.find(f => f.uuid === familyEdit.id);
     const newFact: Fact | null = familyEdit && !selectedFact ? {
       uuid: '', category: familyEdit.relation === 'Pet' ? 'pet' : 'person', key: familyEdit.name, value: '', source: 'user', visibility: 'private', updated_at: new Date(now).toISOString(),
     } : null;
+    return <>
+      {familyEdit && (selectedFact || newFact) && <FamilyPersonEditor key={familyEdit.id} fact={(selectedFact || newFact)!} facts={family} name={familyEdit.name} relation={familyEdit.relation} links={familyPeople?.links || []} photoUrl={familyPeople?.photos?.[familyEdit.id]} isNew={!!newFact} onClose={() => setFamilyEdit(null)} onSaved={retryData} onChange={next => data.setFamilyPeople({ data: next, loading: false, error: null })} onConnect={() => onPanel('integrations')} onHealth={() => { setFamilyHealthEdit({ name: familyEdit.name, watch: sickFamily.find(w => w.uuid === familyEdit.signal.healthUuid) }); setFamilyEdit(null); }} onRemoved={gone => { data.dropFact(gone); retryData(); }} />}
+      {familyHealthEdit && <HealthWatchModal personName={familyHealthEdit.name || undefined} selfName={firstName} people={roster.map(r => r.name)} watch={familyHealthEdit.watch} onClose={() => setFamilyHealthEdit(null)} onSaved={retryData} />}
+    </>;
+  }
+
+  /** One person's own page (/family/people/<key>), opened from their row. */
+  function PersonDetailPage(key: string) {
+    // The drawer links by memory or child profile; the roster may show that person under another of their memories
+    // ("dog's name: Dexter" beside "Dexter"), or a child under their memory rather than their profile.
+    const viaFact = family.find(f => f.uuid === key);
+    const row = roster.find(r => r.id === key)
+      ?? (key.startsWith('child:') ? roster.find(r => r.childUuid === key.slice(6)) : undefined)
+      ?? (viaFact ? roster.find(r => r.name.toLowerCase() === viaFact.key.trim().toLowerCase()) : undefined);
+    const loading = !row && (data.facts.loading || data.familyPeople.loading);
+    return <SectionPage ctx={ctx} eyebrow="" title={row?.name || 'Person'} blurb="" ask={row ? `Tell me how ${row.name} is doing.` : 'Help me think about my family.'}
+      hero={row ? <PersonPage key={row.id} row={row} roster={roster} fact={family.find(f => f.uuid === row.id)} facts={family}
+        link={familyPeople?.links.find(l => l.factUuid === row.id)} child={familyPeople?.children.find(c => c.uuid === row.childUuid)}
+        events={events} timeZone={timeZone} now={now} watches={sickFamily} chores={chores}
+        choresNote={ready(summary?.familyChores) ? null : unavailable('familyChores', 'Family Chores')}
+        onAsk={onAsk} onBack={go('Family')} onCalendar={go('Calendar')} onOpenPerson={k => navigate(personPath(k))} onOpenWatch={uuid => navigate(healthWatchPath(uuid))}
+        onStartWatch={() => setFamilyHealthEdit({ name: row.name })} onEditMemory={() => setFamilyEdit(row)} />
+        : <div className="hp pp"><div className="pp-toolbar"><button type="button" className="hp-link" onClick={go('Family')}>← Family</button></div><p className="hp-empty">{loading ? 'Loading…' : 'That person isn’t in your family memories any more.'}</p></div>}
+    >{familyEditors()}</SectionPage>;
+  }
+
+  function FamilyPage() {
+    const health = familyHealthSummary(summary?.familyHealth);
+    const toDetails = () => setFamilyMemoriesOpen(true);
     return <SectionPage ctx={ctx}
       eyebrow="" title="Family" blurb=""
       ask="Help me think about my family — what should I be paying attention to?"
@@ -1464,18 +1498,17 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
         groceries={summary?.groceries?.data?.lists || []}
         groceriesNote={ready(summary?.groceries) ? null : groceriesUnavailable()}
         health={!summary && data.summary.loading ? { label: 'Loading…', tone: 'idle', note: 'Reading health reports' } : health}
-        sick={sickFamily} onAsk={onAsk} onCalendar={go('Calendar')} onDetails={toDetails} onMember={setFamilyEdit} />}
+        sick={sickFamily} onAsk={onAsk} onCalendar={go('Calendar')} onDetails={toDetails} onMember={r => navigate(personPath(r.id))} />}
     >
       {familyMemoriesOpen && <Drawer eyebrow="FROM YOUR MEMORIES" title="People & pets" onClose={() => { if (!document.querySelector('.health-modal')) setFamilyMemoriesOpen(false); }}>
         <div className="fp-memories-drawer">
         {data.facts.error ? <EmptyCta text="Memories couldn’t load." action="Retry" onClick={retryData} />
           : data.facts.loading ? <p className="dashboard-empty">Loading memories…</p>
-            : family.length ? <><FamilyPeopleList facts={family} children={familyPeople?.children || []} links={familyPeople?.links || []} photos={familyPeople?.photos} names={new Map(roster.map(r => [r.id, r.name]))} relations={new Map(roster.map(r => [r.id, r.relation]))} watches={sickFamily} watchOf={new Map(roster.flatMap(r => { const w = sickFamily.find(h => h.uuid === r.signal.healthUuid); return w ? [[r.id, w] as const] : []; }))} onHealthChanged={retryData} onFactEdited={retryData} neighbors={community?.neighbors} onNeighbors={next => data.patchCommunity({ neighbors: next })} onChange={next => data.setFamilyPeople({ data: next, loading: false, error: null })} onConnect={() => { setFamilyMemoriesOpen(false); onPanel('integrations'); }} onFactsChanged={gone => { data.dropFact(gone); retryData(); }} /><button className="dashboard-chat-cta" onClick={() => { setFamilyMemoriesOpen(false); onPanel('memory'); }}>Explore memories <span>↗</span></button></>
+            : family.length ? <><FamilyPeopleList facts={family} children={familyPeople?.children || []} links={familyPeople?.links || []} photos={familyPeople?.photos} names={new Map(roster.map(r => [r.id, r.name]))} relations={new Map(roster.map(r => [r.id, r.relation]))} selfName={firstName} watches={sickFamily} watchOf={new Map(roster.flatMap(r => { const w = sickFamily.find(h => h.uuid === r.signal.healthUuid); return w ? [[r.id, w] as const] : []; }))} onHealthChanged={retryData} onFactEdited={retryData} neighbors={community?.neighbors} onNeighbors={next => data.patchCommunity({ neighbors: next })} onChange={next => data.setFamilyPeople({ data: next, loading: false, error: null })} onConnect={() => { setFamilyMemoriesOpen(false); onPanel('integrations'); }} onFactsChanged={gone => { data.dropFact(gone); retryData(); }} /><button className="dashboard-chat-cta" onClick={() => { setFamilyMemoriesOpen(false); onPanel('memory'); }}>Explore memories <span>↗</span></button></>
               : <><p className="dashboard-empty">No family memories saved yet. Tell Athena about them and she will keep them.</p><button className="dashboard-chat-cta" onClick={() => { setFamilyMemoriesOpen(false); onAsk('Let me tell you about my family.'); }}>Tell her <span>↗</span></button></>}
         </div>
       </Drawer>}
-      {familyEdit && (selectedFact || newFact) && <FamilyPersonEditor key={familyEdit.id} fact={(selectedFact || newFact)!} facts={family} name={familyEdit.name} relation={familyEdit.relation} links={familyPeople?.links || []} photoUrl={familyPeople?.photos?.[familyEdit.id]} isNew={!!newFact} onClose={() => setFamilyEdit(null)} onSaved={retryData} onChange={next => data.setFamilyPeople({ data: next, loading: false, error: null })} onConnect={() => onPanel('integrations')} onHealth={() => { setFamilyHealthEdit({ name: familyEdit.name, watch: sickFamily.find(w => w.uuid === familyEdit.signal.healthUuid) }); setFamilyEdit(null); }} onRemoved={gone => { data.dropFact(gone); retryData(); }} />}
-      {familyHealthEdit && <HealthWatchModal personName={familyHealthEdit.name} watch={familyHealthEdit.watch} onClose={() => setFamilyHealthEdit(null)} onSaved={retryData} />}
+      {familyEditors()}
       {areaStrip('family', 'Family')}
       {drawers}
     </SectionPage>;
@@ -1661,6 +1694,12 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
       </Panel>
       {drawers}
     </SectionPage>;
+  }
+
+  function HealthWatchDetailPage(uuid: string) {
+    return <SectionPage ctx={ctx} eyebrow="" title="Health watch" blurb="" ask="Help me keep track of how they're doing."
+      hero={<HealthWatchPage key={uuid} uuid={uuid} onAsk={onAsk} onChanged={retryData} onBack={go('Family')} />}
+    >{null}</SectionPage>;
   }
 
   function WorkspaceDashboardPage(uuid: string) {
@@ -2131,7 +2170,7 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
     if (section === 'Calendar') return CalendarPage();
     if (section === 'Health') return HealthPage();
     if (section === 'Workouts') return WorkoutsPage();
-    if (section === 'Family') return FamilyPage();
+    if (section === 'Family') return healthWatchUuid ? HealthWatchDetailPage(healthWatchUuid) : personKey ? PersonDetailPage(personKey) : FamilyPage();
     if (section === 'FamilyProvisions') return FamilyProvisionsPage();
     if (section === 'FamilyFinance') return FamilyFinancePage();
     if (section === 'FamilyTrading') return FamilyTradingPage();

@@ -41,6 +41,8 @@ export default function App() {
           {KID_PATHS.map(path => <Route key={path} path={path} element={<Home />} />)}
           <Route path="/properties/*" element={<Home />} />
           <Route path="/work/:uuid" element={<Home />} />
+          <Route path="/family/health/:uuid" element={<Home />} />
+          <Route path="/family/people/:key" element={<Home />} />
           <Route path="/system/projects/:uuid" element={<Home />} />
           <Route path="/dashboard" element={<Navigate to="/" replace />} />
           <Route path="/privacy" element={<LegalPage kind="privacy" />} />

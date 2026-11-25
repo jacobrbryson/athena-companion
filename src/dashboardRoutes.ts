@@ -26,11 +26,34 @@ export function workspaceUuidFromPath(pathname: string): string | null {
   return m ? decodeURIComponent(m[1]) : null;
 }
 
+/** One health watch's own page: /family/health/<uuid>. */
+export function healthWatchPath(uuid: string): string {
+  return `/family/health/${encodeURIComponent(uuid)}`;
+}
+
+/** The watch a /family/health/<uuid> path is for. Null on every other path. */
+export function healthWatchUuidFromPath(pathname: string): string | null {
+  const m = pathname.match(/^\/family\/health\/([^/]+)\/?$/);
+  return m ? decodeURIComponent(m[1]) : null;
+}
+
+/** A person's own page: /family/people/<memory uuid or child:<uuid>>. */
+export function personPath(key: string): string {
+  return `/family/people/${encodeURIComponent(key)}`;
+}
+
+/** The person a /family/people/<key> path is for. Null on every other path. */
+export function personKeyFromPath(pathname: string): string | null {
+  const m = pathname.match(/^\/family\/people\/([^/]+)\/?$/);
+  return m ? decodeURIComponent(m[1]) : null;
+}
+
 export function sectionFromPath(pathname: string): DashboardSection {
   const path = pathname.replace(/\/+$/, '') || '/';
   if (path === '/dashboard') return 'Dashboard';
   if (path.startsWith(`${SECTION_PATHS.Projects}/`)) return 'Projects';
   if (path.startsWith(`${SECTION_PATHS.Work}/`)) return 'Work';
+  if (path.startsWith('/family/health/') || path.startsWith('/family/people/')) return 'Family';
   if (path === '/properties' || path.startsWith('/properties/')) return 'Property';
   return (Object.entries(SECTION_PATHS).find(([, entry]) => entry === path)?.[0] as DashboardSection | undefined) ?? 'Dashboard';
 }

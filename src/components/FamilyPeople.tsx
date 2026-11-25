@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { personPath } from '../dashboardRoutes';
 import { dashboardApi, type FamilyChild, type FamilyHealthStatus, type FamilyLink, type FamilyPeople as FamilyPeopleData, type Neighbor } from '../api/dashboard';
 import { type Fact } from '../api/companion';
 import { ContactAvatar, ContactSearch } from './Community';
@@ -45,7 +47,7 @@ export function OptionsMenu({ label, items }: { label: string; items: { label: s
  * from Google when shown, and a birthday found there feeds the Family card.
  * Children from the family profiles are listed under them.
  */
-export function FamilyPeopleList({ facts, children, links, photos = {}, onChange, onConnect, onFactsChanged, names, relations, watches = [], watchOf, onHealthChanged, onFactEdited, neighbors, onNeighbors }: {
+export function FamilyPeopleList({ facts, children, links, photos = {}, onChange, onConnect, onFactsChanged, names, relations, watches = [], selfName, watchOf, onHealthChanged, onFactEdited, neighbors, onNeighbors }: {
   facts: Fact[]; children: FamilyChild[]; links: FamilyLink[]; photos?: Record<string, string>;
   onChange: (next: FamilyPeopleData) => void; onConnect?: () => void;
   /** A person was merged away or forgotten (by uuid), so the memories list behind this one is stale. */
@@ -55,6 +57,8 @@ export function FamilyPeopleList({ facts, children, links, photos = {}, onChange
   relations?: Map<string, string | undefined>;
   /** Every active health watch in the family. */
   watches?: FamilyHealthStatus[];
+  /** The signed-in person's first name, so they can start a watch on themselves. */
+  selfName?: string;
   /** Which watch belongs to which memory, by fact uuid. */
   watchOf?: Map<string, FamilyHealthStatus>;
   /** A watch was started, updated or ended. */
@@ -65,6 +69,7 @@ export function FamilyPeopleList({ facts, children, links, photos = {}, onChange
   neighbors?: Neighbor[] | null;
   onNeighbors?: (next: Neighbor[]) => void;
 }) {
+  const navigate = useNavigate();
   const [open, setOpen] = useState<string | null>(null);
   const [tidy, setTidy] = useState<{ uuid: string; mode: 'merge' | 'delete' | 'move' } | null>(null);
   const [into, setInto] = useState('');
@@ -72,6 +77,7 @@ export function FamilyPeopleList({ facts, children, links, photos = {}, onChange
   const [address, setAddress] = useState('');
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // name '' = choose who in the dialog (yourself first).
   const [health, setHealth] = useState<{ name: string; watch?: FamilyHealthStatus } | null>(null);
   const nameOf = (fact: Fact) => names?.get(fact.uuid) || fact.key.replace(/(^|\s)(\w)/g, (_, space: string, c: string) => space + c.toUpperCase());
   // Whoever is watched but isn't one of the memories below still needs a row to update or end it from.
@@ -110,6 +116,10 @@ export function FamilyPeopleList({ facts, children, links, photos = {}, onChange
   }
 
   return <>
+    <div className="health-watch-start">
+      <button type="button" className="cp-outline" onClick={() => setHealth({ name: '' })}>+ Start a health watch</button>
+      <small>For you or anyone in the family — recurring checks, progress reports and reminders.</small>
+    </div>
     <ul className="dashboard-memory-list family-people">
       {facts.filter(f => !facts.some(owner => owner !== f && (f.key.trim().toLowerCase().startsWith(`${owner.key.trim().toLowerCase()} `) || f.key.trim().toLowerCase().startsWith(`${owner.key.trim().toLowerCase()}'s `)))).map(fact => {
         const link = linkOf.get(fact.uuid);
@@ -120,7 +130,7 @@ export function FamilyPeopleList({ facts, children, links, photos = {}, onChange
         return <li key={fact.uuid} className={watch ? 'family-watched' : undefined}>
           <ContactAvatar name={nameOf(fact)} photoUrl={photos[fact.uuid] || card?.photoUrl} />
           <div>
-            <strong>{nameOf(fact)}</strong>
+            <button type="button" className="family-person-name" onClick={() => navigate(personPath(fact.uuid))}>{nameOf(fact)}</button>
             <p>{fact.value || 'Saved in memory'}</p>
             {watch && <HealthWatchChip watch={watch} onOpen={() => setHealth({ name: nameOf(fact), watch })} />}
             {link && <small className="family-linked">
@@ -157,6 +167,7 @@ export function FamilyPeopleList({ facts, children, links, photos = {}, onChange
             </div>}
           </div>
           <OptionsMenu label={`Options for ${nameOf(fact)}`} items={[
+            { label: 'Open page', onSelect: () => navigate(personPath(fact.uuid)) },
             { label: watch ? 'Health watch — update' : 'Health watch', onSelect: () => setHealth({ name: nameOf(fact), watch }) },
             link
               ? { label: 'Unlink contact', disabled: busy === fact.uuid, onSelect: () => void run(fact.uuid, () => dashboardApi.unlinkFamilyContact(fact.uuid)) }
@@ -181,11 +192,11 @@ export function FamilyPeopleList({ facts, children, links, photos = {}, onChange
     {children.length > 0 && <>
       <p className="source-note">Children on your family profiles</p>
       <ul className="dashboard-data-list">{children.map(c => <li key={c.uuid}>
-        <strong>{c.name}</strong>
+        <button type="button" className="family-person-name" onClick={() => navigate(personPath(`child:${c.uuid}`))}>{c.name}</button>
         <small>{[c.grade && `Grade ${c.grade}`, birthdayLabel(c.birthday) ? `born ${birthdayLabel(c.birthday)}` : 'no birthday on file'].filter(Boolean).join(' · ')}</small>
       </li>)}</ul>
     </>}
     {editing && <FamilyPersonEditor fact={editing} facts={facts} name={nameOf(editing)} relation={relations?.get(editing.uuid)} links={links} photoUrl={photos[editing.uuid]} onClose={() => setEditing(null)} onSaved={() => onFactEdited?.()} onChange={onChange} onConnect={onConnect} onHealth={() => { setHealth({ name: nameOf(editing), watch: watchOf?.get(editing.uuid) }); setEditing(null); }} />}
-    {health && <HealthWatchModal personName={health.name} watch={health.watch} onClose={() => setHealth(null)} onSaved={() => onHealthChanged?.()} />}
+    {health && <HealthWatchModal personName={health.name || undefined} selfName={selfName} people={facts.filter(f => f.category !== 'pet').map(nameOf)} watch={health.watch} onClose={() => setHealth(null)} onSaved={() => onHealthChanged?.()} />}
   </>;
 }

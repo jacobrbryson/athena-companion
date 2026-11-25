@@ -97,7 +97,49 @@ export interface FamilyHealthStatus {
   status: 'active' | 'resolved'; startedAt: string; resolvedAt: string | null; notes: string | null; daysActive: number;
   /** How often Athena should ask for an update (a fever hourly, pain medicine every 8); null for no check-ins. */
   checkInHours: number | null; lastUpdateAt: string | null; nextUpdateAt: string | null; updateDue: boolean;
+  /** A planned end on an active watch (checks stop after it); for an ended one, resolvedAt is its end. YYYY-MM-DD. */
+  endsOn?: string | null; timeZone?: string | null;
+  /** The soonest recurring check waiting, and how many are overdue. */
+  nextCheck?: { label: string; kind: HealthCheckKind; dueAt: string; overdue: boolean } | null;
+  checksOverdue?: number; checkCount?: number;
 }
+export type HealthCheckKind = 'check' | 'medicine';
+/** A recurring check on a health watch — "temperature every 6 hours". */
+export interface HealthCheck {
+  uuid: string; label: string; kind: HealthCheckKind; everyHours: number;
+  /** The one occurrence waiting to be ticked off; null once the check (or the watch) has ended. */
+  nextDueAt: string | null; overdue: boolean; endsAt: string | null; lastDoneAt: string | null; finished: boolean;
+}
+/** One upcoming occurrence; only the first of each check can be ticked off — the rest move when it is. */
+export interface HealthUpcoming { scheduleUuid: string; label: string; kind: HealthCheckKind; dueAt: string; overdue: boolean; actionable: boolean }
+/** One line of a watch's history. */
+export interface HealthEntry {
+  uuid: string; kind: 'started' | 'update' | 'check' | 'skip' | 'ended';
+  symptom: string | null; severity: HealthSeverity | null; note: string | null;
+  checkLabel: string | null; dueAt: string | null; loggedAt: string | null; loggedBy: string | null;
+}
+export interface HealthWatchDetail { status: FamilyHealthStatus; checks: HealthCheck[]; upcoming: HealthUpcoming[]; entries: HealthEntry[] }
+/** What a person's page reads from the server beyond what the Family page already holds. */
+export interface PersonPageData {
+  key: string;
+  /** Your own write-up of them; null = use their memory's words. */
+  about: string | null;
+  /** Overrides the relation the roster reads from memories. */
+  relation: string | null;
+  /** The grade you set, moved up by every school year (Aug 1st) begun since: "pre-k" | "kindergarten" | "1".."12" | "graduated". */
+  grade: string | null;
+  /** "4th grade", "Kindergarten", "Graduated". */
+  gradeLabel: string | null;
+  interests: { uuid: string; label: string; icon: string | null }[];
+  related: { uuid: string; otherKey: string; label: string }[];
+  /** Memory events (conversations, photos, observations) that mention them by name. */
+  memories: { uuid: string; kind: string; title: string | null; content: string; occurredAt: string | null; importance: number; source: string; mediaRef: string | null }[];
+  /** Every health watch on them, active first. */
+  health: { uuid: string; personName: string; symptom: string; severity: HealthSeverity; status: 'active' | 'resolved'; startedAt: string | null; resolvedAt: string | null; lastUpdateAt: string | null }[];
+  /** Camera sightings of the subject linked to them; null when no subject is. */
+  sightings: { days: number; count: number; recent: { at: string | null; camera: string | null; where: string | null }[] } | null;
+}
+export interface HealthCheckInput { label?: string; kind?: HealthCheckKind; everyHours?: number; firstDueAt?: string; nextDueAt?: string; endsAt?: string | null; timeZone?: string }
 /** `pending`: new mail the sync has seen but Athena has not sorted yet. */
 export type EmailCategory = 'receipt' | 'travel' | 'school' | 'needs_reply' | 'promo' | 'notification' | 'fyi' | 'other' | 'pending';
 export type EmailTriageStatus = 'new' | 'actioned' | 'dismissed' | 'trashed' | 'archived' | 'gone';
@@ -689,10 +731,37 @@ export const dashboardApi = {
   /** Folds one remembered person into another: details kept on the target, the duplicate forgotten. */
   mergeFamilyPeople: (fromUuid: string, intoUuid: string) =>
     api.post<FamilyPeople>(`/api/v1/dashboard/family/people/${encodeURIComponent(fromUuid)}/merge`, { intoUuid }),
-  reportFamilyHealth: (payload: { personName: string; symptom: string; severity?: HealthSeverity; notes?: string; checkInHours?: number | null }) =>
+  reportFamilyHealth: (payload: { personName: string; symptom: string; severity?: HealthSeverity; notes?: string; checkInHours?: number | null; /** Always a watch of its own, even if they're already watched. */ newWatch?: boolean }) =>
     api.post<{ status: FamilyHealthStatus }>('/api/v1/dashboard/health/family', payload),
   resolveFamilyHealth: (uuid: string) =>
     api.patch<{ status: FamilyHealthStatus }>(`/api/v1/dashboard/health/family/${encodeURIComponent(uuid)}/resolve`, {}),
+  person: (key: string, names: string[]) =>
+    api.get<PersonPageData>(`/api/v1/dashboard/family/person/${encodeURIComponent(key)}?names=${encodeURIComponent(names.join(','))}`),
+  savePerson: (key: string, names: string[], payload: { about?: string | null; relation?: string | null; grade?: string | null }) =>
+    api.patch<PersonPageData>(`/api/v1/dashboard/family/person/${encodeURIComponent(key)}`, { ...payload, names }),
+  addPersonInterest: (key: string, names: string[], payload: { label: string; icon?: string | null }) =>
+    api.post<PersonPageData>(`/api/v1/dashboard/family/person/${encodeURIComponent(key)}/interests`, { ...payload, names }),
+  removePersonInterest: (key: string, names: string[], uuid: string) =>
+    api.del<PersonPageData>(`/api/v1/dashboard/family/person/${encodeURIComponent(key)}/interests/${encodeURIComponent(uuid)}?names=${encodeURIComponent(names.join(','))}`),
+  addPersonRelated: (key: string, names: string[], payload: { otherKey: string; label: string }) =>
+    api.post<PersonPageData>(`/api/v1/dashboard/family/person/${encodeURIComponent(key)}/related`, { ...payload, names }),
+  removePersonRelated: (key: string, names: string[], uuid: string) =>
+    api.del<PersonPageData>(`/api/v1/dashboard/family/person/${encodeURIComponent(key)}/related/${encodeURIComponent(uuid)}?names=${encodeURIComponent(names.join(','))}`),
+  healthWatch: (uuid: string) => api.get<HealthWatchDetail>(`/api/v1/dashboard/health/family/${encodeURIComponent(uuid)}`),
+  editHealthWatch: (uuid: string, payload: { symptom?: string; severity?: HealthSeverity; startedAt?: string; endsOn?: string | null; timeZone?: string }) =>
+    api.patch<HealthWatchDetail>(`/api/v1/dashboard/health/family/${encodeURIComponent(uuid)}`, payload),
+  addHealthUpdate: (uuid: string, payload: { note?: string; symptom?: string; severity?: HealthSeverity }) =>
+    api.post<HealthWatchDetail>(`/api/v1/dashboard/health/family/${encodeURIComponent(uuid)}/entries`, payload),
+  removeHealthEntry: (uuid: string, entry: string) =>
+    api.del<HealthWatchDetail>(`/api/v1/dashboard/health/family/${encodeURIComponent(uuid)}/entries/${encodeURIComponent(entry)}`),
+  addHealthCheck: (uuid: string, payload: HealthCheckInput) =>
+    api.post<HealthWatchDetail>(`/api/v1/dashboard/health/family/${encodeURIComponent(uuid)}/checks`, payload),
+  updateHealthCheck: (uuid: string, check: string, payload: HealthCheckInput) =>
+    api.patch<HealthWatchDetail>(`/api/v1/dashboard/health/family/${encodeURIComponent(uuid)}/checks/${encodeURIComponent(check)}`, payload),
+  removeHealthCheck: (uuid: string, check: string) =>
+    api.del<HealthWatchDetail>(`/api/v1/dashboard/health/family/${encodeURIComponent(uuid)}/checks/${encodeURIComponent(check)}`),
+  markHealthCheck: (uuid: string, check: string, payload: { skip?: boolean; note?: string; at?: string }) =>
+    api.post<HealthWatchDetail>(`/api/v1/dashboard/health/family/${encodeURIComponent(uuid)}/checks/${encodeURIComponent(check)}/mark`, payload),
   addBodyCalibration: (payload: Omit<BodyReference, 'uuid' | 'source'> & { source?: string }) =>
     api.post<{ reference: BodyReference }>('/api/v1/dashboard/health/body/calibration', payload),
   removeBodyCalibration: (uuid: string) =>

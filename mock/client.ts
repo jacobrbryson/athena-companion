@@ -14,6 +14,7 @@ import { mockProjectsRoute, mockVehicles, mockApplyBill } from './projects';
 import { mockWorkItems } from './workItems';
 import { mockProvisions, mockMealImage, mockGroceryAdd, mockGroceryBought } from './provisions';
 import { mockReviewRuns, mockWorkspaceReviews } from './workspaceReviews';
+import { ISPY_CLUES } from '../src/api/ispyDemo';
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const now = Date.now();
@@ -993,13 +994,58 @@ function mockDreamSteps() {
 // ------------------------------------------------------ health watch ---
 // Kept in localStorage like the server keeps rows: one active watch per name,
 // and an update moves the next check-in on.
-type MockWatch = { uuid: string; personName: string; symptom: string; severity: string; status: 'active' | 'resolved'; startedAt: string; resolvedAt: string | null; notes: string | null; checkInHours: number | null; lastUpdateAt: string };
+type MockWatch = { uuid: string; personName: string; symptom: string; severity: string; status: 'active' | 'resolved'; startedAt: string; resolvedAt: string | null; endsOn?: string | null; notes: string | null; checkInHours: number | null; lastUpdateAt: string };
 const storedHealth = (): MockWatch[] => JSON.parse(localStorage.getItem('mock_family_health') || '[]');
-function mockHealth() {
-  return storedHealth().filter(w => w.status === 'active').map(w => {
+function mockHealth(all = false) {
+  return storedHealth().filter(w => all || w.status === 'active').map(w => {
     const next = w.checkInHours ? new Date(Date.parse(w.lastUpdateAt) + w.checkInHours * 3600_000).toISOString() : null;
-    return { ...w, daysActive: Math.max(1, Math.floor((Date.now() - Date.parse(w.startedAt)) / DAY) + 1), nextUpdateAt: next, updateDue: !!next && Date.parse(next) <= Date.now() };
+    const checks = mockChecks(w);
+    const live = checks.filter(c => c.nextDueAt);
+    return {
+      ...w, endsOn: w.endsOn ?? null, daysActive: Math.max(1, Math.floor((Date.now() - Date.parse(w.startedAt)) / DAY) + 1), nextUpdateAt: next, updateDue: !!next && Date.parse(next) <= Date.now(),
+      nextCheck: live[0] ? { label: live[0].label, kind: live[0].kind, dueAt: live[0].nextDueAt!, overdue: live[0].overdue } : null,
+      checksOverdue: live.filter(c => c.overdue).length, checkCount: live.length,
+    };
   });
+}
+
+/** Health watch page (/family/health/<uuid>): checks and history, in localStorage like the rest. */
+type MockCheck = { uuid: string; watch: string; label: string; kind: 'check' | 'medicine'; everyHours: number; nextDueAt: string; endsAt: string | null; lastDoneAt: string | null };
+type MockEntry = { uuid: string; watch: string; kind: 'started' | 'update' | 'check' | 'skip' | 'ended'; symptom: string | null; severity: string | null; note: string | null; checkLabel: string | null; dueAt: string | null; loggedAt: string; loggedBy: string | null };
+const storedChecks = (): MockCheck[] => JSON.parse(localStorage.getItem('mock_health_checks') || '[]');
+const storedEntries = (): MockEntry[] => JSON.parse(localStorage.getItem('mock_health_entries') || '[]');
+const saveChecks = (list: MockCheck[]) => localStorage.setItem('mock_health_checks', JSON.stringify(list));
+const saveEntries = (list: MockEntry[]) => localStorage.setItem('mock_health_entries', JSON.stringify(list));
+function logMockEntry(watch: string, e: Partial<MockEntry> & { kind: MockEntry['kind'] }) {
+  saveEntries([{ uuid: `e${Date.now()}${Math.random().toString(36).slice(2, 6)}`, watch, symptom: null, severity: null, note: null, checkLabel: null, dueAt: null, loggedAt: new Date().toISOString(), loggedBy: 'Ross', ...e }, ...storedEntries()]);
+}
+function mockInWindow(due: number, c: { endsAt: string | null }, w: MockWatch & { endsOn?: string | null }) {
+  if (w.status !== 'active') return false;
+  if (c.endsAt && due > Date.parse(c.endsAt)) return false;
+  if (w.endsOn && new Date(due).toLocaleDateString('en-CA') > w.endsOn) return false;
+  return true;
+}
+function mockChecks(w: MockWatch) {
+  return storedChecks().filter(c => c.watch === w.uuid).map(c => {
+    const live = mockInWindow(Date.parse(c.nextDueAt), c, w);
+    return { uuid: c.uuid, label: c.label, kind: c.kind, everyHours: c.everyHours, nextDueAt: live ? c.nextDueAt : null, overdue: live && Date.parse(c.nextDueAt) <= Date.now(), endsAt: c.endsAt, lastDoneAt: c.lastDoneAt, finished: !live };
+  }).sort((a, b) => Date.parse(a.nextDueAt || '9999') - Date.parse(b.nextDueAt || '9999'));
+}
+function mockWatchDetail(uuid: string) {
+  const w = storedHealth().find(x => x.uuid === uuid);
+  if (!w) fail(404, "That health watch isn't here.");
+  const status = mockHealth(true).find(x => x.uuid === uuid)!;
+  const checks = mockChecks(w);
+  const upcoming: { scheduleUuid: string; label: string; kind: string; dueAt: string; overdue: boolean; actionable: boolean }[] = [];
+  for (const c of checks) {
+    if (!c.nextDueAt) continue;
+    for (let i = 0, at = Date.parse(c.nextDueAt); i === 0 || at <= Date.now() + 48 * 3600_000; i++, at += c.everyHours * 3600_000) {
+      if (!mockInWindow(at, c, w)) break;
+      upcoming.push({ scheduleUuid: c.uuid, label: c.label, kind: c.kind, dueAt: new Date(at).toISOString(), overdue: at <= Date.now(), actionable: i === 0 });
+    }
+  }
+  upcoming.sort((a, b) => Date.parse(a.dueAt) - Date.parse(b.dueAt));
+  return { status, checks, upcoming: upcoming.slice(0, 30), entries: storedEntries().filter(e => e.watch === uuid) };
 }
 
 /** A year and a half of plausible WHOOP workouts, newest first, stable per load. */
@@ -1192,10 +1238,13 @@ async function route(method: string, path: string, body?: any): Promise<any> {
   // A kid's own Base screen (11-23). localStorage.mock_kid = 'true' signs in as Thomas; otherwise an adult is refused.
   if (p === '/api/v1/guardian-missions/kid-home' || p.startsWith('/api/v1/guardian-missions/kid/')) {
     if (localStorage.getItem('mock_kid') !== 'true') fail(403, "This is the kids' side.");
-    // I Spy: Thomas, Skylar, Athena take turns. Skylar's turns are played "on her tablet" by the mock itself.
+    // Signal Relay (11-24): finished runs posted from the tablet. mock_offline = 'true' makes Base unreachable.
+    if (p === '/api/v1/guardian-missions/kid/relay') return { saved: Array.isArray(body?.runs) ? body.runs.length : 0 };
+    if (localStorage.getItem('mock_offline') === 'true') fail(503, 'offline');
+    // I Spy:Thomas, Skylar, Athena take turns. Skylar's turns are played "on her tablet" by the mock itself.
     if (p.startsWith('/api/v1/guardian-missions/kid/ispy')) {
       const GK = 'mock_ispy_v1';
-      type R = { uuid: string; roundNo: number; spy: string; clue: string; answer: string; aliases: string[]; hints: string[]; guesses: { by: string; text: string; right: boolean | null }[]; outcome: string | null; solvedBy: string | null };
+      type R = { uuid: string; roundNo: number; spy: string; clue: string; answer: string; aliases: string[]; hints: string[]; clues?: { key: string; by: string }[]; clueAsked?: boolean; guesses: { by: string; text: string; right: boolean | null }[]; outcome: string | null; solvedBy: string | null };
       const g: { goal: number; rounds: R[] } = JSON.parse(localStorage.getItem(GK) || 'null') || { goal: 12, rounds: [] };
       const players = ['Thomas', 'Skylar', 'Athena'];
       const saveG = () => localStorage.setItem(GK, JSON.stringify(g));
@@ -1204,8 +1253,11 @@ async function route(method: string, path: string, body?: any): Promise<any> {
         uuid: r.uuid, roundNo: r.roundNo, spy: { name: r.spy, athena: r.spy === 'Athena', me: r.spy === 'Thomas' }, clue: r.clue, photo: true,
         guesses: r.guesses.map(x => ({ by: x.by, athena: x.by === 'Athena', text: x.text, right: x.right })),
         hints: r.spy === 'Athena' ? r.hints.slice(0, Math.floor(r.guesses.filter(x => !x.right).length / 3)) : [],
+        clues: (r.clues || []).map(c => ({ key: c.key, label: ISPY_CLUES.find(x => x.key === c.key)?.label || 'None', by: c.by, athena: c.by === 'Athena' })),
+        clueAsked: !r.outcome && !!r.clueAsked,
+        cluesLeft: r.outcome || (r.spy === 'Athena' && (r.clues || []).some(c => c.key === 'none')) ? 0 : ISPY_CLUES.filter(x => !(r.clues || []).some(c => c.key === x.key)).length,
         answer: !r.outcome && r.spy !== 'Thomas' ? null : r.answer, outcome: r.outcome, solvedBy: r.solvedBy,
-        awaitingJudge: !r.outcome && r.spy !== 'Athena' && r.guesses.length > 0 && r.guesses[r.guesses.length - 1].right == null,
+        awaitingJudge: !r.outcome && r.spy !== 'Athena' && !r.clueAsked && r.guesses.length > 0 && r.guesses[r.guesses.length - 1].right == null,
       });
       const view = () => {
         // Skylar plays her own turns on her tablet: she spies, Athena guesses right.
@@ -1218,10 +1270,13 @@ async function route(method: string, path: string, body?: any): Promise<any> {
         const open = g.rounds.find(r => !r.outcome) || null;
         const done = g.rounds.filter(r => r.outcome).length;
         const next = turnOf(open ? open.roundNo : g.rounds.length + 1);
-        return { game: { mission: { uuid: 'm-ispy', title: 'Teach Athena I Spy' }, goal: g.goal, done, players: players.map(n => ({ name: n, athena: n === 'Athena', me: n === 'Thomas' })), turn: { name: next, athena: next === 'Athena', me: next === 'Thomas' }, round: open ? shape(open) : null, recent: g.rounds.filter(r => r.outcome).slice(-4).reverse().map(shape) } };
+        return { game: { mission: { uuid: 'm-ispy', title: 'Teach Athena I Spy' }, goal: g.goal, done, clueList: ISPY_CLUES, players: players.map(n => ({ name: n, athena: n === 'Athena', me: n === 'Thomas' })), turn: { name: next, athena: next === 'Athena', me: next === 'Thomas' }, round: open ? shape(open) : null, recent: g.rounds.filter(r => r.outcome).slice(-4).reverse().map(shape) } };
       };
       const rest = p.slice('/api/v1/guardian-missions/kid/ispy'.length);
       const find = () => g.rounds.find(r => rest.includes(r.uuid))!;
+      // The real calls wait on the vision model for several seconds; that is
+      // what Athena's "let me take a look…" lines cover (ispyFillers.ts).
+      if (method === 'POST' && (rest === '/rounds' || rest === '/athena' || (rest.endsWith('/judge') && !body.right))) await wait(6000);
       if (rest === '/rounds' && method === 'POST') {
         g.rounds.push({ uuid: `r-${g.rounds.length + 1}`, roundNo: g.rounds.length + 1, spy: 'Thomas', clue: body.clue, answer: body.answer, aliases: [], hints: [], guesses: [{ by: 'Athena', text: 'the blue cup', right: null }], outcome: null, solvedBy: null });
         saveG(); return view();
@@ -1232,7 +1287,17 @@ async function route(method: string, path: string, body?: any): Promise<any> {
       }
       if (rest.endsWith('/judge')) {
         const r = find(); const last = r.guesses[r.guesses.length - 1]; last.right = body.right;
-        if (body.right) { r.outcome = 'guessed'; r.solvedBy = 'Athena'; } else if (r.guesses.length >= 3) r.outcome = 'taught'; else r.guesses.push({ by: 'Athena', text: ['the blue book', 'the lamp'][r.guesses.length - 1] || 'the chair', right: null });
+        if (body.right) { r.outcome = 'guessed'; r.solvedBy = 'Athena'; } else if (r.guesses.length >= 3) r.outcome = 'taught'; else r.clueAsked = true;
+        saveG(); return view();
+      }
+      if (rest.endsWith('/clue')) {
+        const r = find(); r.clues = [...(r.clues || []), { key: body.key, by: 'Thomas' }]; r.clueAsked = false;
+        r.guesses.push({ by: 'Athena', text: ['the blue book', 'the lamp'][r.guesses.length - 1] || 'the chair', right: null });
+        saveG(); return view();
+      }
+      if (rest.endsWith('/ask-clue')) {
+        const r = find(); const mine = ['wall', 'alive', 'up_high', 'none']; const next = mine.find(k => !(r.clues || []).some(c => c.key === k)) || 'none';
+        r.clues = [...(r.clues || []), { key: next, by: 'Athena' }];
         saveG(); return view();
       }
       if (rest.endsWith('/guess')) {
@@ -1679,18 +1744,99 @@ async function route(method: string, path: string, body?: any): Promise<any> {
   }
   if (p === '/api/v1/dashboard/health/family' && method === 'POST') {
     const list = storedHealth();
-    let w = list.find(x => x.status === 'active' && x.personName.toLowerCase() === String(body.personName).toLowerCase());
+    let w = body.newWatch ? undefined : list.find(x => x.status === 'active' && x.personName.toLowerCase() === String(body.personName).toLowerCase());
     const hours = 'checkInHours' in body ? body.checkInHours : w?.checkInHours ?? null;
     if (w) Object.assign(w, { symptom: body.symptom, severity: body.severity || 'mild', notes: body.notes || null, checkInHours: hours, lastUpdateAt: new Date().toISOString() });
     else list.push(w = { uuid: `h${Date.now()}`, personName: body.personName, symptom: body.symptom, severity: body.severity || 'mild', status: 'active', startedAt: dayStamp(0), resolvedAt: null, notes: body.notes || null, checkInHours: hours, lastUpdateAt: new Date().toISOString() });
+    const started = !storedEntries().some(e => e.watch === w!.uuid);
     localStorage.setItem('mock_family_health', JSON.stringify(list));
+    logMockEntry(w.uuid, { kind: started ? 'started' : 'update', symptom: body.symptom, severity: body.severity || 'mild', note: body.notes || null });
     return { status: mockHealth().find(x => x.uuid === w!.uuid) };
+  }
+  {
+    const m = p.match(/^\/api\/v1\/dashboard\/health\/family\/([^/]+)(?:\/(entries|checks)(?:\/([^/]+))?(\/mark)?)?$/);
+    if (m && !(m[2] === undefined && method === 'POST')) {
+      const uuid = decodeURIComponent(m[1]);
+      const [, , part, sub, mark] = m;
+      const list = storedHealth();
+      const w = list.find(x => x.uuid === uuid) as (MockWatch & { endsOn?: string | null }) | undefined;
+      if (!w) fail(404, "That health watch isn't here.");
+      if (!part && method === 'GET') return mockWatchDetail(uuid);
+      if (!part && method === 'PATCH') {
+        if (body.startedAt) w.startedAt = body.startedAt;
+        if ('symptom' in body) w.symptom = body.symptom;
+        if ('severity' in body) w.severity = body.severity;
+        if ('endsOn' in body) { if (w.status === 'active') w.endsOn = body.endsOn; else w.resolvedAt = body.endsOn; }
+        localStorage.setItem('mock_family_health', JSON.stringify(list));
+        return mockWatchDetail(uuid);
+      }
+      if (part === 'entries' && method === 'POST') {
+        if (body.severity) w.severity = body.severity;
+        if (body.note) w.notes = body.note;
+        w.lastUpdateAt = new Date().toISOString();
+        localStorage.setItem('mock_family_health', JSON.stringify(list));
+        logMockEntry(uuid, { kind: 'update', symptom: w.symptom, severity: w.severity, note: body.note || null });
+        return mockWatchDetail(uuid);
+      }
+      if (part === 'entries' && method === 'DELETE') { saveEntries(storedEntries().filter(e => e.uuid !== decodeURIComponent(sub))); return mockWatchDetail(uuid); }
+      const checks = storedChecks();
+      if (part === 'checks' && !sub && method === 'POST') {
+        if (!body.label || !Number.isInteger(body.everyHours)) fail(400, 'A check needs a name and how often.');
+        checks.push({ uuid: `c${Date.now()}`, watch: uuid, label: body.label, kind: body.kind || 'check', everyHours: body.everyHours, nextDueAt: body.firstDueAt || new Date(Date.now() + body.everyHours * 3600_000).toISOString(), endsAt: body.endsAt || null, lastDoneAt: null });
+        saveChecks(checks);
+        return mockWatchDetail(uuid);
+      }
+      const c = checks.find(x => x.uuid === decodeURIComponent(sub || ''));
+      if (part === 'checks' && !c) fail(404, "That check isn't on this watch any more.");
+      if (c && mark && method === 'POST') {
+        const due = c.nextDueAt;
+        const doneAt = body.at || new Date().toISOString();
+        c.nextDueAt = new Date(Date.parse(body.skip ? due : doneAt) + c.everyHours * 3600_000).toISOString();
+        if (!body.skip) c.lastDoneAt = doneAt;
+        saveChecks(checks);
+        logMockEntry(uuid, { kind: body.skip ? 'skip' : 'check', note: body.note || null, checkLabel: c.label, dueAt: due, loggedAt: body.skip ? new Date().toISOString() : doneAt });
+        return mockWatchDetail(uuid);
+      }
+      if (c && method === 'PATCH') {
+        Object.assign(c, { label: body.label ?? c.label, kind: body.kind ?? c.kind, everyHours: body.everyHours ?? c.everyHours, ...(body.nextDueAt ? { nextDueAt: body.nextDueAt } : {}), ...('endsAt' in body ? { endsAt: body.endsAt } : {}) });
+        saveChecks(checks);
+        return mockWatchDetail(uuid);
+      }
+      if (c && method === 'DELETE') { saveChecks(checks.filter(x => x !== c)); return mockWatchDetail(uuid); }
+    }
   }
   if (/^\/api\/v1\/dashboard\/health\/family\/[^/]+\/resolve$/.test(p) && method === 'PATCH') {
     const uuid = decodeURIComponent(p.split('/')[6]);
     const list = storedHealth().map(x => x.uuid === uuid ? { ...x, status: 'resolved' as const, resolvedAt: dayStamp(0) } : x);
     localStorage.setItem('mock_family_health', JSON.stringify(list));
+    logMockEntry(uuid, { kind: 'ended', note: 'Feeling better' });
     return { status: list.find(x => x.uuid === uuid) };
+  }
+  {
+    // A person's page (core_api services/personPage.js): its own write-up, interests and related people in localStorage.
+    const m = p.match(/^\/api\/v1\/dashboard\/family\/person\/([^/]+)(?:\/(interests|related)(?:\/([^/]+))?)?$/);
+    if (m) {
+      const key = decodeURIComponent(m[1]);
+      const all: Record<string, { about: string | null; relation: string | null; interests: { uuid: string; label: string; icon: string | null }[]; related: { uuid: string; otherKey: string; label: string }[] }> = JSON.parse(localStorage.getItem('mock_person_pages') || '{}');
+      const mine = all[key] ||= { about: null, relation: null, interests: [], related: [] };
+      const save = () => localStorage.setItem('mock_person_pages', JSON.stringify(all));
+      if (!m[2] && method === 'PATCH') { if ('about' in body) mine.about = body.about || null; if ('relation' in body) mine.relation = body.relation || null; save(); }
+      if (m[2] === 'interests' && method === 'POST') {
+        if (mine.interests.some(i => i.label.toLowerCase() === String(body.label).toLowerCase())) fail(409, `${body.label} is already on the list.`);
+        mine.interests.push({ uuid: `i${Date.now()}`, label: body.label, icon: body.icon || null }); save();
+      }
+      if (m[2] === 'interests' && method === 'DELETE') { mine.interests = mine.interests.filter(i => i.uuid !== m[3]); save(); }
+      if (m[2] === 'related' && method === 'POST') { mine.related.push({ uuid: `r${Date.now()}`, otherKey: body.otherKey, label: body.label }); save(); }
+      if (m[2] === 'related' && method === 'DELETE') { mine.related = mine.related.filter(r => r.uuid !== m[3]); save(); }
+      const names = String(new URLSearchParams(path.split('?')[1] || '').get('names') || (body.names || []).join(',')).split(',').filter(Boolean);
+      const said = (t: string) => names.some(n => t.toLowerCase().split(/[^a-z']+/).includes(n));
+      const memories = [
+        { uuid: 'pm1', kind: 'conversation', title: null, content: `${names[0] ? names[0][0].toUpperCase() + names[0].slice(1) : 'They'} loved her first robotics club meeting`, occurredAt: new Date(Date.now() - 2 * DAY).toISOString(), importance: 8, source: 'ai', mediaRef: null },
+        { uuid: 'pm2', kind: 'photo', title: `Hiking at Eagle Lake with ${names[0] || 'them'}`, content: 'A lake in the mountains', occurredAt: new Date(Date.now() - 12 * DAY).toISOString(), importance: 7, source: 'user', mediaRef: 'mock-photo-missing' },
+      ].filter(x => names.length && said(`${x.title || ''} ${x.content}`));
+      const health = storedHealth().filter(w => said(w.personName)).map(w => ({ uuid: w.uuid, personName: w.personName, symptom: w.symptom, severity: w.severity, status: w.status, startedAt: w.startedAt, resolvedAt: w.resolvedAt, lastUpdateAt: w.lastUpdateAt }));
+      return { key, about: mine.about, relation: mine.relation, interests: mine.interests, related: mine.related, memories, health, sightings: null };
+    }
   }
   if (p.startsWith('/api/v1/dashboard/family/people')) {
     // Children from the family profiles; links to Google Contacts kept in localStorage.

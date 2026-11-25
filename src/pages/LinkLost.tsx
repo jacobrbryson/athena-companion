@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '../auth/AuthContext';
+import { kidDevice } from '../api/kid';
+import { RelayGame } from '../components/relay/RelayGame';
 
 /**
  * Shown when Athena cannot be reached — the proxy is restarting, the network
@@ -11,6 +13,9 @@ export function LinkLost() {
   const { user, retry, signOut } = useAuth();
   const [online, setOnline] = useState(() => navigator.onLine !== false);
   const [waited, setWaited] = useState(0);
+  // A kid's tablet gets Signal Relay instead of a waiting screen (11-24).
+  const [kid] = useState(kidDevice);
+  const [relay, setRelay] = useState(Boolean(kid));
 
   useEffect(() => {
     const sync = () => setOnline(navigator.onLine !== false);
@@ -26,6 +31,7 @@ export function LinkLost() {
 
   return (
     <main className="gd-scanlines gd-sweep min-h-[100dvh] grid place-items-center px-6 py-10">
+      {kid && relay && <RelayGame who={kid} reason="lost" online={false} onClose={() => setRelay(false)} />}
       <div className="w-full max-w-sm font-mono text-center">
         <p className="text-xs uppercase tracking-widest opacity-50">athena companion</p>
         <h1 className="mt-4 text-xl tracking-widest gd-glitch" data-text="// LINK INTERRUPTED">
@@ -44,6 +50,11 @@ export function LinkLost() {
           {waited > 8 ? ` (${waited}s)` : ''}
         </p>
         <div className="mt-8 flex flex-col gap-3">
+          {kid && (
+            <button className="border border-current rounded px-4 py-3" onClick={() => setRelay(true)}>
+              📡 Play Signal Relay
+            </button>
+          )}
           <button className="border border-current rounded px-4 py-3" onClick={retry}>
             Reconnect now
           </button>

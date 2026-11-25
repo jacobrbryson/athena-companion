@@ -116,7 +116,7 @@ const kitItem = (text: string) => {
 function safetyLines(safety: KidSafety | string | null): string[] {
   if (!safety) return [];
   if (typeof safety === 'string') return [safety];
-  return [safety.where, safety.supervision, safety.offLimits].filter((s): s is string => Boolean(s && s.trim()));
+  return [safety.where, safety.supervision, safety.offLimits?.trim() ? `Off limits: ${safety.offLimits.trim()}` : null].filter((s): s is string => Boolean(s && s.trim()));
 }
 
 export function KidRail({ tab, inChat, waiting, onTab, onAthena }: {
@@ -501,9 +501,6 @@ function MissionCard({ data, onOpen }: { data: KidHomeData; onOpen?: () => void 
         ? <button type="button" className="kid-link" onClick={onOpen}>Step {at >= 0 ? at + 1 : done + 1} of {t.stops.length} ›</button>
         : <span className="kid-link">Step {at >= 0 ? at + 1 : done + 1} of {t.stops.length}</span>)}>
       {t ? <Trail stops={t.stops} /> : <p className="kid-empty">No mission right now. Your next adventure will appear on this map.</p>}
-      {data.clues && data.clues.total > 0 && (
-        <p className="kid-clues">Clues collected: {Array.from({ length: Math.min(data.clues.total, 8) }, (_, i) => <i key={i} className={i < data.clues!.found ? 'got' : ''} aria-hidden>{i < data.clues!.found ? '🔍' : ''}</i>)}<b>{data.clues.found}/{data.clues.total}</b></p>
-      )}
     </Card>
   );
 }
@@ -573,9 +570,11 @@ function GuardianTile({ g, mine }: { g: KidGuardian; mine?: boolean }) {
   );
 }
 
-export function KidHome({ tab, data, error, picture, onTab, onAthena, onSignOut, act }: {
+export function KidHome({ tab, data, error, picture, onTab, onAthena, onSignOut, act, onRelay }: {
   tab: KidTab; data: KidHomeData | null; error: string; picture?: string | null;
   onTab: (t: KidTab) => void; onAthena: () => void; onSignOut: () => void;
+  /** Signal Relay, the Morse game (11-24): "Bored?" on Base, and when Base can't load. */
+  onRelay?: (reason?: 'lost' | 'bored') => void;
   act: (fn: () => Promise<Partial<KidHomeData>>) => Promise<unknown>;
 }) {
   const [cheer, setCheer] = useState(0);
@@ -590,7 +589,7 @@ export function KidHome({ tab, data, error, picture, onTab, onAthena, onSignOut,
   const squads = data?.squads?.length ? data.squads : others.length ? [{ name: 'Other', members: others }] : [];
 
   if (!data) {
-    return <div className="kid-home kid-loading"><AthenaAvatar className="kid-quiet-face" /><p>{error || 'Opening…'}</p></div>;
+    return <div className="kid-home kid-loading"><AthenaAvatar className="kid-quiet-face" /><p>{error || 'Opening…'}</p>{error && onRelay && <button type="button" className="kid-btn kid-btn-primary kid-relay-cta" onClick={() => onRelay('lost')}>📡 Help Athena find the signal</button>}</div>;
   }
   const next = data.steps.length ? undefined : data.upcoming?.[0];
   const line = greeting(data.name, data.steps.length > 0, new Date(), Boolean(next));
@@ -600,10 +599,11 @@ export function KidHome({ tab, data, error, picture, onTab, onAthena, onSignOut,
       <header className="kid-hero" style={{ backgroundImage: `url(${GUARDIANS_HEADER})` }}>
         <AthenaAvatar className="kid-hero-face" />
         <button type="button" className="kid-bubble" onClick={onAthena}>{line}</button>
+        {onRelay && <button type="button" className="kid-relay-btn" onClick={() => onRelay('bored')} aria-label="Bored? Play Signal Relay"><span aria-hidden>📡</span><b>Bored?</b><small>Secret code</small></button>}
         {data.me && (
           <button type="button" className="kid-me-pill" onClick={() => onTab('me')}>
             <ProfileAvatar picture={picture} name={data.name || 'Guardian'} />
-            <span><b>{data.name}</b><LevelBadge level={data.me.level} /></span>
+            <span><b>{data.name}</b></span>
           </button>
         )}
       </header>
@@ -616,7 +616,7 @@ export function KidHome({ tab, data, error, picture, onTab, onAthena, onSignOut,
       )}
 
       {tab === 'base' && data.guardian && (
-        <div className="kid-grid">
+        <div className={`kid-grid${data.steps.length ? ' kid-grid-active' : ''}`}>
           <YourMove data={data} onAct={onAct} onAthena={onAthena} onIspy={() => setIspyOpen(true)} onMissions={() => onTab('missions')} />
           <div className="kid-col">
             {next ? <NextMissionCard next={next} more={(data.upcoming?.length || 1) - 1 + (data.mysteries || 0)} onOpen={() => onTab('missions')} /> : <MissionCard data={data} onOpen={() => onTab('missions')} />}

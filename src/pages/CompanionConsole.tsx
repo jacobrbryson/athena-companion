@@ -42,6 +42,8 @@ import '../dashboard.css';
 import { useStayAwake } from '../athena/idle';
 import { KidChatBanner, KidHome, KidRail, kidTabFromPath, kidTabPath, type KidTab } from '../components/KidHome';
 import { useKidHome } from '../api/kid';
+import { RelayGame } from '../components/relay/RelayGame';
+import { useSignalRelay } from '../components/relay/useSignalRelay';
 
 /**
  * The Companion console — the Guardians console's layout and feel (Athena
@@ -137,6 +139,8 @@ export function CompanionConsole() {
   // A kid's sign-in gets the kids' Base instead of the adult dashboards (11-23).
   const kidHome = useKidHome(profile?.uuid);
   const isKid = kidHome.mode === 'kid';
+  // Signal Relay (11-24): the offline Morse game, by itself when Base is lost.
+  const relay = useSignalRelay(isKid, kidHome.failures);
   // A kid's tab is the address: /, /missions, /team, /me (and /chat for Athena).
   const kidTab: KidTab = kidTabFromPath(location.pathname);
   const setKidTab = (t: KidTab) => navigate(kidTabPath(t));
@@ -670,7 +674,8 @@ export function CompanionConsole() {
         <EmergencyBanner onAsk={askAthena} onPlaces={showPointsOfInterest} pinned={view === 'chat'} />
       )}
 
-      {view === 'dashboard' && isKid && <KidHome tab={kidTab} data={kidHome.data} error={kidHome.error} picture={user?.picture} onTab={setKidTab} onAthena={() => navigate('/chat')} onSignOut={() => void signOut()} act={kidHome.act} />}
+      {view === 'dashboard' && isKid && <KidHome tab={kidTab} data={kidHome.data} error={kidHome.error} picture={user?.picture} onTab={setKidTab} onAthena={() => navigate('/chat')} onSignOut={() => void signOut()} act={kidHome.act} onRelay={(reason) => relay.start(reason || 'bored')} />}
+      {isKid && relay.open && profile?.uuid && <RelayGame who={profile.uuid} reason={relay.open} online={relay.online} onClose={relay.close} />}
       {view === 'dashboard' && !isKid && <Dashboard section={activeSection} firstName={firstName} onAsk={askAthena} onPanel={openPanel} onPlaces={showPointsOfInterest} onNavigate={navigateDashboard} brain={brain} />}
       <div className="companion-chat" hidden={view !== 'chat'}>
       {isKid && <KidChatBanner data={kidHome.data} onMission={() => setKidTab(kidHome.data?.steps.length ? 'base' : 'missions')} />}

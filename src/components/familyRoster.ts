@@ -43,6 +43,10 @@ export interface RosterRow {
   /** Days to their next birthday, when any source knows it. */
   birthday?: number | null;
   signal: RosterSignal;
+  /** The words that name only this person (no shared surname), for matching events, chores and reports. */
+  tokens?: string[];
+  /** The child profile this row is, when it is one (matched by first name, or a child with no memory). */
+  childUuid?: string;
 }
 
 /** Athena counts a person as going stale after this long without an update. */
@@ -134,6 +138,7 @@ export function birthdayFromIso(iso: string | null | undefined, now: Date): numb
 /** One person, whichever source they came from, ready to be given a signal. */
 interface Person {
   id: string;
+  childUuid?: string;
   name: string;
   isPet?: boolean;
   detail: string;
@@ -217,7 +222,7 @@ export function buildFamilyRoster({ facts, sick, events, now, children = [], lin
     const own = keyedByName ? rest || fact.key : lead ? (fact.value || '').slice(lead.length).replace(/^[\s,.;:\u2014\u2013-]+/, '') : fact.value || '';
     const said = keyedByName ? rest : fact.value || '';
     return {
-      id: fact.uuid, name, tokens, birthday, isPet: fact.category === 'pet',
+      id: fact.uuid, childUuid: kid?.uuid, name, tokens, birthday, isPet: fact.category === 'pet',
       // How they are related: said by the key ("spouse", "aunt missy"), the category (a pet), or a value ("my daughter").
       relation: extra.find(d => d.what === 'relationship' && d.value.trim())?.value.trim()
         ?? (fact.category === 'pet' ? 'Pet' : RELATIONS.has(key) ? capitalize(fact.key)
@@ -239,7 +244,7 @@ export function buildFamilyRoster({ facts, sick, events, now, children = [], lin
   for (const c of children) {
     if (taken.has(c.uuid)) continue;
     people.push({
-      id: `child:${c.uuid}`, name: c.name, tokens: [firstName(c.name)].filter(t => t.length >= 3),
+      id: `child:${c.uuid}`, childUuid: c.uuid, name: c.name, tokens: [firstName(c.name)].filter(t => t.length >= 3),
       relation: 'Child',
       detail: c.grade ? `Grade ${c.grade}` : 'Child profile', birthday: birthdayFromIso(c.birthday, now), quiet: null, thin: false,
       missing: `I haven't told you ${c.name}'s birthday yet. Ask me when it is.`,
@@ -297,7 +302,7 @@ export function buildFamilyRoster({ facts, sick, events, now, children = [], lin
     } else {
       signal = { kind: 'ok', rank: 6, label: quiet === null ? p.detail : `Updated ${SINCE(quiet)} ago`, action: 'Check in', ask: `How is ${name} doing? Ask me for an update so you stay current.` };
     }
-    return { id: p.id, name, initial: name.slice(0, 1) || '?', detail: p.detail, isPet: p.isPet, relation: p.relation && p.relation.toLowerCase() !== name.toLowerCase() ? p.relation : undefined, photoUrl: p.photoUrl, birthday, signal };
+    return { id: p.id, childUuid: p.childUuid, tokens: p.match ?? p.tokens, name, initial: name.slice(0, 1) || '?', detail: p.detail, isPet: p.isPet, relation: p.relation && p.relation.toLowerCase() !== name.toLowerCase() ? p.relation : undefined, photoUrl: p.photoUrl, birthday, signal };
   });
 
   // Someone reported unwell who Athena has no memory of still gets a row.

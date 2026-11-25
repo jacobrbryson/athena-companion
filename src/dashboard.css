@@ -612,6 +612,14 @@ svg.dashboard-icon-drawn .icon-fill { fill: currentColor; fill-opacity: .9; }
 .health-modal-hint { color: #8fadbe; font-size: 11px; line-height: 1.5; }
 .health-modal-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; margin-top: 4px; }
 .health-modal-actions .dashboard-chat-cta { margin-top: 0; }
+.health-modal-who { display: grid; gap: 7px; color: #9bb7c9; font-size: 11px; }
+.health-modal-people { display: flex; flex-wrap: wrap; gap: 6px; }
+.health-modal-people button { padding: 6px 11px; border: 1px solid #2c6a80; border-radius: 99px; color: #c9e6f3; font-size: 12px; }
+.health-modal-people button.on { border-color: #4fc3ff; background: #0d2742; color: #4fc3ff; }
+.family-person-name { padding: 0; color: #e8f3ff; font-size: inherit; font-weight: 600; text-align: left; text-decoration: underline; text-decoration-color: #2c6a80; text-underline-offset: 3px; }
+.family-person-name:hover { color: #4fc3ff; text-decoration-color: #4fc3ff; }
+.health-watch-start { display: grid; justify-items: start; gap: 6px; margin: 4px 0 14px; }
+.health-watch-start small { color: #8fadbe; font-size: 11px; line-height: 1.5; }
 .community-past { opacity: .7; }
 .community-form { max-width: 440px; }
 .community-form textarea { background: #04222eaa; border: 1px solid #2c6a80; border-radius: 6px; color: #dcecf6; font: inherit; font-size: 12px; padding: 9px 12px; resize: vertical; }

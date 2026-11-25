@@ -121,9 +121,50 @@ export const kidSound = {
       window.setTimeout(() => void ctx.close(), 1200);
     } catch { /* no sound on this tablet */ }
   },
+  /** Notes for the I Spy finale: one rising star per round, then a fanfare. */
+  notes(seq: { f: number; at: number; len: number; type?: OscillatorType; vol?: number }[]) {
+    if (!kidSound.on()) return;
+    try {
+      const Ctx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      const ctx = new Ctx();
+      let end = 0;
+      for (const n of seq) {
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.frequency.value = n.f;
+        o.type = n.type || 'triangle';
+        const t = ctx.currentTime + n.at;
+        g.gain.setValueAtTime(0.0001, t);
+        g.gain.exponentialRampToValueAtTime(n.vol ?? 0.16, t + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + n.len);
+        o.connect(g).connect(ctx.destination);
+        o.start(t);
+        o.stop(t + n.len + 0.05);
+        end = Math.max(end, n.at + n.len);
+      }
+      window.setTimeout(() => void ctx.close(), (end + 0.5) * 1000);
+    } catch { /* no sound on this tablet */ }
+  },
+  star(i: number) {
+    const scale = [523.25, 587.33, 659.25, 783.99, 880, 1046.5, 1174.66, 1318.51, 1567.98, 1760, 2093, 2349.32];
+    kidSound.notes([{ f: scale[i % scale.length], at: 0, len: 0.45, vol: 0.12 }]);
+  },
+  fanfare() {
+    const C = [523.25, 659.25, 783.99];
+    kidSound.notes([
+      { f: 392, at: 0, len: 0.18, type: 'square', vol: 0.07 }, { f: 392, at: 0.18, len: 0.18, type: 'square', vol: 0.07 },
+      { f: 392, at: 0.36, len: 0.18, type: 'square', vol: 0.07 }, { f: 523.25, at: 0.56, len: 0.9, type: 'square', vol: 0.08 },
+      ...C.map(f => ({ f, at: 0.56, len: 1.6, vol: 0.1 })),
+      ...[659.25, 783.99, 1046.5].map(f => ({ f, at: 1.5, len: 2.2, vol: 0.11 })),
+      { f: 2093, at: 1.5, len: 1.2, type: 'sine' as OscillatorType, vol: 0.05 },
+    ]);
+  },
 };
 
 const hintKey = (who: string) => `companion_kid:${who}`;
+const KID_DEVICE_KEY = 'companion_kid_device';
+/** The kid last signed in on this tablet, if the last sign-in was a kid's. A hint for offline play only. */
+export const kidDevice = () => { try { return localStorage.getItem(KID_DEVICE_KEY); } catch { return null; } };
 const POLL_MS = 30_000;
 
 /**
@@ -139,12 +180,19 @@ export function useKidHome(who: string | null | undefined) {
   });
   const [data, setData] = useState<KidHome | null>(null);
   const [error, setError] = useState('');
+  // Polls in a row that couldn't reach Base: Signal Relay starts on the second (11-24).
+  const [failures, setFailures] = useState(0);
   const modeRef = useRef(mode);
   modeRef.current = mode;
 
   const remember = useCallback((m: 'kid' | 'adult') => {
     setMode(m);
-    if (who) try { localStorage.setItem(hintKey(who), m); } catch { /* the server asks again next time */ }
+    if (who) try {
+      localStorage.setItem(hintKey(who), m);
+      // The reconnect screen has no profile to ask with; this says whose tablet it is.
+      if (m === 'kid') localStorage.setItem(KID_DEVICE_KEY, who);
+      else if (localStorage.getItem(KID_DEVICE_KEY) === who) localStorage.removeItem(KID_DEVICE_KEY);
+    } catch { /* the server asks again next time */ }
   }, [who]);
 
   const load = useCallback(async () => {
@@ -152,11 +200,12 @@ export function useKidHome(who: string | null | undefined) {
       const next = await kidApi.home();
       setData(next);
       setError('');
+      setFailures(0);
       remember('kid');
     } catch (err) {
       const status = (err as { status?: number })?.status;
       if (status === 403) remember('adult');
-      else setError('Athena can’t reach Base right now.');
+      else { setError('Athena can’t reach Base right now.'); setFailures(n => n + 1); }
     }
   }, [remember]);
 
@@ -175,16 +224,26 @@ export function useKidHome(who: string | null | undefined) {
     return next;
   }, [load]);
 
-  return { mode, data, error, reload: load, act };
+  return { mode, data, error, failures, reload: load, act };
 }
 
 /** I Spy (11-23): Thomas, Skylar and Athena take turns as the spy. */
+export interface IspyClue { key: string; label: string }
 export interface IspyRound {
   uuid: string; roundNo: number;
   spy: { name: string; athena: boolean; me: boolean };
+  /** Server-selected next guesser. Absent on older servers and the two-player practice game. */
+  guesser?: { name: string; athena: boolean; me: boolean } | null;
   clue: string; photo: boolean;
-  guesses: { by: string; athena: boolean; text: string; right: boolean | null }[];
+  banter?: string;
+  guesses: { by: string; athena: boolean; text: string; right: boolean | null; aside?: string | null }[];
   hints: string[];
+  /** Clue cards given this round, in order (key 'none' = None). */
+  clues: { key: string; label: string; by: string; athena: boolean }[];
+  /** Athena asked the spy for a clue card and is waiting for it. */
+  clueAsked: boolean;
+  /** Cards not yet given; 0 when no more can be asked for. */
+  cluesLeft: number;
   /** Hidden while Athena's own round is open. */
   answer: string | null;
   outcome: 'guessed' | 'taught' | 'revealed' | null;
@@ -194,18 +253,33 @@ export interface IspyRound {
 export interface IspyGame {
   mission: { uuid: string; title: string };
   goal: number; done: number;
+  photoBy?: { name: string; me: boolean } | null;
+  /** The clue cards both sides choose from. */
+  clueList: IspyClue[];
   players: { name: string; athena: boolean; me: boolean }[];
   turn: { name: string; athena: boolean; me: boolean };
   round: IspyRound | null;
   recent: IspyRound[];
+  /** Set once every round is done (owner, 11-24): what the grand finale celebrates. */
+  finale?: IspyFinale | null;
+}
+/** `earned` is the real award written by the mission's debrief, never a promise. */
+export interface IspyFinale {
+  badge: { key: string; name: string; story: string; art: string | null } | null;
+  earners: { name: string; athena: boolean; me: boolean; earned: boolean }[];
+  stats: { spotted: number; taught: number; solvedByKids: number };
+  rounds: { roundNo: number; spy: string; athena: boolean; answer: string | null; outcome: IspyRound['outcome']; solvedBy: string | null }[];
 }
 const ISPY = `${BASE}/kid/ispy`;
 export const ispyApi = {
+  retry: (uuid: string) => api.post<{ game: IspyGame }>(`${ISPY}/rounds/${uuid}/retry`, {}),
   state: () => api.get<{ game: IspyGame | null }>(ISPY),
   spy: (image: string, contentType: string, clue: string, answer: string) => api.post<{ game: IspyGame }>(`${ISPY}/rounds`, { image, contentType, clue, answer }),
   athena: (image: string, contentType: string) => api.post<{ game: IspyGame }>(`${ISPY}/athena`, { image, contentType }),
   judge: (uuid: string, right: boolean, hint?: string) => api.post<{ game: IspyGame }>(`${ISPY}/rounds/${uuid}/judge`, { right, hint }),
-  guess: (uuid: string, guess: string) => api.post<{ right: boolean; game: IspyGame }>(`${ISPY}/rounds/${uuid}/guess`, { guess }),
+  guess: (uuid: string, guess: string) => api.post<{ right: boolean | null; game: IspyGame }>(`${ISPY}/rounds/${uuid}/guess`, { guess }),
   reveal: (uuid: string) => api.post<{ game: IspyGame }>(`${ISPY}/rounds/${uuid}/reveal`, {}),
+  giveClue: (uuid: string, key: string) => api.post<{ game: IspyGame }>(`${ISPY}/rounds/${uuid}/clue`, { key }),
+  askClue: (uuid: string) => api.post<{ game: IspyGame }>(`${ISPY}/rounds/${uuid}/ask-clue`, {}),
   photo: (uuid: string) => api.blob(`${ISPY}/rounds/${uuid}/photo`),
 };

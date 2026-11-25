@@ -9,6 +9,7 @@
     "test:work": "node --experimental-strip-types --test scripts/workStatus.test.mjs",
     "test:community": "node --experimental-strip-types --test scripts/communityCalendar.test.mjs",
     "test:doors": "node --experimental-strip-types --test scripts/doorMarks.test.mjs",
+    "test:morse": "node --experimental-strip-types --test scripts/morse.test.mjs",
     "test:map": "node --experimental-strip-types --test scripts/mapMath.test.mjs",
     "test:family": "node --experimental-strip-types --test scripts/familyRoster.test.mjs",
     "test:android": "node --test scripts/androidRegistration.test.mjs",
