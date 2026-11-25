@@ -574,7 +574,7 @@ function GuardianTile({ g, mine }: { g: KidGuardian; mine?: boolean }) {
   );
 }
 
-export function KidHome({ tab, data, error, picture, onTab, onAthena, onSignOut, act, onRelay, onPiano, secrets = 0 }: {
+export function KidHome({ tab, data, error, picture, onTab, onAthena, onSignOut, act, onRelay, onPiano, onComets, secrets = 0 }: {
   tab: KidTab; data: KidHomeData | null; error: string; picture?: string | null;
   onTab: (t: KidTab) => void; onAthena: () => void; onSignOut: () => void;
   /** Signal Relay, the Morse game (11-24): "Bored?" on Base, and when Base can't load. */
@@ -583,6 +583,8 @@ export function KidHome({ tab, data, error, picture, onTab, onAthena, onSignOut,
   secrets?: number;
   /** Piano Quest, the sheet-music game (11-25), offered beside Signal Relay under "Bored?". */
   onPiano?: () => void;
+  /** Comet Catchers, the play-together game (11-25). */
+  onComets?: () => void;
   act: (fn: () => Promise<Partial<KidHomeData>>) => Promise<unknown>;
 }) {
   const [cheer, setCheer] = useState(0);
@@ -616,6 +618,7 @@ export function KidHome({ tab, data, error, picture, onTab, onAthena, onSignOut,
               <header><span aria-hidden>🎮</span><h2>Pick a game</h2><button type="button" className="kid-btn" onClick={() => setGames(false)} aria-label="Close">✕</button></header>
               <div className="kid-games-grid">
                 <button type="button" className="kid-game-card" onClick={() => { setGames(false); onRelay('bored'); }}><span aria-hidden>📡</span><b>Signal Relay</b><small>Bring Athena's signal back in Morse code</small></button>
+                {onComets && <button type="button" className="kid-game-card kid-game-new-game" onClick={() => { setGames(false); onComets(); }}><span aria-hidden>☄️</span><b>Comet Catchers</b><small>Play together — catch comets as a team</small><em className="kid-game-tag">NEW</em></button>}
                 {onPiano && <button type="button" className="kid-game-card" onClick={() => { setGames(false); onPiano(); }}><span aria-hidden>🎹</span><b>Piano Quest</b><small>Learn to read music and play songs</small></button>}
                 <button type="button" className="kid-game-card" onClick={() => { setGames(false); onRelay('message'); }}><span aria-hidden>✉️</span><b>Secret messages</b><small>{secrets ? `${secrets} new to decode!` : 'Send a Morse message to someone'}</small>{secrets > 0 && <em className="kid-game-new">{secrets}</em>}</button>
               </div>

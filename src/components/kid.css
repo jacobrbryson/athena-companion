@@ -555,3 +555,5 @@
 .kid-secret-btn small { font: 700 calc(12 * var(--k)) system-ui,sans-serif; opacity: .85; }
 @keyframes kid-secret { 50% { transform: scale(1.05); } }
 .kid-game-new { position: absolute; top: calc(8 * var(--k)); right: calc(10 * var(--k)); min-width: calc(26 * var(--k)); padding: 0 calc(6 * var(--k)); border-radius: 99px; background: #ff4d6d; color: #fff; font: 900 calc(15 * var(--k))/calc(26 * var(--k)) system-ui,sans-serif; font-style: normal; }
+.kid-game-tag { position: absolute; top: calc(8 * var(--k)); left: calc(10 * var(--k)); padding: 0 calc(8 * var(--k)); border-radius: 99px; background: #ffc94d; color: #2a1a00; font: 900 calc(12 * var(--k))/calc(22 * var(--k)) system-ui,sans-serif; font-style: normal; letter-spacing: .08em; }
+.kid-game-new-game { border-color: #ffc94d; background: linear-gradient(160deg,#2e2300,#062a40); }

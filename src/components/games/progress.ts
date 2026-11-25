@@ -12,7 +12,7 @@
  * scripts/gameProgress.test.mjs.
  */
 
-export type GameId = 'relay' | 'piano';
+export type GameId = 'relay' | 'piano' | 'comet';
 
 export interface Level {
   level: number;
