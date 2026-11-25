@@ -126,7 +126,7 @@
 .kid-reveals li { padding: calc(12 * var(--k)) calc(14 * var(--k)); border-radius: calc(14 * var(--k)); border: 2px solid #8a6a1e; background: #221a06; }
 .kid-reveals b { color: #ffd75e; font-size: calc(17 * var(--k)); }
 .kid-reveals p { color: #f1e6c8; font-size: calc(15 * var(--k)); line-height: 1.45; margin-top: calc(4 * var(--k)); }
-.kid-story p { font-size: calc(17 * var(--k)); line-height: 1.5; color: #dfeef6; }
+.kid-story p { font-size: calc(17 * var(--k)); line-height: 1.5; color: #dfeef6; margin-bottom: calc(18 * var(--k)); }
 .kid-welcome { text-align: center; }
 .kid-welcome p { font-size: calc(17 * var(--k)); color: #bcd8e6; margin-top: calc(6 * var(--k)); }
 .kid-me-actions { display: flex; justify-content: center; padding-top: calc(6 * var(--k)); }
