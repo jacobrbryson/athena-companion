@@ -3,7 +3,7 @@ import { AthenaAvatar } from './AthenaAvatar';
 import { ispyApi, kidSound, photoForProof, type IspyClue, type IspyGame as Game, type IspyRound } from '../api/kid';
 import type { IspyApi } from '../api/ispyDemo';
 import { useIspyFiller, type IspyFillerKind } from './ispyFillers';
-import { IspyFinale, SAMPLE_FINALE } from './IspyFinale';
+import { IspyFinale } from './IspyFinale';
 import './kid.css';
 
 /**
@@ -18,10 +18,6 @@ import './kid.css';
  */
 const POLL_MS = 4000;
 const finaleSeenKey = (mission: string) => `ispy_finale_seen:${mission}`;
-// TEMP (owner, 11-24): a "Mission complete" button that plays the finale with
-// made-up rounds, to test it before the real game ends. Practice screen (and
-// local dev) only; nothing is sent or saved. Remove once it's been seen live.
-const SHOW_FINALE_TEST = true;
 // Athena's guesses per kid round (core_api ispy.js ATHENA_TRIES): a "Nope"
 // before the last one sends her back to look again.
 
@@ -117,7 +113,7 @@ export function IspyGame({ onClose, api = ispyApi, practice = false }: { onClose
   const doneRef = useRef<number | null>(null);
   // Which of her "let me look…" lines covers the wait for the vision model.
   const [waiting, setWaiting] = useState<IspyFillerKind | null>(null);
-  const [finaleOn, setFinaleOn] = useState<'real' | 'test' | null>(null);
+  const [finaleOn, setFinaleOn] = useState(false);
   useIspyFiller(waiting);
 
   const load = useCallback(async () => {
@@ -140,11 +136,11 @@ export function IspyGame({ onClose, api = ispyApi, practice = false }: { onClose
   useEffect(() => {
     if (!finaleMission || practice) return;
     try { if (localStorage.getItem(finaleSeenKey(finaleMission))) return; } catch { /* show it */ }
-    setFinaleOn('real');
+    setFinaleOn(true);
   }, [finaleMission, practice]);
   function closeFinale() {
-    if (finaleOn === 'real' && finaleMission) { try { localStorage.setItem(finaleSeenKey(finaleMission), '1'); } catch { /* shows again next time */ } }
-    setFinaleOn(null);
+    if (finaleMission) { try { localStorage.setItem(finaleSeenKey(finaleMission), '1'); } catch { /* shows again next time */ } }
+    setFinaleOn(false);
   }
 
   const round = game?.round || null;
@@ -187,11 +183,9 @@ export function IspyGame({ onClose, api = ispyApi, practice = false }: { onClose
     <div className="ispy" role="dialog" aria-label="I Spy">
       <header className="ispy-head">
         <h2>🔎 {game?.mission.title || 'I Spy'}</h2>
-        {SHOW_FINALE_TEST && (practice || import.meta.env.DEV) && <button type="button" className="kid-btn ispy-test-finale" onClick={() => setFinaleOn('test')}>🧪 Mission complete (test)</button>}
         <button type="button" className="kid-btn" onClick={onClose}>✕ Close</button>
       </header>
-      {finaleOn === 'test' && <IspyFinale finale={SAMPLE_FINALE} goal={12} test onClose={() => setFinaleOn(null)} />}
-      {finaleOn === 'real' && game?.finale && <IspyFinale finale={game.finale} goal={game.goal} onClose={closeFinale} />}
+      {finaleOn && game?.finale && <IspyFinale finale={game.finale} goal={game.goal} onClose={closeFinale} />}
       {practice && <p className="ispy-practice-note">Practice: this is what Thomas and Skylar see. Athena really looks at your photos, but nothing is saved and it doesn't count toward the mission.</p>}
       {!loaded ? <p className="ispy-wait">Opening the game…</p> : !game ? (
         <div className="ispy-stage"><p className="ispy-wait">There's no I Spy game going right now. When a grown-up starts the mission, it shows up here.</p></div>
@@ -204,7 +198,7 @@ export function IspyGame({ onClose, api = ispyApi, practice = false }: { onClose
 
           <div className="ispy-stage">
             {finished ? (
-              <div className="ispy-win"><span aria-hidden>🏆</span><h3>You taught Athena I Spy!</h3><p>{practice ? `That was all ${game.goal} practice rounds. The kids play the real game once you press Go.` : `All ${game.goal} rounds done! Open Me to see your mission badges.`}</p>{game.finale && <button type="button" className="kid-btn kid-btn-primary ispy-finale-again" onClick={() => setFinaleOn('real')}>🎉 Watch the celebration</button>}</div>
+              <div className="ispy-win"><span aria-hidden>🏆</span><h3>You taught Athena I Spy!</h3><p>{practice ? `That was all ${game.goal} practice rounds. The kids play the real game once you press Go.` : `All ${game.goal} rounds done! Open Me to see your mission badges.`}</p>{game.finale && <button type="button" className="kid-btn kid-btn-primary ispy-finale-again" onClick={() => setFinaleOn(true)}>🎉 Watch the celebration</button>}</div>
             ) : round ? (
               <div className="ispy-round">
                 <div className="ispy-photo">{photo.url ? <img src={photo.url} alt="The I Spy photo" /> : photo.failed ? <button type="button" className="kid-btn" onClick={photo.retry}>↻ Reload photo</button> : <span aria-label="Loading photo">📷</span>}</div>

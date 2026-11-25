@@ -36,11 +36,13 @@ const PREFIX_WAIT_MS = 1800;
 const XP_PER_RUN = 5;
 const XP_RUNS_PER_DAY = 2;
 
-const trainedKey = (who: string) => `relay_trained:${who}`;
-const hintKey = (who: string) => `relay_hint:${who}`;
+// v2 (owner, 11-25): a fresh start after the owner's testing, so every kid gets
+// the dot/dash lesson and today's points again. Matches api/relay.ts.
+const trainedKey = (who: string) => `relay_trained_v2:${who}`;
+const hintKey = (who: string) => `relay_hint_v2:${who}`;
 const hintsKey = 'relay_show_code';
 const today = () => new Date().toISOString().slice(0, 10);
-const dayKey = (who: string) => `relay_day:${who}:${today()}`;
+const dayKey = (who: string) => `relay_day_v2:${who}:${today()}`;
 const store = {
   get: (k: string) => { try { return localStorage.getItem(k); } catch { return null; } },
   set: (k: string, v: string) => { try { localStorage.setItem(k, v); } catch { /* fine for this visit */ } },

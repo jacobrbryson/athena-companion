@@ -11,7 +11,9 @@ import { api } from './client';
  */
 export interface RelayRun { id: string; at: string; messages: number; wpm: number }
 
-const key = (who: string) => `relay_runs:${who}`;
+// v2 (owner, 11-25): the owner's test runs from launch day were left queued on
+// a tablet; a new key means they're never sent. Bump with RelayGame's keys.
+const key = (who: string) => `relay_runs_v2:${who}`;
 const MAX_KEPT = 50;
 
 function read(who: string): RelayRun[] {

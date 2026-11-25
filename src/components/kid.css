@@ -455,7 +455,6 @@
 /* I Spy finale (owner, 11-24): the twelve stars become the badge's twelve, then who earned it. */
 .ifin { --k: clamp(0.58px, min(calc(100vw / 1040), calc(100vh / 880)), 1.25px); --m: calc(340 * var(--k)); position: fixed; inset: 0; z-index: 60; display: flex; flex-direction: column; align-items: center; gap: calc(14 * var(--k)); padding: calc(16 * var(--k)) calc(20 * var(--k)) calc(28 * var(--k)); overflow: hidden auto; background: radial-gradient(ellipse at 50% 38%,#16284f,#050816 62%,#010309); color: #f3fbff; font-family: system-ui,sans-serif; text-align: center; animation: ifin-in .5s ease-out; }
 .ifin-top { align-self: stretch; display: flex; align-items: center; justify-content: flex-end; gap: calc(12 * var(--k)); min-height: calc(56 * var(--k)); z-index: 3; }
-.ifin-test { margin-right: auto; padding: calc(6 * var(--k)) calc(12 * var(--k)); border-radius: calc(12 * var(--k)); border: 2px dashed #b48cff; background: #24124a; color: #e6d9ff; font: 700 calc(14 * var(--k)) system-ui,sans-serif; }
 .ifin-kicker { z-index: 2; font: 900 calc(18 * var(--k)) system-ui,sans-serif; letter-spacing: .32em; text-transform: uppercase; color: #8fe9ff; text-shadow: 0 0 calc(14 * var(--k)) #00c8ffaa; }
 .ifin:not(.ifin-s-stars) .ifin-kicker { color: #ffe08a; text-shadow: 0 0 calc(16 * var(--k)) #ffb80088; animation: kid-pop .5s ease-out; }
 
@@ -514,7 +513,6 @@
 .ifin-confetti i.round { width: calc(10 * var(--k)); height: calc(10 * var(--k)); border-radius: 50%; }
 
 .ispy-finale-again { margin-top: calc(6 * var(--k)); }
-.ispy-test-finale { border-style: dashed; border-color: #b48cff; color: #e6d9ff; }
 
 @keyframes ifin-in { from { opacity: 0; } }
 /* Not `scale`: it would multiply the star's offset round the ring. */

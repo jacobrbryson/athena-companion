@@ -76,7 +76,7 @@ function Confetti({ count = 44, burst = 0 }: { count?: number; burst?: number })
   );
 }
 
-export function IspyFinale({ finale, goal = 12, onClose, test = false }: { finale: Finale; goal?: number; onClose: () => void; test?: boolean }) {
+export function IspyFinale({ finale, goal = 12, onClose }: { finale: Finale; goal?: number; onClose: () => void }) {
   const reduced = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
   const [stage, setStage] = useState<Stage>(reduced ? 'recap' : 'stars');
   const [lit, setLit] = useState(reduced ? goal : 0);
@@ -154,7 +154,6 @@ export function IspyFinale({ finale, goal = 12, onClose, test = false }: { final
       <div className="ifin-rays" aria-hidden />
       {burst > 0 && <Confetti burst={burst} count={burst === 2 ? 60 : 44} />}
       <header className="ifin-top">
-        {test && <span className="ifin-test">🧪 Test finale · nothing is saved</span>}
         {stage !== 'recap' ? <button type="button" className="kid-btn ifin-skip" onClick={skip}>Skip ›</button> : <button type="button" className="kid-btn ifin-skip" onClick={onClose}>✕ Close</button>}
       </header>
 
@@ -216,7 +215,7 @@ export function IspyFinale({ finale, goal = 12, onClose, test = false }: { final
             ))}
           </ol>
           <div className="kid-move-actions ifin-actions">
-            <button type="button" className="kid-btn kid-btn-primary" onClick={onClose}>{test ? 'Done' : 'Back to the game'}</button>
+            <button type="button" className="kid-btn kid-btn-primary" onClick={onClose}>Back to the game</button>
             <button type="button" className="kid-btn" onClick={replay}>↻ Watch again</button>
           </div>
         </section>
@@ -224,19 +223,3 @@ export function IspyFinale({ finale, goal = 12, onClose, test = false }: { final
     </div>
   );
 }
-
-/** A made-up finished game for the temporary test button (owner, 11-24). Nothing is sent or saved. */
-export const SAMPLE_FINALE: Finale = {
-  badge: { key: 'first-sight', name: 'First Sight', story: 'Twelve rounds of I Spy with the tablet cameras: the first time Athena saw the world through a Guardian’s eyes, and the first badge she ever earned.', art: '/assets/badges/first-sight.webp' },
-  earners: [
-    { name: 'Thomas', athena: false, me: false, earned: true },
-    { name: 'Skylar', athena: false, me: false, earned: true },
-    { name: 'Athena', athena: true, me: false, earned: true },
-  ],
-  stats: { spotted: 5, taught: 3, solvedByKids: 4 },
-  rounds: ['the blue cup', 'the cat', 'the lamp', 'the red sock', 'a pinecone', 'the clock', 'the green book', 'the dog bed', 'the window', 'a toy car', 'the fridge magnet', 'the moon'].map((answer, i) => {
-    const spy = ['Thomas', 'Skylar', 'Athena'][i % 3];
-    const athena = spy === 'Athena';
-    return { roundNo: i + 1, spy, athena, answer, outcome: athena ? 'guessed' : i === 3 || i === 7 || i === 10 ? 'taught' : 'guessed', solvedBy: athena ? (i % 2 ? 'Skylar' : 'Thomas') : i === 3 || i === 7 || i === 10 ? null : 'Athena' };
-  }),
-};
