@@ -34,6 +34,8 @@ export interface KidHome {
   badges?: { earned: KidBadge[]; ahead: KidBadge[] } | null;
   /** Athena as a Guardian: her badges, the next she's working toward, her I Spy record. */
   athenaCard?: AthenaCard | null;
+  /** A finished I Spy they can play again, just for fun (owner, 11-25). */
+  ispyAgain?: boolean;
   me: { level: number; role: string; levelProgress: number; xp?: number; xpPerLevel?: number; finds: number; trailKeys?: number; mapPieces?: number; missionsStarted?: number; badges?: number; checkedIn?: boolean; topSkill: { name: string; badge: string | null; level: string } | null } | null;
   squad: KidGuardian[];
   squadName?: string | null;
@@ -253,6 +255,8 @@ export interface IspyRound {
 export interface IspyGame {
   mission: { uuid: string; title: string };
   goal: number; done: number;
+  /** 1 = the mission's own twelve rounds; 2 and up are replays, no badge (owner, 11-25). Absent in practice. */
+  gameNo?: number;
   photoBy?: { name: string; me: boolean } | null;
   /** The clue cards both sides choose from. */
   clueList: IspyClue[];

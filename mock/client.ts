@@ -1263,14 +1263,18 @@ async function route(method: string, path: string, body?: any): Promise<any> {
         // Skylar plays her own turns on her tablet: she spies, Athena guesses right.
         const open0 = g.rounds.find(r => !r.outcome);
         const doneN = g.rounds.filter(r => r.outcome).length;
-        if (!open0 && doneN < g.goal && turnOf(g.rounds.length + 1) === 'Skylar') {
+        if (!open0 && doneN > 0 && turnOf(g.rounds.length + 1) === 'Skylar') {
           g.rounds.push({ uuid: `r-${g.rounds.length + 1}`, roundNo: g.rounds.length + 1, spy: 'Skylar', clue: 'something yellow', answer: 'the banana', aliases: [], hints: [], guesses: [{ by: 'Athena', text: 'the banana', right: true }], outcome: 'guessed', solvedBy: 'Athena' });
           saveG();
         }
         const open = g.rounds.find(r => !r.outcome) || null;
-        const done = g.rounds.filter(r => r.outcome).length;
+        // Play again: rounds past the goal are game 2, 3… (core_api ispy.js state).
+        const gameOf = (n: number) => Math.ceil(n / g.goal);
+        const gameNo = open ? gameOf(open.roundNo) : Math.max(1, gameOf(g.rounds.length) || 1);
+        const done = g.rounds.filter(r => r.outcome && gameOf(r.roundNo) === gameNo).length;
+        const inGame = (r: R) => ({ ...shape(r), roundNo: ((r.roundNo - 1) % g.goal) + 1 });
         const next = turnOf(open ? open.roundNo : g.rounds.length + 1);
-        return { game: { mission: { uuid: 'm-ispy', title: 'Teach Athena I Spy' }, goal: g.goal, done, clueList: ISPY_CLUES, players: players.map(n => ({ name: n, athena: n === 'Athena', me: n === 'Thomas' })), turn: { name: next, athena: next === 'Athena', me: next === 'Thomas' }, round: open ? shape(open) : null, recent: g.rounds.filter(r => r.outcome).slice(-4).reverse().map(shape) } };
+        return { game: { mission: { uuid: 'm-ispy', title: 'Teach Athena I Spy' }, goal: g.goal, done, gameNo, clueList: ISPY_CLUES, players: players.map(n => ({ name: n, athena: n === 'Athena', me: n === 'Thomas' })), turn: { name: next, athena: next === 'Athena', me: next === 'Thomas' }, round: open ? inGame(open) : null, recent: g.rounds.filter(r => r.outcome && gameOf(r.roundNo) === gameNo).slice(-4).reverse().map(inGame) } };
       };
       const rest = p.slice('/api/v1/guardian-missions/kid/ispy'.length);
       const find = () => g.rounds.find(r => rest.includes(r.uuid))!;
@@ -1342,6 +1346,8 @@ async function route(method: string, path: string, body?: any): Promise<any> {
         ].map(([key, name, story, at]) => ({ key, name, story, art: `/assets/badges/${key}.webp`, withAthena: false, earnedAt: `${at}T18:00:00Z` })),
         ahead: [{ key: 'first-sight', name: 'First Sight', story: "Twelve rounds of I Spy with the tablet cameras: the first time Athena saw the world through a Guardian's eyes, and the first badge she ever earned.", art: '/assets/badges/first-sight.webp', withAthena: true, earnedAt: null, mission: 'u-ispy' }],
       },
+      // A finished I Spy to play again whenever the I Spy step isn't the open one.
+      ispyAgain: localStorage.getItem('mock_kid_ispy') !== 'true',
       athenaCard: {
         since: '2026-07-01T00:00:00Z', badges: [],
         next: [{ key: 'first-sight', name: 'First Sight', story: "Twelve rounds of I Spy with the tablet cameras: the first time Athena saw the world through a Guardian's eyes, and the first badge she ever earned.", art: '/assets/badges/first-sight.webp', withAthena: true, earnedAt: null, mission: 'u-ispy' }],

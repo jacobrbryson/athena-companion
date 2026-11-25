@@ -114,6 +114,11 @@ export function IspyGame({ onClose, api = ispyApi, practice = false }: { onClose
   // Which of her "let me look…" lines covers the wait for the vision model.
   const [waiting, setWaiting] = useState<IspyFillerKind | null>(null);
   const [finaleOn, setFinaleOn] = useState(false);
+  // Play again (owner, 11-25): after a full game, the next spy starts round 1 of
+  // a new one, just for fun. Set here until that round exists on the server.
+  const [again, setAgain] = useState(false);
+  const gameNo = game?.gameNo ?? 1;
+  useEffect(() => { setAgain(false); }, [gameNo]);
   useIspyFiller(waiting);
 
   const load = useCallback(async () => {
@@ -177,12 +182,13 @@ export function IspyGame({ onClose, api = ispyApi, practice = false }: { onClose
     if (out) setShot(null);
   }
 
-  const finished = game && game.done >= game.goal;
+  const finished = game && game.done >= game.goal && !again;
+  const replay = gameNo > 1;
 
   return (
     <div className="ispy" role="dialog" aria-label="I Spy">
       <header className="ispy-head">
-        <h2>🔎 {game?.mission.title || 'I Spy'}</h2>
+        <h2>🔎 {game?.mission.title || 'I Spy'}{replay && !practice && <small className="ispy-replay-tag">Game {gameNo} · just for fun</small>}</h2>
         <button type="button" className="kid-btn" onClick={onClose}>✕ Close</button>
       </header>
       {finaleOn && game?.finale && <IspyFinale finale={game.finale} goal={game.goal} onClose={closeFinale} />}
@@ -191,14 +197,20 @@ export function IspyGame({ onClose, api = ispyApi, practice = false }: { onClose
         <div className="ispy-stage"><p className="ispy-wait">There's no I Spy game going right now. When a grown-up starts the mission, it shows up here.</p></div>
       ) : (
         <>
-          <Progress game={game} />
+          <Progress game={again && game.done >= game.goal ? { ...game, done: 0 } : game} />
           <Players game={game} />
           {round?.banter && <p className="ispy-banter"><AthenaAvatar className="ispy-face" /><span>{round.banter}</span></p>}
-          {game.recent[0] && !round && <LastRound r={game.recent[0]} />}
+          {game.recent[0] && !round && !again && <LastRound r={game.recent[0]} />}
 
           <div className="ispy-stage">
             {finished ? (
-              <div className="ispy-win"><span aria-hidden>🏆</span><h3>You taught Athena I Spy!</h3><p>{practice ? `That was all ${game.goal} practice rounds. The kids play the real game once you press Go.` : `All ${game.goal} rounds done! Open Me to see your mission badges.`}</p>{game.finale && <button type="button" className="kid-btn kid-btn-primary ispy-finale-again" onClick={() => setFinaleOn(true)}>🎉 Watch the celebration</button>}</div>
+              <div className="ispy-win"><span aria-hidden>🏆</span><h3>{replay ? `Game ${gameNo} done!` : 'You taught Athena I Spy!'}</h3><p>{practice ? `That was all ${game.goal} practice rounds. The kids play the real game once you press Go.` : replay ? `All ${game.goal} rounds again. That one was just for fun, so there's no new badge.` : `All ${game.goal} rounds done! Open Me to see your mission badges.`}</p>
+                <div className="kid-move-actions ispy-win-actions">
+                  {!practice && game.gameNo != null && <button type="button" className="kid-btn kid-btn-primary" onClick={() => setAgain(true)}>🔁 Play again</button>}
+                  {game.finale && <button type="button" className="kid-btn ispy-finale-again" onClick={() => setFinaleOn(true)}>🎉 Watch the celebration</button>}
+                </div>
+                {!practice && game.gameNo != null && <small className="ispy-win-note">Another {game.goal} rounds with Athena, just for fun. No new badge.</small>}
+              </div>
             ) : round ? (
               <div className="ispy-round">
                 <div className="ispy-photo">{photo.url ? <img src={photo.url} alt="The I Spy photo" /> : photo.failed ? <button type="button" className="kid-btn" onClick={photo.retry}>↻ Reload photo</button> : <span aria-label="Loading photo">📷</span>}</div>

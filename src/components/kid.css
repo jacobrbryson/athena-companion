@@ -524,3 +524,8 @@
 @keyframes ifin-fall { 0% { transform: translateY(0) rotate(0); opacity: 1; } 85% { opacity: 1; } 100% { transform: translateY(110vh) rotate(var(--r)); opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .ifin *, .ifin { animation: none !important; transition: none !important; } }
 @media (max-width: 700px) { .ifin-rounds { grid-template-columns: repeat(2, minmax(0,1fr)); } }
+
+/* I Spy Play again (owner, 11-25) */
+.ispy-replay-tag { margin-left: calc(12 * var(--k)); padding: calc(4 * var(--k)) calc(12 * var(--k)); border-radius: 999px; border: 2px solid #b48cff; background: #24124a; color: #e6d9ff; font: 800 calc(14 * var(--k)) system-ui,sans-serif; vertical-align: middle; }
+.ispy-win-actions { justify-content: center; margin-top: calc(10 * var(--k)); }
+.ispy-win-note { color: #a9c8d8; font-size: calc(14 * var(--k)); }

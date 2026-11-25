@@ -196,7 +196,10 @@ function YourMove({ data, onAct, onAthena, onIspy, onMissions }: { data: KidHome
           <p>Athena is keeping watch.<br />When she needs a Guardian, your next mission step will appear here.</p>
         </div>
         <Stats data={data} onMissions={onMissions} />
-        <div className="kid-move-actions"><button type="button" className="kid-btn kid-btn-primary kid-talk" onClick={onAthena}>💬 Talk to Athena <span aria-hidden>›</span></button></div>
+        <div className="kid-move-actions">
+          <button type="button" className="kid-btn kid-btn-primary kid-talk" onClick={onAthena}>💬 Talk to Athena <span aria-hidden>›</span></button>
+          {data.ispyAgain && onIspy && <button type="button" className="kid-btn" onClick={onIspy}>🔎 Play I Spy again</button>}
+        </div>
       </Card>
     );
   }
@@ -409,7 +412,7 @@ function BadgeShelf({ earned, ahead, empty }: { earned: KidBadge[]; ahead: KidBa
  * working toward, what she's learning, and her I Spy record. Her line is
  * written ahead of time, never improvised.
  */
-function AthenaPage({ data, onBack, onMissions }: { data: KidHomeData; onBack: () => void; onMissions: () => void }) {
+function AthenaPage({ data, onBack, onMissions, onIspy }: { data: KidHomeData; onBack: () => void; onMissions: () => void; onIspy?: () => void }) {
   const card = data.athenaCard;
   const top = [...data.athena].sort((a, b) => b.percent - a.percent);
   const ispy = card?.ispy;
@@ -451,6 +454,7 @@ function AthenaPage({ data, onBack, onMissions }: { data: KidHomeData; onBack: (
             <li><span aria-hidden>🔭</span><b>{ispy.spied}</b><small>She spied</small></li>
           </ul>
         ) : <p className="kid-empty">She hasn't played yet. When I Spy starts, every round you play shows up here.</p>}
+        {data.ispyAgain && onIspy && <div className="kid-move-actions"><button type="button" className="kid-btn kid-btn-primary" onClick={onIspy}>🔎 Play I Spy again</button></div>}
       </Card>
     </div>
   );
@@ -725,7 +729,7 @@ export function KidHome({ tab, data, error, picture, onTab, onAthena, onSignOut,
         </div>
       )}
 
-      {tab === 'athenaCard' && data.guardian && <AthenaPage data={data} onBack={() => onTab('team')} onMissions={() => onTab('missions')} />}
+      {tab === 'athenaCard' && data.guardian && <AthenaPage data={data} onBack={() => onTab('team')} onMissions={() => onTab('missions')} onIspy={() => setIspyOpen(true)} />}
 
       {tab === 'me' && (
         <div className="kid-stack">
