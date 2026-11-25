@@ -5,11 +5,17 @@ import { VERIFY_MESSAGES } from '../athena/sequences';
 import { GOOGLE_CLIENT_ID } from '../config';
 import { androidCall, isAndroidCompanion } from '../native/android';
 import { LegalLinks } from '../components/LegalLinks';
+import { prefersRedirectSignIn, startGoogleRedirect } from '../auth/googleRedirect';
 
 /**
  * The Companion gate — the Guardians access point, but the credential is a
  * Google account. Same terminal masthead, scanlines and glitch; the Google
  * button is rendered by Google Identity Services, unframed.
+ *
+ * Where that button can't finish (Amazon Silk on the Fire tablets), the page
+ * signs in with a full-page redirect to Google instead — see
+ * auth/googleRedirect.ts. Every other browser keeps the Google button, with
+ * the full-page sign-in offered under it.
  */
 
 const VERIFY_MIN_MS = 1700;
@@ -20,6 +26,7 @@ export function SignIn() {
   const [verifying, setVerifying] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [gsiReady, setGsiReady] = useState(false);
+  const redirectOnly = prefersRedirectSignIn();
   const mountedRef = useRef(true);
   useEffect(() => {
     mountedRef.current = true;
@@ -27,7 +34,7 @@ export function SignIn() {
   }, []);
 
   useEffect(() => {
-    if (verifying || isAndroidCompanion()) return;
+    if (verifying || isAndroidCompanion() || redirectOnly) return;
     let tries = 0;
     let timer: number | undefined;
 
@@ -71,7 +78,7 @@ export function SignIn() {
     };
     init();
     return () => window.clearTimeout(timer);
-  }, [signIn, verifying]);
+  }, [signIn, verifying, redirectOnly]);
 
   if (isAndroidCompanion()) {
     return <main className="android-signin">
@@ -114,13 +121,32 @@ export function SignIn() {
         </div>
 
         <p className="mb-6 text-xs uppercase tracking-[0.3em] opacity-50">Identify yourself</p>
-        <div className={`flex justify-center transition-opacity ${gsiReady ? 'opacity-100' : 'opacity-0'}`}>
-          <div ref={buttonRef} />
-        </div>
-        {!gsiReady && !error && (
-          <p className="mt-4 text-xs tracking-widest opacity-40">
-            connecting<span className="animate-caret">_</span>
-          </p>
+        {redirectOnly ? (
+          <button
+            type="button"
+            onClick={startGoogleRedirect}
+            className="mx-auto block w-[280px] rounded border border-current px-4 py-3 text-xs uppercase tracking-[0.3em] opacity-80 hover:opacity-100"
+          >
+            Continue with Google
+          </button>
+        ) : (
+          <>
+            <div className={`flex justify-center transition-opacity ${gsiReady ? 'opacity-100' : 'opacity-0'}`}>
+              <div ref={buttonRef} />
+            </div>
+            {!gsiReady && !error && (
+              <p className="mt-4 text-xs tracking-widest opacity-40">
+                connecting<span className="animate-caret">_</span>
+              </p>
+            )}
+            <button
+              type="button"
+              onClick={startGoogleRedirect}
+              className="mt-5 text-[10px] uppercase tracking-[0.3em] opacity-40 underline-offset-4 hover:underline hover:opacity-70"
+            >
+              Button not working? Sign in on Google’s page
+            </button>
+          </>
         )}
 
         <div className="mt-8 h-5" aria-live="polite">

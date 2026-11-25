@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
+import { useAuth } from '../auth/AuthContext';
+import { takeGoogleRedirectResult } from '../auth/googleRedirect';
 
 /**
  * Where Google sends the browser back after every Google consent — Gmail,
@@ -10,6 +13,10 @@ import { api } from '../api/client';
  * POST /api/v1/integrations/callback, where the single-use state decides whose
  * flow it was and what is linked, and follows the `redirect` it is given back
  * into the app (`/?integration=…&status=…`, which the console already reads).
+ *
+ * The full-page Athena sign-in (auth/googleRedirect.ts) returns here too, with
+ * an ID token in the fragment instead of a code in the query; that one is
+ * finished through the ordinary sign-in.
  */
 
 type Outcome = { success?: boolean; redirect?: string; integration?: string; provider?: string; status?: string; message?: string };
@@ -22,11 +29,27 @@ let sent = false;
 export function OAuthCallback() {
   const [problem, setProblem] = useState<string | null>(null);
   const started = useRef(false);
+  const { signIn } = useAuth();
+  const navigate = useNavigate();
 
   useEffect(() => {
     if (started.current || sent) return;
     started.current = true;
     sent = true;
+    const signInResult = takeGoogleRedirectResult();
+    if (signInResult) {
+      if ('error' in signInResult) {
+        setProblem(signInResult.error);
+        return;
+      }
+      signIn(signInResult.credential)
+        .then(() => navigate('/', { replace: true }))
+        .catch((err: { status?: number }) => {
+          const status = err?.status;
+          setProblem(status === 429 ? 'Too many attempts. Wait, then retry.' : status === 401 ? 'Identity not recognized.' : status === 503 ? 'Access verification is unavailable. Please retry.' : 'Sign-in could not finish. Please retry.');
+        });
+      return;
+    }
     const params = new URLSearchParams(window.location.search);
     // The authorization code should not sit in the address bar or history.
     window.history.replaceState(null, '', window.location.pathname);
@@ -51,7 +74,7 @@ export function OAuthCallback() {
       .catch((err: Error & { body?: { message?: string } }) => {
         setProblem(err?.body?.message || err?.message || 'Google’s answer couldn’t be finished. Try connecting again.');
       });
-  }, []);
+  }, [signIn, navigate]);
 
   return (
     <main className="flex min-h-dvh items-center justify-center bg-[#030e17] p-6 text-[#dcecf6]">
