@@ -8,6 +8,7 @@ import { PageHeader } from './PageHeader';
 import { SectionTabs } from './PageTabs';
 import { checkInWords } from './HealthWatch';
 import { loadPhotoUrl } from './photoStore';
+import { PersonCollections } from './Collections';
 import './health.css';
 import './healthWatch.css';
 import './person.css';
@@ -238,6 +239,8 @@ export function PersonPage(props: PersonPageProps) {
         controls={chips}
         take={{ lines: take, ask: row.signal.ask || `Tell me how ${row.name} is doing — what should I pay attention to?`, onAsk }} />
     </div>
+    {/* Their part of any list Athena keeps (a Christmas list): nothing when they're on none. */}
+    {!row.isPet && <PersonCollections personKey={row.id} name={row.name} onAsk={onAsk} />}
     <SectionTabs tabs={TABS} active={tab} onChange={setTab} label={`${row.name}’s sections`} panelId="person-panel" />
     {(error || loadError) && <p className="dashboard-notice" role="status">{error || loadError}</p>}
     <div id="person-panel" role="tabpanel" className={`pp-grid pp-grid-${tab}`}>{layout[tab]}</div>

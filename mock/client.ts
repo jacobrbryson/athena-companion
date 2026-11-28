@@ -11,6 +11,7 @@ import { mockTrading } from './trading';
 import { mockModelLab, mockOutage } from './modelLab';
 import type { NewsSource } from '../src/api/dashboard';
 import { mockProjectsRoute, mockVehicles, mockApplyBill } from './projects';
+import { mockCollectionsRoute } from './collections';
 import { mockWorkItems } from './workItems';
 import { mockProvisions, mockMealImage, mockGroceryAdd, mockGroceryBought } from './provisions';
 import { mockReviewRuns, mockWorkspaceReviews } from './workspaceReviews';
@@ -2188,6 +2189,8 @@ async function route(method: string, path: string, body?: any): Promise<any> {
   }
   const projectAnswer = mockProjectsRoute(method, p, url.searchParams, body);
   if (projectAnswer !== undefined) return projectAnswer;
+  const collectionAnswer = mockCollectionsRoute(method, p, body);
+  if (collectionAnswer !== undefined) return collectionAnswer;
   if (p === '/api/v1/dashboard/email/receipts') {
     const today = new Date().toISOString().slice(0, 10);
     const ago = (d: number) => new Date(Date.now() - d * 86400000).toISOString().slice(0, 10);

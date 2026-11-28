@@ -1,0 +1,23 @@
+/* Collections (owner, 2026-11-28): Home card + person-page panel. Uses the
+   Home cards' dt-* and the person page's hp-/pp- styles; only list rows here. */
+.col-people, .col-items { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.col-people li { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--hp-line, #1f3d58); border-radius: 12px; background: #071628b3; }
+.col-people li.col-done .col-person strong { color: var(--hp-sub, #a7bdd2); text-decoration: line-through; }
+.col-check { display: grid; place-items: center; }
+.col-check input, .col-done-toggle input { width: 18px; height: 18px; accent-color: #4fb5ff; cursor: pointer; }
+.col-person { display: grid; flex: 1; min-width: 0; text-align: left; }
+.col-person strong { overflow: hidden; color: var(--hp-text, #e8f3ff); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.col-person small, .col-items small { color: var(--hp-sub, #a7bdd2); font-size: 13px; }
+.col-chevron { color: var(--hp-sub, #a7bdd2); }
+.col-items li { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--hp-line, #1f3d58); }
+.col-items li:last-child { border-bottom: 0; }
+.col-item-main { display: grid; flex: 1; min-width: 0; }
+.col-item-main strong { font-weight: 600; }
+.col-items select { padding: 4px 8px; border: 1px solid var(--hp-line, #1f3d58); border-radius: 8px; background: #071628; color: var(--hp-text, #e8f3ff); font-size: 13px; text-transform: capitalize; }
+.col-x { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; color: var(--hp-sub, #a7bdd2); font-size: 18px; }
+.col-x:hover { background: #ffffff12; color: var(--hp-text, #e8f3ff); }
+.col-label { margin: 14px 0 4px; color: var(--hp-sub, #a7bdd2); font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
+.col-suggested strong { color: #d8e6f3; }
+.col-done-toggle { display: inline-flex; align-items: center; gap: 6px; color: var(--hp-sub, #a7bdd2); font-size: 14px; cursor: pointer; }
+.col-actions { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 14px; }
+.col-panel { margin-bottom: 16px; }

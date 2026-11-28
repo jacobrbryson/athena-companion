@@ -20,6 +20,7 @@ import { DoorToDoor, ModelsPage, EmergencyAlertSetup, Workplaces, WorkoutsPanel,
 import { HealthWatchModal } from './HealthWatch';
 import { HealthWatchPage } from './HealthWatchPage';
 import { PersonPage } from './PersonPage';
+import { CollectionCard, useCollections } from './Collections';
 import { familyHealthSummary } from './familyHealthSummary';
 import { TasksCardBody, TasksPanel, openJira } from './TasksCard';
 import { AddTaskDrawer } from './AddTaskDrawer';
@@ -753,6 +754,10 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
   const location = useLocation();
   const navigate = useNavigate();
   const data = useDashboardData();
+  // Lists Athena keeps (Collections, owner 2026-11-28). Each definition places
+  // its own Home card: "top" above the fixed rows, "after" below them. That
+  // supersedes the fixed-order rule for these cards (owner, 2026-11-28).
+  const lists = useCollections();
   const failedSource = { status: 'error' as const, data: null, detail: data.summary.error, checkedAt: '' };
   // A failed summary is unavailable, not an endlessly pending source.
   const summary: DashboardSummary | null = data.summary.data || (data.summary.error ? {
@@ -2149,6 +2154,7 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
       <EmergencyBanner onAsk={onAsk} onPlaces={onPlaces} inline />
       {vehicleDeadline}
       <WorkBanner events={events} workingLocations={summary?.calendar.data?.workingLocations} timeZone={timeZone} now={now} jira={summary?.jira.status === 'ready' ? summary.jira.data : null} onOpen={go('Calendar')} onOpenWork={go('Work')} />
+      {listCards('top')}
       <HomeChanges updates={updates} now={now} onOpen={area => onNavigate?.(area)} compact />
       {statStrip}
 
@@ -2159,7 +2165,18 @@ export function Dashboard({ section = 'Dashboard', firstName, onAsk, onPanel, on
       {/* Health, then Family: the owner's order for the areas of a life. */}
       <div className="dh-row dt-row dt-row-fit">{health}{familyCard}</div>
       <div className="dh-row dt-row dt-row-fit">{propertyCard}{dreamsCard}</div>
+      {listCards('after')}
     </>;
+  }
+  /** Collection cards for one Home position, two to a row like the rest of Home. */
+  function listCards(where: 'top' | 'after') {
+    const shown = lists.collections.filter(c => c.home === where);
+    if (!shown.length) return null;
+    const cardsHere = shown.map(c => <CollectionCard key={c.uuid} collection={c} onAsk={onAsk} onChanged={() => void lists.reload()}
+      onOpenPerson={key => navigate(personPath(key))} />);
+    const rows: ReactNode[] = [];
+    for (let i = 0; i < cardsHere.length; i += 2) rows.push(<div key={i} className="dh-row dt-row dt-row-fit">{cardsHere.slice(i, i + 2)}</div>);
+    return <>{rows}</>;
   }
 
   // The briefing is what Home and the drawer show; every other nav entry has
